@@ -125,7 +125,7 @@ struct PlanLimitsView: View {
                 } footer: {
                     Group {
                         if storeKitOn {
-                            Text("Purchase uses App Store In-App Purchase only. Physical goods and service jobs still use Apple Pay / Stripe escrow.")
+                            Text("Purchase uses Apple In-App Purchase only. Physical goods and service jobs still use Apple Pay / Stripe escrow.")
                         } else {
                             Text("Paid digital tiers are not sold in this build. Comparison only — no upgrade or web checkout for digital unlocks (Guideline 3.1.1).")
                         }
@@ -141,7 +141,7 @@ struct PlanLimitsView: View {
     private var complianceBannerSection: some View {
         Section {
             if storeKitOn {
-                Text("Digital Pro / Business unlocks use App Store In-App Purchase when products are available. Physical goods and service jobs use Apple Pay / Stripe escrow — not IAP.")
+                Text("Digital Pro / Business unlocks use Apple In-App Purchase when products are available. Physical goods and service jobs use Apple Pay / Stripe escrow — not sold as a digital unlock in this app.")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(BrandTheme.warning)
                     .fixedSize(horizontal: false, vertical: true)
@@ -303,7 +303,7 @@ struct PlanLimitsView: View {
             }
             .tint(BrandTheme.accent)
             .disabled(purchasingProductID != nil || store.purchasedProductIDs.contains(product.id))
-            .accessibilityHint("Starts App Store In-App Purchase for this plan.")
+            .accessibilityHint("Starts Apple In-App Purchase for this plan.")
         } else {
             Text("In-App Purchase product not loaded for this tier yet.")
                 .font(.caption)

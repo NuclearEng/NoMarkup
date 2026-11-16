@@ -2,16 +2,36 @@
 
 import { Loader2, ShieldCheck, Undo2, Zap } from 'lucide-react';
 import type { Route } from 'next';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 
-import { BidBondPrompt } from '@/components/compliance/BidBondPrompt';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { GOODS_BID_AUTHORIZATION_DISCLOSURE } from '@/lib/constants';
 import { LISTING_BID_RETRACT_WINDOW_MS } from '@/lib/listing-bid-retract';
 import { cn, formatCents } from '@/lib/utils';
+
+// PERF-08: the bid-bond prompt is the only Stripe Elements surface on the
+// listing page and it appears only after a first-time bidder's bid comes back
+// 402. Load it (and @stripe/react-stripe-js) at that point. The placeholder is
+// the prompt's own first state — the "Preparing bond…" line it shows while the
+// SetupIntent is minted — inside a host that is already an aria-live region,
+// so the wait reads as one step.
+function BidBondPromptLoading() {
+  return (
+    <div className="flex items-center gap-2 text-xs text-amber-100/80">
+      <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+      <span>Preparing bond…</span>
+    </div>
+  );
+}
+
+const BidBondPrompt = dynamic(
+  () => import('@/components/compliance/BidBondPrompt').then((mod) => mod.BidBondPrompt),
+  { ssr: false, loading: BidBondPromptLoading },
+);
 
 interface ListingBidPanelProps {
   currentBidCents: number;
@@ -336,7 +356,7 @@ export function ListingBidPanel({
           className="min-h-[44px] w-full gap-1.5 border-destructive/40 text-destructive hover:bg-destructive/10"
           disabled={isRetracting || isSubmitting}
           onClick={() => {
-            onRetractBid?.();
+            onRetractBid();
           }}
           aria-label={`Retract bid (${String(retractRemainingSec)} seconds remaining)`}
           data-testid="listing-retract-bid"

@@ -10,32 +10,10 @@ import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useMyOrders } from '@/hooks/useListings';
+import { listingOrderStatusVariant } from '@/lib/status-badge-classes';
 import { canNextImageLoad, formatCents, formatRelativeTime } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth-store';
-import { LISTING_ORDER_STATUS, type ListingOrder, type ListingOrderStatus } from '@/types';
-
-// Maps each order-lifecycle status onto a semantic Badge variant. The variants
-// (active/completed/disputed/cancelled/pending) are defined in badge.tsx; an
-// unknown status falls back to the neutral 'secondary' chip rather than crash.
-function statusBadgeVariant(
-  status: ListingOrderStatus,
-): 'active' | 'completed' | 'disputed' | 'cancelled' | 'pending' | 'secondary' {
-  switch (status) {
-    case LISTING_ORDER_STATUS.PAID:
-    case LISTING_ORDER_STATUS.PICKED_UP:
-      return 'active';
-    case LISTING_ORDER_STATUS.COMPLETED:
-      return 'completed';
-    case LISTING_ORDER_STATUS.DISPUTED:
-      return 'disputed';
-    case LISTING_ORDER_STATUS.CANCELLED:
-      return 'cancelled';
-    case LISTING_ORDER_STATUS.PENDING:
-      return 'pending';
-    default:
-      return 'secondary';
-  }
-}
+import type { ListingOrder } from '@/types';
 
 export default function OrdersPage() {
   const { data: orders, isLoading, isError, refetch } = useMyOrders();
@@ -176,7 +154,7 @@ function OrderCard({
         <span className="text-sm font-semibold tabular-nums text-zinc-100">
           {formatCents(order.amount_cents)}
         </span>
-        <Badge variant={statusBadgeVariant(order.status)} className="capitalize">
+        <Badge variant={listingOrderStatusVariant(order.status)} className="capitalize">
           <span className="sr-only">Status: </span>
           {statusText}
         </Badge>

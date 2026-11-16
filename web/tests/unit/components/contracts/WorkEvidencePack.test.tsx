@@ -235,7 +235,7 @@ describe('WorkEvidencePack', () => {
     await user.click(button);
     expect(releaseMutate).toHaveBeenCalledWith(
       { paymentId: 'pmt-escrow', reason: 'customer approved completion' },
-      expect.objectContaining({ onError: expect.any(Function) }),
+      expect.objectContaining({ onError: expect.any(Function) as unknown }),
     );
   });
 

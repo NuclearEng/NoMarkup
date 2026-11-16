@@ -63,7 +63,7 @@ vi.mock('@/hooks/useFeatureFlags', () => ({
 }));
 
 const passkeysSupportedMock = vi.hoisted(() => vi.fn(() => false));
-const registerPasskeyMock = vi.hoisted(() => vi.fn());
+const registerPasskeyMock = vi.hoisted(() => vi.fn<() => Promise<void>>());
 vi.mock('@/lib/passkeys', () => ({
   passkeysSupported: () => passkeysSupportedMock(),
   registerPasskey: () => registerPasskeyMock(),

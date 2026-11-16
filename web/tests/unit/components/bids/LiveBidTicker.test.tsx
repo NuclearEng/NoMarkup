@@ -90,9 +90,11 @@ describe('LiveBidTicker', () => {
     // The pill's icon should have the rotate-180 class (TrendingDown rotated up).
     const rotated = container.querySelector('.rotate-180');
     expect(rotated).not.toBeNull();
-    // The up pill uses red classes.
-    const up = container.querySelector('.bg-red-50');
-    expect(up).not.toBeNull();
+    // The up pill uses the destructive token (was raw red before the
+    // design-system token migration, 44e22917).
+    const pill = screen.getByText(/7% below ask/i);
+    expect(pill.classList.contains('bg-destructive/10')).toBe(true);
+    expect(pill.classList.contains('text-destructive')).toBe(true);
   });
 
   it('omits the direction pill entirely when currentBid equals previousBid (flat)', () => {
@@ -133,9 +135,13 @@ describe('LiveBidTicker', () => {
         totalBids={3}
       />,
     );
-    // Down flash applies emerald-500
-    const flashEl = container.querySelector('.text-emerald-500');
-    expect(flashEl).not.toBeNull();
+    // Down flash applies the bid-winning token to the price readout (was
+    // emerald-500 before the token migration, 44e22917). Scope to the price:
+    // the direction pill carries the same token permanently.
+    const price = container.querySelector('[role="status"]');
+    expect(price).not.toBeNull();
+    expect(price?.classList.contains('text-bid-winning')).toBe(true);
+    expect(price?.classList.contains('text-foreground')).toBe(false);
 
     await vi.advanceTimersByTimeAsync(600);
     rerender(
@@ -146,7 +152,9 @@ describe('LiveBidTicker', () => {
         totalBids={3}
       />,
     );
-    expect(container.querySelector('.text-emerald-500')).toBeNull();
+    const settled = container.querySelector('[role="status"]');
+    expect(settled?.classList.contains('text-bid-winning')).toBe(false);
+    expect(settled?.classList.contains('text-foreground')).toBe(true);
     vi.useRealTimers();
   });
 

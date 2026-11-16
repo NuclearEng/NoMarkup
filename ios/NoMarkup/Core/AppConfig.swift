@@ -468,11 +468,13 @@ enum AppConfig {
 
     // MARK: - Private
 
-    /// Once-flag for insecure-base diagnostics (Swift 6: nonisolated(unsafe) is intentional —
-    /// best-effort log throttle only; never gates security decisions).
+    // SAFETY: insecureBaseLock guards didLogInsecureBase. The flag only throttles one diagnostic log.
     private nonisolated(unsafe) static var didLogInsecureBase = false
+    private nonisolated(unsafe) static let insecureBaseLock = NSLock()
 
     private static func logInsecureBaseOnce(source: String, value: String) {
+        insecureBaseLock.lock()
+        defer { insecureBaseLock.unlock() }
         guard !didLogInsecureBase else { return }
         didLogInsecureBase = true
         // No secrets in the message — host only when parseable.

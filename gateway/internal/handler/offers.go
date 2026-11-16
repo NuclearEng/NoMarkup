@@ -781,8 +781,13 @@ func (h *OffersHandler) UpdateOffer(w http.ResponseWriter, r *http.Request) {
 				resp["charge_error"] = "payment setup failed; retry charge for this order"
 			} else {
 				resp["payment_intent_id"] = charge.GetPaymentIntentId()
-				// total_cents is not a payment credential — both parties may see
-				// what the buyer will be charged (item + fee + tax).
+				// Item, fee, tax, and total are not payment credentials — both
+				// parties may see what the buyer will be charged.
+				if charge.GetAmountCents() > 0 {
+					resp["amount_cents"] = charge.GetAmountCents()
+				}
+				resp["fee_cents"] = charge.GetFeeCents()
+				resp["tax_cents"] = charge.GetTaxCents()
 				if charge.GetTotalCents() > 0 {
 					resp["total_cents"] = charge.GetTotalCents()
 				}

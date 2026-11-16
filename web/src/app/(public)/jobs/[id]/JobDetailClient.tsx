@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft,
   Calendar,
@@ -19,13 +19,13 @@ import {
   WifiOff,
   Zap,
 } from 'lucide-react';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import type { Route } from 'next';
 import { toast } from 'sonner';
 
 import { BidActivityFeed } from '@/components/bids/BidActivityFeed';
-import { BidForm } from '@/components/bids/BidForm';
 import { BidList } from '@/components/bids/BidList';
 import { BidPriceChart } from '@/components/bids/BidPriceChart';
 import { LiveBidTicker } from '@/components/bids/LiveBidTicker';
@@ -48,6 +48,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Separator } from '@/components/ui/separator';
+import { Skeleton } from '@/components/ui/skeleton';
 import { BUYER_PAYS_AGREED_PRICE, ENABLE_LIVE_AUCTION } from '@/lib/constants';
 import { useAuctionTerminal } from '@/hooks/useAuctionTerminal';
 import { useBidCount, useBidsForJob } from '@/hooks/useBids';
@@ -149,6 +150,25 @@ function JobPartyActions({
   );
 }
 
+// PERF-08: the bid form is the only thing on this page that needs
+// react-hook-form + zod (~25 kB gzip). It renders only for a signed-in provider
+// on an active job, and sign-in state is restored in the browser, so it is
+// never part of the server-rendered page. Load it when the viewer turns out to
+// be a provider (see the effect in JobDetailClient) instead of for everyone.
+const loadBidForm = () => import('@/components/bids/BidForm').then((mod) => mod.BidForm);
+
+function BidFormLoading() {
+  return (
+    <div role="status" aria-label="Loading bid form" className="space-y-3">
+      <Skeleton className="h-4 w-32" />
+      <Skeleton className="h-11 w-full" />
+      <Skeleton className="h-11 w-full" />
+    </div>
+  );
+}
+
+const BidForm = dynamic(loadBidForm, { ssr: false, loading: BidFormLoading });
+
 const FALLBACK_MARKET_RANGE: MarketRange = {
   low_cents: 0,
   median_cents: 0,
@@ -228,6 +248,12 @@ export function JobDetailClient({ jobId, initialJob }: JobDetailClientProps) {
   // Determine if the job is in a state where bidding/awarding is possible
   const canBid = job?.status === JOB_STATUS.ACTIVE && isProvider && !isJobOwner;
 
+  // Start fetching the bid form as soon as we know it will be shown, so it is
+  // usually ready by the time the bidding section renders.
+  useEffect(() => {
+    if (canBid) void loadBidForm().catch(() => undefined);
+  }, [canBid]);
+
   // Bloomberg keyboard layer on live terminal surfaces.
   useTerminalHotkeys({
     enabled: isLiveAuction,
@@ -248,7 +274,7 @@ export function JobDetailClient({ jobId, initialJob }: JobDetailClientProps) {
         job_id: jobId,
         channel_type: existingBid ? 'bid' : 'inquiry',
       });
-      if (!channel?.id) {
+      if (!channel.id) {
         toast.error('Could not open chat — no channel returned.');
         return;
       }
@@ -260,16 +286,15 @@ export function JobDetailClient({ jobId, initialJob }: JobDetailClientProps) {
 
   const canAward =
     isJobOwner &&
-    job !== undefined &&
     (job.status === JOB_STATUS.ACTIVE || job.status === JOB_STATUS.CLOSED);
 
   // Customer owner can re-request instant match on an already-posted open job
   // when an accept-now price is set (POST /jobs/{id}/instant-match requires it).
   const canRequestInstantMatch =
     isJobOwner &&
-    job?.status === JOB_STATUS.ACTIVE &&
-    typeof job?.offer_accepted_cents === 'number' &&
-    (job.offer_accepted_cents ?? 0) > 0;
+    job.status === JOB_STATUS.ACTIVE &&
+    typeof job.offer_accepted_cents === 'number' &&
+    job.offer_accepted_cents > 0;
 
   const createInstantMatch = useCreateInstantMatch(jobId);
   const repostJob = useRepostJob();
@@ -278,7 +303,6 @@ export function JobDetailClient({ jobId, initialJob }: JobDetailClientProps) {
   // Same owner gate as iOS JobDetailView.canRepost: finished without an award.
   const canRepost =
     isJobOwner &&
-    job !== undefined &&
     (job.status === JOB_STATUS.CLOSED ||
       job.status === JOB_STATUS.CLOSED_ZERO_BIDS ||
       job.status === JOB_STATUS.EXPIRED ||
@@ -518,6 +542,8 @@ export function JobDetailClient({ jobId, initialJob }: JobDetailClientProps) {
             snipeExtensionCount={
               Math.max(
                 terminal.snipeExtensionCount,
+                // The gateway omits the count while it is zero; Math.max with
+                // undefined is NaN.
                 job.snipe_extension_count ?? 0,
               )
             }
@@ -548,7 +574,7 @@ export function JobDetailClient({ jobId, initialJob }: JobDetailClientProps) {
           <div className="mx-auto max-w-[1400px] px-4 pb-4 sm:px-6">
             <AwardedProviderBlock
               awardedProviderId={job.awarded_provider_id}
-              selfId={user?.id ?? null}
+              selfId={user.id}
               displayName={awardedProviderName}
             />
           </div>
@@ -565,7 +591,7 @@ export function JobDetailClient({ jobId, initialJob }: JobDetailClientProps) {
                 jobId={jobId}
                 existingBid={existingBid}
                 startingBidCents={job.starting_bid_cents}
-                offerAcceptedCents={job.offer_accepted_cents}
+                offerAcceptedCents={job.offer_accepted_cents ?? null}
                 marketRange={job.market_range}
                 auctionEndsAt={job.auction_ends_at}
                 categorySlug={job.category_slug}
@@ -983,7 +1009,7 @@ export function JobDetailClient({ jobId, initialJob }: JobDetailClientProps) {
                     jobId={jobId}
                     existingBid={existingBid}
                     startingBidCents={job.starting_bid_cents}
-                    offerAcceptedCents={job.offer_accepted_cents}
+                    offerAcceptedCents={job.offer_accepted_cents ?? null}
                     marketRange={job.market_range}
                     auctionEndsAt={job.auction_ends_at}
                     categorySlug={job.category_slug}
@@ -1095,7 +1121,7 @@ export function JobDetailClient({ jobId, initialJob }: JobDetailClientProps) {
                 <div className="pt-1">
                   <AwardedProviderBlock
                     awardedProviderId={job.awarded_provider_id}
-                    selfId={user?.id ?? null}
+                    selfId={user.id}
                     displayName={awardedProviderName}
                   />
                 </div>

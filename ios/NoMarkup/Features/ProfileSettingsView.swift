@@ -73,6 +73,7 @@ struct ProfileSettingsView: View {
 
             Section {
                 TextField("Display name", text: $displayName, prompt: Text("How you appear to others"))
+                    .textContentType(.name)
                     .textInputAutocapitalization(.words)
                     .autocorrectionDisabled(false)
                     .foregroundStyle(BrandTheme.textPrimary)

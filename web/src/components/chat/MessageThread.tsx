@@ -52,7 +52,7 @@ function isSameDay(a: string, b: string): boolean {
 }
 
 function normalizedMessageType(message: ChatMessage): string {
-  return (message.message_type ?? '').trim().toLowerCase();
+  return message.message_type.trim().toLowerCase();
 }
 
 /** True for system-style pills including terms accept/reject outcomes. */
@@ -381,10 +381,10 @@ function MessageBubble({
               isOwnMessage ? 'bg-primary/10' : 'bg-muted',
             )}
           >
-            {/* eslint-disable-next-line @next/next/no-img-element -- chat CDN URLs are dynamic */}
+            {/* Raw <img> is intentional: chat CDN URLs are dynamic, so next/image cannot optimize them. */}
             <img
               src={message.content.trim()}
-              alt="Shared image"
+              alt="Shared attachment"
               className="max-h-64 max-w-full object-contain"
             />
           </div>
@@ -558,13 +558,11 @@ export function MessageThread({ channelId }: { channelId: string }) {
   const baseMessages = useMemo(
     () => sortAsc(data?.messages ?? []),
     // sortAsc is pure/stable for a given list reference
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [data?.messages],
   );
 
   const serverSearchMessages = useMemo(
     () => sortAsc(serverSearchData?.messages ?? []),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [serverSearchData?.messages],
   );
 
@@ -579,8 +577,7 @@ export function MessageThread({ channelId }: { channelId: string }) {
     const useServer =
       !!debouncedQ &&
       debouncedQ.toLowerCase() === q &&
-      isServerSearchSuccess &&
-      serverSearchData !== undefined;
+      isServerSearchSuccess;
 
     if (useServer) {
       return serverSearchMessages;
@@ -592,7 +589,6 @@ export function MessageThread({ channelId }: { channelId: string }) {
     searchQuery,
     debouncedQ,
     isServerSearchSuccess,
-    serverSearchData,
     serverSearchMessages,
   ]);
 

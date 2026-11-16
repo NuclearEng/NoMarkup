@@ -345,14 +345,16 @@ export interface Job {
   location_lat: number | null;
   location_lng: number | null;
   starting_bid_cents: number | null;
-  offer_accepted_cents: number | null;
+  /** Omitted by the gateway when the customer set no instant-accept price (gateway job.go protoJobToJSON). */
+  offer_accepted_cents?: number | null;
   auction_duration_hours: number;
   auction_ends_at: string | null;
   bid_count: number;
   lowest_bid_cents: number | null;
   market_range: MarketRange | null;
   auction_type: AuctionType;
-  snipe_extension_count: number;
+  /** Omitted by the gateway while the count is zero (gateway job.go protoJobToJSON); read with `?? 0`. */
+  snipe_extension_count?: number;
   original_auction_ends_at: string | null;
   created_at: string;
   updated_at: string;

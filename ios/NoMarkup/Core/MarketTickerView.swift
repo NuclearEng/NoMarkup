@@ -11,6 +11,7 @@ struct MarketTickerView: View {
     let samplePrices: [TickerItem]
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     struct TickerItem: Identifiable, Hashable, Sendable {
         let id: String
@@ -62,7 +63,7 @@ struct MarketTickerView: View {
             Text("MARKET DESK")
                 .font(.caption2.weight(.heavy).monospaced())
                 .tracking(1.2)
-                .foregroundStyle(BrandTheme.gold)
+                .foregroundStyle(BrandTheme.goldBright)
             Spacer(minLength: 8)
             HStack(spacing: 0) {
                 if let openJobs {
@@ -128,7 +129,7 @@ struct MarketTickerView: View {
             } else if let n = item.bidCount, n > 0 {
                 Text("\(n)×")
                     .font(.caption2.weight(.semibold).monospacedDigit())
-                    .foregroundStyle(BrandTheme.gold)
+                    .foregroundStyle(BrandTheme.goldBright)
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
                     .accessibilityLabel("\(n) bids")
@@ -138,7 +139,7 @@ struct MarketTickerView: View {
         .padding(.vertical, 7)
         .background {
             Capsule(style: .continuous)
-                .fill(.ultraThinMaterial)
+                .fill(reduceTransparency ? AnyShapeStyle(BrandTheme.surfaceRaised) : AnyShapeStyle(.ultraThinMaterial))
                 .overlay {
                     Capsule(style: .continuous)
                         .fill(BrandTheme.gold.opacity(0.08))

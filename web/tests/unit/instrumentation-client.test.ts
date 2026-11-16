@@ -35,8 +35,18 @@ function initOptions(): BrowserOptions {
   return (call as [BrowserOptions])[0];
 }
 
+/** Same cookie name + JSON shape as useCompliance.writeConsentCookie. */
+function setConsentCookie(analytics: boolean) {
+  document.cookie = `nm:consent=${encodeURIComponent(JSON.stringify({ analytics }))}; path=/`;
+}
+
+function clearConsentCookie() {
+  document.cookie = 'nm:consent=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
+  clearConsentCookie();
 });
 
 describe('instrumentation-client', () => {
@@ -84,7 +94,11 @@ describe('instrumentation-client', () => {
     expect(result).toBeNull();
   });
 
-  it('forwards events to Sentry when running in production', async () => {
+  // Since e076df18 (ASR-5.1.1.ii / 5.1.2.i) Sentry is opt-in analytics:
+  // production alone is not enough, the visitor must have accepted analytics
+  // in the consent cookie.
+  it('forwards events to Sentry in production once analytics consent is granted', async () => {
+    setConsentCookie(true);
     await loadClientInstrumentation();
     const { beforeSend } = initOptions();
     expect(beforeSend).toBeTypeOf('function');
@@ -93,6 +107,24 @@ describe('instrumentation-client', () => {
     try {
       const event = { event_id: 'abc' } as ErrorEvent;
       expect(beforeSend?.(event, {})).toBe(event);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('drops events in production when analytics consent is missing or refused', async () => {
+    await loadClientInstrumentation();
+    const { beforeSend } = initOptions();
+    expect(beforeSend).toBeTypeOf('function');
+
+    vi.stubEnv('NODE_ENV', 'production');
+    try {
+      const event = { event_id: 'abc' } as ErrorEvent;
+      // No cookie at all.
+      expect(beforeSend?.(event, {})).toBeNull();
+      // Explicit refusal — re-checked per event, so no reload is needed.
+      setConsentCookie(false);
+      expect(beforeSend?.(event, {})).toBeNull();
     } finally {
       vi.unstubAllEnvs();
     }

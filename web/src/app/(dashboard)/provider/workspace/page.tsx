@@ -264,7 +264,9 @@ export default function ProviderWorkspacePage() {
           <Button
             type="button"
             variant="outline"
-            onClick={handleSubscribeCalendar}
+            onClick={() => {
+              void handleSubscribeCalendar();
+            }}
             className="border-[var(--brand-gold)]/30 text-zinc-200"
           >
             <CalendarPlus className="h-4 w-4" aria-hidden="true" />

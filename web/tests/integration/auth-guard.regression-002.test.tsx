@@ -10,7 +10,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const refreshTokenMock = vi.fn();
 const routerReplaceMock = vi.fn();
 
+// AuthGuard reads the current path so the login redirect can carry a
+// same-origin `next` target (post-login return, 5481834d).
+const PROTECTED_PATH = '/dashboard/jobs';
+
 vi.mock('next/navigation', () => ({
+  usePathname: () => PROTECTED_PATH,
   useRouter: () => ({
     replace: routerReplaceMock,
     push: vi.fn(),
@@ -61,7 +66,12 @@ describe('AuthGuard — ISSUE-002 regression', () => {
       </AuthGuard>,
     );
     expect(refreshTokenMock).not.toHaveBeenCalled();
-    expect(routerReplaceMock).toHaveBeenCalledWith('/login');
+    // Still exactly one redirect, still to /login — it now also carries the
+    // protected path so the user lands back on it after signing in.
+    expect(routerReplaceMock).toHaveBeenCalledTimes(1);
+    expect(routerReplaceMock).toHaveBeenCalledWith(
+      `/login?next=${encodeURIComponent(PROTECTED_PATH)}`,
+    );
   });
 
   it('renders a branded dark loader while redirect is in flight', () => {

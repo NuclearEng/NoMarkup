@@ -13,4 +13,17 @@ ignore = [
     # fix, or (b) a mysql driver is ever enabled — at which point this becomes
     # a REAL finding that must be fixed, not ignored.
     "RUSTSEC-2023-0071",
+    # RUSTSEC-2026-0459 — libsqlite3-sys 0.30.1: bundled C SQLite
+    # CVE-2026-119375 (patched in libsqlite3-sys >= 0.39.0). No reachable fix:
+    # the crate is pinned by sqlx-sqlite, whose requirement is `^0.30.1` on
+    # sqlx 0.8.6 and still `>=0.30.1, <0.38.0` on sqlx 0.9.0 (latest), so no
+    # sqlx release can resolve to a patched version. Safe to ignore here because
+    # it is a LOCK-ONLY artifact, same as rsa above: sqlx-sqlite is an optional
+    # dependency recorded in Cargo.lock, this workspace enables only sqlx's
+    # `postgres` feature, and SQLite is never compiled or linked
+    # (`cargo tree -i libsqlite3-sys --target all -e all` prints nothing).
+    # Remove this entry when a sqlx release accepts libsqlite3-sys >= 0.39.0,
+    # or treat it as a REAL finding if the `sqlite` feature is ever enabled.
+    # Added 2026-11-16. Review by 2027-02-16 (and on every sqlx bump).
+    "RUSTSEC-2026-0459",
 ]

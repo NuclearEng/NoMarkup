@@ -62,13 +62,15 @@ describe('InsuranceClaimForm', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     useFile.mockReturnValue(defaultFile());
-    uploadMock.mockImplementation(async (file: File) => ({
-      ok: true as const,
-      result: {
-        objectKey: `claims/${file.name}`,
-        confirmedUrl: `https://cdn.example.com/claims/${file.name}`,
-      },
-    }));
+    uploadMock.mockImplementation((file: File) =>
+      Promise.resolve({
+        ok: true as const,
+        result: {
+          objectKey: `claims/${file.name}`,
+          confirmedUrl: `https://cdn.example.com/claims/${file.name}`,
+        },
+      }),
+    );
   });
 
   it('renders the claim form with the coverage limit', () => {

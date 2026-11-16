@@ -175,9 +175,9 @@ struct AgeGateHost: ViewModifier {
                         .zIndex(100)
                 }
             }
-            .animation(.easeInOut(duration: 0.2), value: showGate)
-            .animation(.easeInOut(duration: 0.2), value: showCheckError)
-            .animation(.easeInOut(duration: 0.2), value: showChecking)
+            .brandAnimation(.easeInOut(duration: 0.2), value: showGate)
+            .brandAnimation(.easeInOut(duration: 0.2), value: showCheckError)
+            .brandAnimation(.easeInOut(duration: 0.2), value: showChecking)
             .task(id: auth.isAuthenticated) {
                 await checkAgeStatus()
             }

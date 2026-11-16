@@ -320,9 +320,9 @@ extension APIClient {
         let response: URLResponse
         do {
             (data, response) = try await URLSession.shared.data(for: request)
-            ClientActionLog.shared.record(request: request, response: response, error: nil, started: started)
+            ClientActionLog.enqueueHTTP(request: request, response: response, started: started)
         } catch {
-            ClientActionLog.shared.record(request: request, response: nil, error: error, started: started)
+            ClientActionLog.enqueueHTTP(request: request, response: nil, started: started)
             throw APIClientError.unreachable
         }
         try AuthHTTP.throwIfNeeded(response: response, data: data)
@@ -366,9 +366,9 @@ extension APIClient {
         let response: URLResponse
         do {
             (data, response) = try await URLSession.shared.data(for: request)
-            ClientActionLog.shared.record(request: request, response: response, error: nil, started: started)
+            ClientActionLog.enqueueHTTP(request: request, response: response, started: started)
         } catch {
-            ClientActionLog.shared.record(request: request, response: nil, error: error, started: started)
+            ClientActionLog.enqueueHTTP(request: request, response: nil, started: started)
             throw APIClientError.unreachable
         }
 

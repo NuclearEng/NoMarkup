@@ -118,7 +118,9 @@ export function BackgroundCheckPanel() {
                 type="button"
                 className="min-h-[44px]"
                 disabled={!canStart}
-                onClick={() => start.mutate()}
+                onClick={() => {
+                  start.mutate();
+                }}
               >
                 {start.isPending ? 'Starting…' : 'Start background check'}
               </Button>

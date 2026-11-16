@@ -3,7 +3,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Loader2 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
-import { z } from 'zod';
 
 import { StarRatingInput } from '@/components/reviews/StarRating';
 import { Button } from '@/components/ui/button';
@@ -19,14 +18,14 @@ import {
 } from '@/components/ui/form';
 import { Textarea } from '@/components/ui/textarea';
 import { useCreateListingOrderReview } from '@/hooks/useOrderReviews';
+import * as z from '@/lib/zod-mini';
 
 const orderReviewSchema = z.object({
-  overallRating: z.number().int().min(1, 'Select a rating').max(5),
-  comment: z
-    .string()
-    .max(2000, 'Comment must be at most 2000 characters')
-    .optional()
-    .default(''),
+  overallRating: z.number().check(z.int(), z.minimum(1, 'Select a rating'), z.maximum(5)),
+  comment: z._default(
+    z.optional(z.string().check(z.maxLength(2000, 'Comment must be at most 2000 characters'))),
+    '',
+  ),
 });
 
 type OrderReviewFormValues = z.infer<typeof orderReviewSchema>;
@@ -56,7 +55,11 @@ export function OrderReviewForm({
     );
   }
 
-  const form = useForm<z.input<typeof orderReviewSchema>, unknown, OrderReviewFormValues>({
+  const form = useForm<
+    z.input<typeof orderReviewSchema>,
+    unknown,
+    OrderReviewFormValues
+  >({
     resolver: zodResolver(orderReviewSchema),
     defaultValues: {
       overallRating: 0,

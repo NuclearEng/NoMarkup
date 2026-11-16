@@ -1,13 +1,13 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, Eye, MapPin, Radio, Wifi, WifiOff, Zap } from 'lucide-react';
 
 import { GradientMesh } from '@/components/landing/GradientMesh';
 import { TerminalToolbar } from '@/components/terminal/terminal-toolbar';
-import { TerminalGrid } from '@/components/terminal/terminal-grid';
+import { LazyTerminalGrid, preloadTerminalGrid } from '@/components/terminal/terminal-grid-lazy';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useJob } from '@/hooks/useJobs';
@@ -27,6 +27,9 @@ export default function SpectatorPage() {
   const jobId = params.id;
   const { data: job, isLoading, isError } = useJob(jobId);
   const { sim, providers, spectatorCount, isConnected, error } = useSpectatorTerminal(jobId);
+
+  // Fetch the grid's code while the auction data loads (see terminal-grid-lazy).
+  useEffect(preloadTerminalGrid, []);
 
   const auctionEndsAt = useMemo(
     () => job?.auction_ends_at ?? new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
@@ -212,14 +215,14 @@ export default function SpectatorPage() {
 
       {/* Terminal grid */}
       <div className="relative z-[2] mx-auto max-w-[1400px] px-4 py-4 sm:px-6">
-        <TerminalGrid
+        <LazyTerminalGrid
           sim={sim}
           auctionEndsAt={auctionEndsAt}
           startingPriceCents={startingPriceCents}
           marketRange={marketRange}
           mockProviders={providers}
           jobId={jobId}
-          snipeExtensionCount={job.snipe_extension_count ?? 0}
+          snipeExtensionCount={job.snipe_extension_count}
           jobTitle={job.title}
           jobDescription={job.description}
           jobCategory={job.category_name}

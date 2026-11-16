@@ -191,5 +191,5 @@ export async function registerPasskey(): Promise<void> {
   if (!credential) {
     throw new Error('Passkey was cancelled.');
   }
-  await api.post<void>('/api/v1/auth/passkeys/register/verify', credentialJSON(credential));
+  await api.post<unknown>('/api/v1/auth/passkeys/register/verify', credentialJSON(credential));
 }

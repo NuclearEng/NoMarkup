@@ -19,11 +19,8 @@ enum NotificationPermissionCopy {
     static let marketingConsentBody =
         "Promotions, new listings from followed sellers, and price drops are optional. They are not required to use the app."
 
-    /// Confirm button that proceeds to the system permission dialog.
-    static let prePromptConfirm = "Enable notifications"
-
-    /// Dismiss without requesting system permission.
-    static let prePromptNotNow = "Not now"
+    /// The primer has one button. It opens the system permission dialog.
+    static let prePromptConfirm = "Continue"
 
     /// Account status when authorization is denied.
     static let deniedStatus =

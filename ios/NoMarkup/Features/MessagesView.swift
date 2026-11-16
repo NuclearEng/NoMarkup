@@ -886,7 +886,7 @@ struct ChatThreadView: View {
         .refreshable {
             await loadMessages(showLoading: false, markRead: true)
         }
-        .sheet(isPresented: $showWebSafari) {
+        .fullScreenCover(isPresented: $showWebSafari) {
             NavigationStack {
                 LegalWebView(title: "Messages on web", url: webMessagesURL)
                     .toolbar {

@@ -367,7 +367,7 @@ export function CommandPalette() {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent
-        className="max-w-lg gap-0 overflow-hidden border-white/10 bg-[#0e1017] p-0 shadow-2xl sm:rounded-xl"
+        className="max-w-lg gap-0 overflow-hidden border-white/10 bg-secondary p-0 shadow-2xl sm:rounded-xl"
         // cmd-style: no default close X crowding the search field — Esc works.
         // Keep the built-in close for a11y (Dialog already provides it).
       >
@@ -489,7 +489,7 @@ export function CommandPaletteTrigger({ className }: { className?: string }) {
     >
       <Search className="h-3.5 w-3.5" aria-hidden="true" />
       <span>Jump</span>
-      <kbd className="rounded border border-white/10 bg-black/30 px-1 font-mono text-[10px] text-zinc-500">
+      <kbd className="rounded border border-white/10 bg-black/30 px-1 font-mono text-[10px] text-zinc-400">
         ⌘K
       </kbd>
     </button>

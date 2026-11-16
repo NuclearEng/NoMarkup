@@ -34,12 +34,37 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// seededPlumbingCategoryID returns the id of the top-level "plumbing" category.
+//
+// Categories are inserted by the taxonomy migrations with gen_random_uuid(),
+// so the id differs in every database; a literal UUID copied from one
+// developer's database fails everywhere else with
+// jobs_category_id_fkey (SQLSTATE 23503) -> HTTP 500. The slug is the stable
+// key, and it is the same lookup database/cmd/seed uses.
+func seededPlumbingCategoryID(t *testing.T) string {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	pool, err := pgxpool.New(ctx, databaseURL())
+	if err != nil {
+		t.Fatalf("pgxpool: %v", err)
+	}
+	defer pool.Close()
+	var id string
+	if err := pool.QueryRow(ctx,
+		`SELECT id::text FROM service_categories WHERE slug = 'plumbing' AND level = 1`,
+	).Scan(&id); err != nil {
+		t.Fatalf("lookup plumbing category (run migrations first): %v", err)
+	}
+	return id
+}
+
 func createJobAsCustomer(t *testing.T, customerTok string) string {
 	t.Helper()
 	body := map[string]any{
 		"title":                  fmt.Sprintf("DoubleSpend job %d", time.Now().UnixNano()),
 		"description":            "Double-spend race-condition integration test job",
-		"category_id":            "db487d00-fca2-4a17-9f4a-a926b8a306da", // plumbing seed
+		"category_id":            seededPlumbingCategoryID(t),
 		"property_id":            "00000000-0000-0000-0000-000000000010",
 		"schedule_type":          "flexible",
 		"auction_type":           "sealed",
@@ -84,6 +109,11 @@ func placeBidAs(t *testing.T, providerTok, jobID string, amount int64) string {
 		"estimated_duration_hours": 4,
 	}
 	req := authedRequest(t, http.MethodPost, "/api/v1/jobs/"+jobID+"/bids", providerTok, body)
+	// POST /jobs/{id}/bids is a money-adjacent mutation and requires an
+	// Idempotency-Key (MON-06/22, gateway router). One fresh key per call: the
+	// key is scoped to caller + route, and these are distinct bids, so nothing
+	// is replayed and the award race below is still decided by the database.
+	req.Header.Set("Idempotency-Key", fmt.Sprintf("tier1-bid-%d", time.Now().UnixNano()))
 	status, raw := doRead(t, req)
 	if status >= 400 {
 		t.Fatalf("place bid status=%d body=%s", status, raw)

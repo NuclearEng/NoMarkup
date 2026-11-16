@@ -24,8 +24,7 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { api } from '@/lib/api';
-import { forgotPasswordSchema } from '@/lib/validations';
-import type { ForgotPasswordFormValues } from '@/lib/validations';
+import { forgotPasswordSchema, type ForgotPasswordFormValues } from '@/lib/schemas/auth';
 
 export function ForgotPasswordForm() {
   const [formError, setFormError] = useState<string | null>(null);

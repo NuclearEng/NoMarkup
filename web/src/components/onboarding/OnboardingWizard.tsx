@@ -19,8 +19,7 @@ import {
 import { useCreateProperty } from '@/hooks/useProperties';
 import { USER_ROLE } from '@/types';
 
-const STEPS = ['displayName', 'phone', 'address', 'provider', 'done'] as const;
-type Step = (typeof STEPS)[number];
+type Step = 'displayName' | 'phone' | 'address' | 'provider' | 'done';
 
 const STEP_TITLE: Record<Step, string> = {
   displayName: 'Display name',
@@ -78,7 +77,7 @@ export function OnboardingWizard() {
 
   useEffect(() => {
     if (!profile || bootstrapped) return;
-    const name = profile.displayName ?? '';
+    const name = profile.displayName;
     const existingPhone = profile.phone ?? '';
     setDisplayName(name);
     setPhone(existingPhone);
@@ -572,9 +571,9 @@ export function OnboardingWizard() {
                   setEnableProvider(event.target.checked);
                 }}
               />
-              <span>
-                <span className="block text-sm font-medium text-foreground">Enable provider role</span>
-                <span className="block text-xs text-muted-foreground">
+              <span className="block text-sm font-medium text-foreground">
+                Enable provider role
+                <span className="block text-xs font-normal text-muted-foreground">
                   Bid on service jobs and complete reverse-auction contracts. Admin cannot be
                   self-assigned.
                 </span>

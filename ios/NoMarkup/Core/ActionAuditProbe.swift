@@ -10,13 +10,17 @@ import UIKit
 /// passwords) is never logged. HTTP hops are recorded separately by `APIClient`.
 enum ActionAuditProbe {
     #if DEBUG
+    // SAFETY: installLock guards installed. install() can be called from more than one startup path.
     nonisolated(unsafe) private static var installed = false
+    nonisolated(unsafe) private static let installLock = NSLock()
     #endif
 
     /// Default is off. Release builds do not install (no consent). Debug installs
     /// for dogfood only. The log stays on device; nothing here uploads it.
     static func install() {
         #if DEBUG
+        installLock.lock()
+        defer { installLock.unlock() }
         guard !installed else { return }
         installed = true
         swizzle(
@@ -90,7 +94,7 @@ extension UIApplication {
     ) -> Bool {
         let label = ActionAuditProbe.label(for: sender)
         if !label.isEmpty {
-            ClientActionLog.shared.recordUI(method: "TAP", path: label, kind: "ui")
+            ClientActionLog.enqueueUI(method: "TAP", path: label, kind: "ui")
         }
         return nm_audit_sendAction(action, to: target, from: sender, for: event)
     }
@@ -101,7 +105,7 @@ extension UIViewController {
         nm_audit_viewDidAppear(animated)
         let name = ActionAuditProbe.screenName(for: self)
         if !name.isEmpty {
-            ClientActionLog.shared.recordUI(method: "SCREEN", path: name, kind: "screen")
+            ClientActionLog.enqueueUI(method: "SCREEN", path: name, kind: "screen")
         }
     }
 }

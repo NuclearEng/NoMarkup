@@ -2,7 +2,7 @@ module github.com/nomarkup/nomarkup/services/user
 
 go 1.26.0
 
-toolchain go1.26.5
+toolchain go1.26.11
 
 require (
 	github.com/exaring/otelpgx v0.11.1

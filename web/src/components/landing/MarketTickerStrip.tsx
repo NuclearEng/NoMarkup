@@ -160,7 +160,7 @@ export function MarketTickerStrip({
   }
 
   // Loading only when unseeded and no initialData has landed yet.
-  if (!seededItems && isLoading && !data) {
+  if (!seededItems && isLoading) {
     return <TickerSkeleton className={className} />;
   }
 

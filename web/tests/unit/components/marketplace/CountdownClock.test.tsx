@@ -28,7 +28,8 @@ describe('CountdownClock', () => {
     const endsAt = new Date('2026-04-27T12:00:42Z').toISOString();
     const { container } = render(<CountdownClock endsAt={endsAt} />);
     expect(screen.getByText('42s')).toBeDefined();
-    expect(container.querySelector('.text-red-300')).not.toBeNull();
+    // Critical colour is the destructive token since 44e22917 (was red-300).
+    expect(container.querySelector('.text-destructive')).not.toBeNull();
     expect(container.querySelector('.animate-pulse')).not.toBeNull();
   });
 

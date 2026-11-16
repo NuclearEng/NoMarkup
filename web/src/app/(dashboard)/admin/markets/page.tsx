@@ -81,8 +81,14 @@ function groupMarkets(markets: Market[]): CountryGroup[] {
     countries.push({ country, regions: regionGroups, total, liveCount });
   }
 
-  // US first, then MX (alphabetical fallback for any future countries).
-  countries.sort((a, b) => a.country.localeCompare(b.country));
+  // US first, then the rest alphabetically (MX today). Same order as the
+  // public market list: the gateway sorts by (country <> 'US'), country.
+  countries.sort((a, b) => {
+    if (a.country === b.country) return 0;
+    if (a.country === 'US') return -1;
+    if (b.country === 'US') return 1;
+    return a.country.localeCompare(b.country);
+  });
   return countries;
 }
 

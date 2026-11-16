@@ -8,10 +8,11 @@ import { Button } from '@/components/ui/button';
 import type { PricingData } from '@/hooks/usePricing';
 import { serverFetch } from '@/lib/server-fetch';
 import { formatCents } from '@/lib/utils';
+import { siteUrl } from '@/lib/site-url';
 
 const API_URL =
   process.env['API_URL'] ?? process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:8081';
-const SITE_URL = process.env['NEXT_PUBLIC_SITE_URL'] ?? 'https://no-markup.com';
+const SITE_URL = siteUrl();
 
 async function fetchCategoryPrices(slug: string): Promise<PricingData[] | null> {
   try {

@@ -98,9 +98,9 @@ fn bench_blurhash_computation(c: &mut Criterion) {
                                     * (std::f64::consts::PI * (j as f64) * (y as f64) / sh as f64)
                                         .cos();
                             let px = &pixels[y * sw + x];
-                            r += basis * px[0];
-                            g += basis * px[1];
-                            bl += basis * px[2];
+                            r = basis.mul_add(px[0], r);
+                            g = basis.mul_add(px[1], g);
+                            bl = basis.mul_add(px[2], bl);
                         }
                     }
                     let scale = if i == 0 && j == 0 {

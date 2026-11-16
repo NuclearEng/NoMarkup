@@ -6,6 +6,7 @@ import { serverFetch } from '@/lib/server-fetch';
 import type { JobDetail } from '@/types';
 
 import { JobDetailClient } from './JobDetailClient';
+import { siteUrl } from '@/lib/site-url';
 
 // Server-side API origin. Mirror marketplace/[id]: prefer the server-only
 // API_URL, fall back to the public var, then localhost for dev. Public read
@@ -15,7 +16,7 @@ const API_URL =
 
 // Public site origin — drives canonical + absolute openGraph URLs. Same
 // resolution as layout.tsx / sitemap.ts / robots.ts.
-const SITE_URL = process.env['NEXT_PUBLIC_SITE_URL'] ?? 'https://no-markup.com';
+const SITE_URL = siteUrl();
 
 /**
  * Server-fetch a job for the detail page.

@@ -1,5 +1,5 @@
 // Tests for the recurring jobs management page — exercises loading, error,
-// empty, and populated branches plus pause/cancel interactions.
+// empty, and populated branches plus end-recurrence/cancel interactions.
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -13,6 +13,10 @@ const jobsState: {
 } = { data: undefined, isLoading: false, isError: false };
 
 const refetch = vi.fn();
+const toastSuccess = vi.fn();
+vi.mock('sonner', () => ({
+  toast: { success: toastSuccess, error: vi.fn() },
+}));
 const updateJobMutate = vi.fn();
 const cancelJobMutate = vi.fn();
 const updateState = { isPending: false };
@@ -97,6 +101,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.clearAllMocks();
 });
 
@@ -140,31 +145,55 @@ describe('RecurringJobsPage', () => {
     expect(screen.getAllByText('Weekly').length).toBeGreaterThan(0);
   });
 
-  it('toggles pause state and dispatches update mutation', () => {
+  // 96bbda88 replaced the local "pause" toggle with "End recurrence": there
+  // is no job-level pause API, so the page no longer mirrors a fake paused
+  // state. Both destructive actions now sit behind window.confirm.
+  it('ends recurrence after confirmation and dispatches the update mutation', () => {
     jobsState.data = { jobs: [monthly] };
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     render(withQueryClient(createElement(RecurringJobsPage)));
-    const pauseBtn = screen.getByRole('button', { name: /pause recurring job/i });
-    fireEvent.click(pauseBtn);
+    fireEvent.click(screen.getByRole('button', { name: 'End recurrence' }));
+    expect(confirmSpy).toHaveBeenCalledTimes(1);
     expect(updateJobMutate).toHaveBeenCalledTimes(1);
     const args = updateJobMutate.mock.calls[0]?.[0] as { id: string; input: { is_recurring: boolean } };
     expect(args.id).toBe('job_monthly');
     expect(args.input.is_recurring).toBe(false);
-    expect(screen.getByText('Paused')).toBeDefined();
+    // Status is server-derived: nothing is optimistically relabelled.
+    expect(screen.queryByText('Paused')).toBeNull();
+    expect(screen.getByText('Recurring')).toBeDefined();
   });
 
-  it('dispatches cancel mutation when cancel button clicked', () => {
+  it('does not end recurrence when the confirmation is declined', () => {
     jobsState.data = { jobs: [monthly] };
+    vi.spyOn(window, 'confirm').mockReturnValue(false);
+    render(withQueryClient(createElement(RecurringJobsPage)));
+    fireEvent.click(screen.getByRole('button', { name: 'End recurrence' }));
+    expect(updateJobMutate).not.toHaveBeenCalled();
+  });
+
+  it('dispatches cancel mutation when cancel is clicked and confirmed', () => {
+    jobsState.data = { jobs: [monthly] };
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     render(withQueryClient(createElement(RecurringJobsPage)));
     fireEvent.click(screen.getByRole('button', { name: /cancel recurring job/i }));
+    expect(confirmSpy).toHaveBeenCalledTimes(1);
     expect(cancelJobMutate).toHaveBeenCalledWith('job_monthly');
+  });
+
+  it('does not cancel the job when the confirmation is declined', () => {
+    jobsState.data = { jobs: [monthly] };
+    vi.spyOn(window, 'confirm').mockReturnValue(false);
+    render(withQueryClient(createElement(RecurringJobsPage)));
+    fireEvent.click(screen.getByRole('button', { name: /cancel recurring job/i }));
+    expect(cancelJobMutate).not.toHaveBeenCalled();
   });
 
   it('disables update button while update mutation is pending', () => {
     jobsState.data = { jobs: [monthly] };
     updateState.isPending = true;
     render(withQueryClient(createElement(RecurringJobsPage)));
-    const pauseBtn = screen.getByRole('button', { name: /pause recurring job/i });
-    expect(pauseBtn.hasAttribute('disabled')).toBe(true);
+    const endBtn = screen.getByRole('button', { name: 'End recurrence' });
+    expect(endBtn.hasAttribute('disabled')).toBe(true);
   });
 
   it('renders header link to post a new job', () => {
@@ -173,24 +202,26 @@ describe('RecurringJobsPage', () => {
     expect(screen.getByRole('button', { name: /post new job/i })).toBeDefined();
   });
 
-  it('reverts paused state when the update mutation reports an error', () => {
+  it('keeps the server-derived status and only announces success once the update succeeds', () => {
     jobsState.data = { jobs: [monthly] };
-    // Capture mutate args so we can drive its onError callback.
-    let capturedOpts: { onError?: () => void } | undefined;
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    // Capture mutate options so we can drive its onSuccess callback.
+    let capturedOpts: { onSuccess?: () => void; onError?: () => void } | undefined;
     updateJobMutate.mockImplementation((_input, opts) => {
-      capturedOpts = opts as { onError?: () => void };
+      capturedOpts = opts as { onSuccess?: () => void; onError?: () => void };
     });
     render(withQueryClient(createElement(RecurringJobsPage)));
-    fireEvent.click(screen.getByRole('button', { name: /pause recurring job/i }));
-    // After click, badge shows Paused.
-    expect(screen.getByText('Paused')).toBeDefined();
-    // Trigger the onError callback to revert.
-    expect(capturedOpts?.onError).toBeTypeOf('function');
+    fireEvent.click(screen.getByRole('button', { name: 'End recurrence' }));
+    // No optimistic state to revert on failure: the badge and the action are
+    // unchanged until the server says otherwise.
+    expect(screen.getByText('Recurring')).toBeDefined();
+    expect(screen.getByRole('button', { name: 'End recurrence' })).toBeDefined();
+    expect(toastSuccess).not.toHaveBeenCalled();
+    expect(capturedOpts?.onSuccess).toBeTypeOf('function');
     act(() => {
-      capturedOpts?.onError?.();
+      capturedOpts?.onSuccess?.();
     });
-    // Now the resume button should be back.
-    expect(screen.getByRole('button', { name: /pause recurring job/i })).toBeDefined();
+    expect(toastSuccess).toHaveBeenCalledWith('Recurrence ended');
   });
 
   it('renders job card without price when starting_bid_cents is absent', () => {

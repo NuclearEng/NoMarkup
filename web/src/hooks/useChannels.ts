@@ -209,7 +209,7 @@ export function useCreateChannel() {
     },
     onSuccess: (channel) => {
       void queryClient.invalidateQueries({ queryKey: ['channels'] });
-      if (channel?.id) {
+      if (channel.id) {
         void queryClient.invalidateQueries({ queryKey: ['channel', channel.id] });
       }
       void queryClient.invalidateQueries({ queryKey: ['unread-count'] });

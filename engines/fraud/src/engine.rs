@@ -1606,7 +1606,7 @@ mod tests {
         assert_eq!(result.decision, FraudDecision::Allow);
         assert_eq!(result.risk_level, RiskLevel::Low);
         assert!((result.risk_score).abs() < f64::EPSILON);
-        assert!(result.reasons.is_empty());
+        assert_eq!(result.reasons, Vec::<String>::new());
         assert!(!result.shill_bid_detected);
     }
 

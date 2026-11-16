@@ -617,7 +617,6 @@ struct MarketplaceMapView: View {
                 Button("Continue") {
                     locationManager.requestWhenInUse()
                 }
-                Button("Not now", role: .cancel) {}
             } message: {
                 Text(LocationPurposeCopy.marketPickerPrePrompt)
             }

@@ -116,7 +116,7 @@ test.describe('Customer deep workflows', () => {
 
     // Details step if present
     if (await page.getByLabel(/Job Title/i).isVisible().catch(() => false)) {
-      await page.getByLabel(/Job Title/i).fill(`QA Wire Audit Job ${Date.now()}`);
+      await page.getByLabel(/Job Title/i).fill(`QA Wire Audit Job ${String(Date.now())}`);
       await page
         .getByLabel(/Description/i)
         .fill(
@@ -155,7 +155,7 @@ test.describe('Customer deep workflows', () => {
       }
       if ((await next.count()) === 0) break;
       if (!(await next.isEnabled().catch(() => false))) {
-        log('customer.wizard_advance', 'PARTIAL', `Next disabled at step loop ${i}`);
+        log('customer.wizard_advance', 'PARTIAL', `Next disabled at step loop ${String(i)}`);
         break;
       }
       await next.click();
@@ -229,7 +229,7 @@ test.describe('Customer deep workflows', () => {
     await navigateTo(page, '/profile', 'customer');
     if (await noFatal(page, 'customer.profile')) {
       const edit = page.getByRole('button', { name: /edit|save/i });
-      log('customer.profile', 'PASS', `editControls=${await edit.count()}`);
+      log('customer.profile', 'PASS', `editControls=${String(await edit.count())}`);
     }
 
     // Notifications
@@ -241,7 +241,7 @@ test.describe('Customer deep workflows', () => {
     if (await noFatal(page, 'customer.sell_new')) {
       const formish =
         (await page.getByRole('textbox').count()) + (await page.getByRole('button').count());
-      log('customer.sell_new', formish > 0 ? 'PASS' : 'PARTIAL', `controls=${formish}`);
+      log('customer.sell_new', formish > 0 ? 'PASS' : 'PARTIAL', `controls=${String(formish)}`);
     }
     await shot(page, 'customer-sell-new');
   });
@@ -270,9 +270,6 @@ test.describe('Provider deep workflows', () => {
     // Browse jobs + open first
     await navigateTo(page, '/jobs', 'provider');
     if (await noFatal(page, 'provider.jobs')) {
-      const jobLink = page.locator('a[href*="/jobs/"]').filter({
-        hasNot: page.locator('[href="/jobs"], [href="/jobs/new"], [href="/jobs/map"], [href="/jobs/mine"]'),
-      });
       // Prefer UUID-looking job links
       const all = page.locator('a[href^="/jobs/"]');
       let opened = false;
@@ -290,7 +287,7 @@ test.describe('Provider deep workflows', () => {
       if (opened && (await noFatal(page, 'provider.job_detail'))) {
         const bidBtn = page.getByRole('button', { name: /place bid|bid|submit bid/i });
         if ((await bidBtn.count()) > 0) {
-          log('provider.job_detail_bid_cta', 'PASS', `bidButtons=${await bidBtn.count()}`);
+          log('provider.job_detail_bid_cta', 'PASS', `bidButtons=${String(await bidBtn.count())}`);
           // Open bid form but do not complete payment-sensitive path unless form is simple
           await bidBtn.first().click().catch(() => undefined);
           await page.waitForTimeout(800);
@@ -305,7 +302,7 @@ test.describe('Provider deep workflows', () => {
           log('provider.job_detail', 'PARTIAL', 'no bid CTA (may be own job or closed)');
         }
       } else if (!opened) {
-        log('provider.jobs_open', 'PARTIAL', `no job uuid links among ${count}`);
+        log('provider.jobs_open', 'PARTIAL', `no job uuid links among ${String(count)}`);
       }
     }
     await shot(page, 'provider-job');
@@ -336,7 +333,7 @@ test.describe('Provider deep workflows', () => {
     await navigateTo(page, '/provider/team', 'provider');
     if (await noFatal(page, 'provider.team')) {
       const add = page.getByRole('button', { name: /add|invite|new employee/i });
-      log('provider.team', 'PASS', `addControls=${await add.count()}`);
+      log('provider.team', 'PASS', `addControls=${String(await add.count())}`);
     }
 
     // Verification
@@ -389,7 +386,7 @@ test.describe('Admin deep workflows', () => {
       for (const m of metrics) {
         if ((await page.getByText(m, { exact: true }).count()) > 0) found++;
       }
-      log('admin.overview', found >= 3 ? 'PASS' : 'PARTIAL', `metrics=${found}/${metrics.length}`);
+      log('admin.overview', found >= 3 ? 'PASS' : 'PARTIAL', `metrics=${String(found)}/${String(metrics.length)}`);
     }
     await shot(page, 'admin-overview');
 
@@ -419,7 +416,7 @@ test.describe('Admin deep workflows', () => {
     await navigateTo(page, '/admin/flags', 'admin');
     if (await noFatal(page, 'admin.flags')) {
       const toggles = page.getByRole('switch').or(page.getByRole('checkbox'));
-      log('admin.flags', 'PASS', `controls=${await toggles.count()}`);
+      log('admin.flags', 'PASS', `controls=${String(await toggles.count())}`);
     }
 
     // Advances — money actions must open confirm (not one-click)
@@ -494,7 +491,7 @@ test.describe('Public deep workflows', () => {
     await page.waitForTimeout(2000);
     if (await noFatal(page, 'public.landing')) {
       const ctas = page.getByRole('link').filter({ hasText: /get started|post|browse|sign/i });
-      log('public.landing', 'PASS', `cta-ish links=${await ctas.count()}`);
+      log('public.landing', 'PASS', `cta-ish links=${String(await ctas.count())}`);
     }
     await shot(page, 'public-landing');
 
@@ -538,7 +535,7 @@ test.describe('Public deep workflows', () => {
       // providers API returned 401 earlier — check UI handling
       const err = page.getByText(/failed|error|unauthorized|sign in/i);
       const cards = page.locator('[data-testid], article, a[href*="/providers/"]');
-      if ((await cards.count()) > 0) log('public.providers', 'PASS', `items=${await cards.count()}`);
+      if ((await cards.count()) > 0) log('public.providers', 'PASS', `items=${String(await cards.count())}`);
       else if ((await err.count()) > 0)
         log('public.providers', 'FAIL', 'error/empty auth wall on public providers');
       else log('public.providers', 'PARTIAL', 'no cards and no clear error');

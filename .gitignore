@@ -94,3 +94,10 @@ ios/Config/Secrets.xcconfig
 
 # gRPC mesh mTLS material from deploy/prod/gen-mtls-certs.sh (CA key + leaf keys)
 deploy/prod/mtls/
+
+# Signing material. Never commit keys, certs, or profiles.
+*.p8
+*.p12
+*.cer
+*.mobileprovision
+*.provisionprofile

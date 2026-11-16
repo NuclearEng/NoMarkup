@@ -78,6 +78,23 @@ func ConfigFromEnv() Config {
 	}
 }
 
+// ClientSecretFromEnv returns the client_secret to send to Apple for clientID.
+// A static APPLE_CLIENT_SECRET wins (backward compatible; note a static
+// secret is a JWT bound to ONE client_id and expires within 6 months).
+// Otherwise a fresh ES256 JWT is minted for clientID from APPLE_TEAM_ID,
+// APPLE_KEY_ID and APPLE_PRIVATE_KEY. ErrNotConfigured when neither is set.
+// It never logs secret values.
+func ClientSecretFromEnv(clientID string) (string, error) {
+	if v := strings.TrimSpace(os.Getenv("APPLE_CLIENT_SECRET")); v != "" {
+		return v, nil
+	}
+	c, err := New(ConfigFromEnv())
+	if err != nil {
+		return "", err
+	}
+	return c.ClientSecret(strings.TrimSpace(clientID))
+}
+
 // MissingEnv lists the names of unset required variables (empty when complete).
 func (c Config) MissingEnv() []string {
 	var missing []string

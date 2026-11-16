@@ -604,7 +604,7 @@ struct UserReportSheet: View {
                 } header: {
                     Text("Details (optional)").brandSectionHeader()
                 } footer: {
-                    Text("Reports help keep NoMarkup safe. False reports may lead to account action.")
+                    Text("Reports help moderators review this provider. False reports may lead to account action.")
                         .foregroundStyle(BrandTheme.textSecondary)
                 }
 

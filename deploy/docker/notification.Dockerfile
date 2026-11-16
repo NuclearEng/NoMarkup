@@ -2,7 +2,7 @@
 # Multi-stage build for the Notification Service.
 # Build context must be the repository root.
 
-FROM golang:1.26.5-alpine AS builder
+FROM golang:1.26.11-alpine AS builder
 WORKDIR /app
 RUN echo "══════════════════════════════════════════════════════════" && \
     echo "  NOTIFICATION-SERVICE · Build started"                    && \
@@ -12,8 +12,12 @@ RUN echo "═══════════════════════�
 # Copy the shared proto module first — the service go.mod has:
 #   replace github.com/nomarkup/nomarkup/proto => ../../proto/gen/go
 COPY proto/gen/go/ proto/gen/go/
-# Shared local modules: go.mod has replace github.com/nomarkup/nomarkup/pkg/... => ../pkg/...
-COPY pkg/ pkg/
+
+# Copy the shared gRPC mTLS module — the go.mod also has:
+#   replace github.com/nomarkup/nomarkup/pkg/grpmtls => ../../pkg/grpmtls
+# Without it `go mod download` fails: "reading /app/pkg/grpmtls/go.mod: no such
+# file or directory".
+COPY pkg/grpmtls/ pkg/grpmtls/
 
 # Copy service module files and download dependencies.
 COPY services/notification/go.mod services/notification/go.sum services/notification/

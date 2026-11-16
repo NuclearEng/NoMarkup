@@ -44,7 +44,7 @@ export function AppIcon({
   const px = sizePx[size];
 
   return (
-    // eslint-disable-next-line @next/next/no-img-element -- intentional: local brand asset; next/image attrs caused SSR/client hydration drift under HMR
+    // Raw <img> is intentional: local brand asset; next/image attrs caused SSR/client hydration drift under HMR
     <img
       src={APP_ICON_SRC}
       alt={alt}

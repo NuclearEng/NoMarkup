@@ -5,7 +5,6 @@ import { Loader2, Upload } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
-import { z } from 'zod';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -22,6 +21,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useImageUpload } from '@/hooks/useImageUpload';
 import { useFileInsuranceClaim } from '@/hooks/useInsurance';
 import { formatCents } from '@/lib/utils';
+import * as z from '@/lib/zod-mini';
 import { UPLOAD_CONTEXT } from '@/types';
 
 // Values MUST match the insurance_claims.claim_type DB CHECK constraint
@@ -35,14 +35,16 @@ const CLAIM_TYPES = [
 ] as const;
 
 const claimSchema = z.object({
-  claim_type: z.string().min(1, 'Select a claim type'),
-  description: z.string().min(100, 'Description must be at least 100 characters'),
-  claimed_amount_dollars: z.string().refine(
-    (val) => {
-      const num = parseFloat(val);
-      return !Number.isNaN(num) && num > 0;
-    },
-    { message: 'Enter a valid amount' },
+  claim_type: z.string().check(z.minLength(1, 'Select a claim type')),
+  description: z.string().check(z.minLength(100, 'Description must be at least 100 characters')),
+  claimed_amount_dollars: z.string().check(
+    z.refine(
+      (val) => {
+        const num = parseFloat(val);
+        return !Number.isNaN(num) && num > 0;
+      },
+      { message: 'Enter a valid amount' },
+    ),
   ),
 });
 

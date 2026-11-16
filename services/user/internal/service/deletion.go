@@ -240,16 +240,15 @@ func (e *Erasure) FinalizeAccountDeletion(ctx context.Context, userID string, fo
 		return nil, fmt.Errorf("finalize deletion: lookup stripe ids: %w", err)
 	}
 
-	// Capture provider tokens (e.g. Sign in with Apple refresh tokens) BEFORE
-	// the cascade deletes oauth_accounts; revoke them after. Never blocks.
-	var revokeOAuth func(context.Context) error
-	if p, ok := e.oauth.(OAuthRevocationPreparer); ok {
-		fn, pErr := p.PrepareOAuthRevocation(ctx, userID)
-		if pErr != nil {
-			slog.Error("gdpr: oauth revoke prepare failed; provider grant will NOT be revoked",
-				"user_id", userID, "error", pErr)
-		} else {
-			revokeOAuth = fn
+	// Revoke Sign in with Apple while oauth_accounts still holds the refresh
+	// token. The cascade below deletes that row. A revoke failure is logged
+	// and does not block erasure; the legal act is the local wipe.
+	if e.oauth != nil {
+		if oErr := e.oauth.RevokeUserTokens(ctx, userID); oErr != nil {
+			slog.Warn("gdpr: oauth revoke failed",
+				"user_id", userID,
+				"error", oErr,
+			)
 		}
 	}
 
@@ -299,22 +298,6 @@ func (e *Erasure) FinalizeAccountDeletion(ctx context.Context, userID string, fo
 			)
 		} else {
 			counts["s3_objects"] = int64(n)
-		}
-	}
-
-	if revokeOAuth != nil {
-		if oErr := revokeOAuth(ctx); oErr != nil {
-			slog.Error("gdpr: oauth revoke failed (manual revocation may be required)",
-				"user_id", userID,
-				"error", oErr,
-			)
-		}
-	} else if _, prepared := e.oauth.(OAuthRevocationPreparer); !prepared && e.oauth != nil {
-		if oErr := e.oauth.RevokeUserTokens(ctx, userID); oErr != nil {
-			slog.Warn("gdpr: oauth revoke failed",
-				"user_id", userID,
-				"error", oErr,
-			)
 		}
 	}
 

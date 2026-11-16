@@ -175,7 +175,7 @@ export default function NotificationPreferencesPage() {
   }
 
   function updatePref(type: NotificationType, field: keyof Omit<NotificationPreference, 'notification_type'>, value: boolean) {
-    if (isCriticalNotificationType(type) && value === false) {
+    if (isCriticalNotificationType(type) && !value) {
       // FR-17.3 — critical types stay on.
       return;
     }

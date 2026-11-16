@@ -342,7 +342,7 @@ extension APIClient {
             throw APIClientError.httpStatus(400, detail: "document_type is required.")
         }
         guard ProviderDocumentType.isValidWireValue(type) else {
-            throw APIClientError.httpStatus(400, detail: "Invalid document type.")
+            throw APIClientError.httpStatus(400, detail: "Use drivers_license, business_license, ein, insurance, or trade_license.")
         }
         guard !url.isEmpty else {
             throw APIClientError.httpStatus(400, detail: "file_url is required.")

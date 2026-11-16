@@ -3,7 +3,6 @@
 import { useState } from 'react';
 
 import { Landmark, ShieldCheck } from 'lucide-react';
-import { z } from 'zod';
 
 import { ActionConfirmDialog } from '@/components/admin/ActionConfirmDialog';
 import { AnimatedIllustration } from '@/components/ui/animated-illustration';
@@ -28,6 +27,7 @@ import {
   useSetPlatformBankAccount,
 } from '@/hooks/useAdmin';
 import { getStripe, isStripeConfigured } from '@/lib/stripe';
+import * as z from '@/lib/zod-mini';
 import { StripeNotConfigured } from '@/components/payments/StripeNotConfigured';
 import type { BankAccountHolderType, PlatformBankAccount } from '@/types';
 import { BANK_ACCOUNT_HOLDER_TYPE } from '@/types';
@@ -36,15 +36,15 @@ import { BANK_ACCOUNT_HOLDER_TYPE } from '@/types';
 // routing/account numbers are read straight off the inputs at submit time and
 // handed to Stripe.js — they are never echoed, logged, or sent to our backend.
 const bankFormSchema = z.object({
-  accountHolderName: z.string().trim().min(1, 'Account holder name is required'),
+  accountHolderName: z
+    .string()
+    .check(z.trim(), z.minLength(1, 'Account holder name is required')),
   routingNumber: z
     .string()
-    .trim()
-    .regex(/^\d{9}$/, 'Routing number must be 9 digits'),
+    .check(z.trim(), z.regex(/^\d{9}$/, 'Routing number must be 9 digits')),
   accountNumber: z
     .string()
-    .trim()
-    .regex(/^\d{4,17}$/, 'Account number must be 4-17 digits'),
+    .check(z.trim(), z.regex(/^\d{4,17}$/, 'Account number must be 4-17 digits')),
 });
 
 type BankFormErrors = Partial<Record<keyof z.infer<typeof bankFormSchema>, string>>;
@@ -212,11 +212,17 @@ function BankAccountForm() {
         return;
       }
 
-      await setAccount.mutateAsync({
-        bank_account_token: result.token.id,
-        account_holder_name: parsed.data.accountHolderName,
-        account_holder_type: accountHolderType,
-      });
+      try {
+        await setAccount.mutateAsync({
+          bank_account_token: result.token.id,
+          account_holder_name: parsed.data.accountHolderName,
+          account_holder_type: accountHolderType,
+        });
+      } catch {
+        // useSetPlatformBankAccount already shows the error toast. Keep the
+        // form filled in so the admin can retry.
+        return;
+      }
 
       // Clear sensitive fields after a successful save.
       setAccountHolderName('');

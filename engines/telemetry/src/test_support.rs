@@ -39,8 +39,7 @@ impl CollectingExporter {
     pub fn finished_spans(&self) -> Vec<SpanData> {
         self.spans
             .lock()
-            .map(|guard| guard.clone())
-            .unwrap_or_default()
+            .map_or_else(|_| Vec::new(), |guard| guard.clone())
     }
 
     /// Drop everything collected so far.

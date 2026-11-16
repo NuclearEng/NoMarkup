@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   ADVANCE_STATUS_CLASSES,
+  DEFAULT_STATUS_CLASS,
   DISPUTE_STATUS_CLASSES,
   EXPENSE_CATEGORY_CLASSES,
   FLAG_STATUS_CLASSES,
@@ -22,12 +23,24 @@ import {
  * status-badge-classes.ts is a set of pure lookup tables — string status keys
  * to Tailwind class strings. We assert:
  * 1. Each map exposes the expected keys with non-empty string values.
- * 2. Each value contains the expected color family for that semantic state
- *    (green = success, red = danger, yellow/amber = warning, blue = info, etc.).
+ * 2. Each value is the glass triad for the expected SEMANTIC TOKEN of that
+ *    state (trust-high = success, destructive = danger, trust-medium =
+ *    warning, status-open = info, …). The tables used raw palette families
+ *    (green/red/yellow/blue/zinc) until the design-system token migration
+ *    (a6ef4b35 + 44e22917, 2026-07-26; raw palette utilities are now banned
+ *    on chrome badges), so these assertions name tokens, not colors.
  * 3. Unknown keys return undefined (no defaulting at this layer — callers
  *    handle fallback themselves).
  * 4. Empty / weird keys return undefined (no panics, no surprise hits).
  */
+
+/** The canonical glass triad for one semantic token. */
+function glass(token: string): string {
+  return `bg-${token}/10 text-${token} border-${token}/30`;
+}
+
+/** Neutral / inactive states share the muted default badge. */
+const NEUTRAL = DEFAULT_STATUS_CLASS;
 
 // All maps share the same shape (Record<string, string>).
 const ALL_MAPS = {
@@ -61,13 +74,18 @@ describe('status-badge-classes — shape invariants', () => {
         }
       });
 
-      it('every value follows the glass-tinted "bg-X/10 text-X border-X/30" pattern', () => {
+      it('every value is one token\'s glass triad "bg-T/10 text-T border-T/30" or the neutral badge', () => {
         for (const value of Object.values(map)) {
-          // Must contain a translucent background, a 300/400-weight text,
-          // and a translucent border — the canonical glass triad.
-          expect(value).toMatch(/bg-[a-z]+-\d+\/10/);
-          expect(value).toMatch(/text-[a-z]+-\d+/);
-          expect(value).toMatch(/border-[a-z]+-\d+\/30/);
+          if (value === NEUTRAL) continue;
+          // One semantic token, used consistently for the translucent
+          // background, the text, and the translucent border. Raw palette
+          // utilities (e.g. green-500) are not allowed here.
+          const triad = /^bg-([a-z]+(?:-[a-z]+)*)\/10 text-([a-z]+(?:-[a-z]+)*) border-([a-z]+(?:-[a-z]+)*)\/30$/.exec(
+            value,
+          );
+          expect(triad, value).not.toBeNull();
+          expect(triad?.[2]).toBe(triad?.[1]);
+          expect(triad?.[3]).toBe(triad?.[1]);
         }
       });
 
@@ -82,131 +100,132 @@ describe('status-badge-classes — shape invariants', () => {
   }
 });
 
-describe('USER_STATUS_CLASSES — semantic colors', () => {
-  it('active is green (success)', () => {
-    expect(USER_STATUS_CLASSES['active']).toContain('green');
+describe('USER_STATUS_CLASSES — semantic tokens', () => {
+  it('active is trust-high (success)', () => {
+    expect(USER_STATUS_CLASSES['active']).toBe(glass('trust-high'));
   });
 
-  it('suspended is yellow (warning)', () => {
-    expect(USER_STATUS_CLASSES['suspended']).toContain('yellow');
+  it('suspended is trust-medium (warning)', () => {
+    expect(USER_STATUS_CLASSES['suspended']).toBe(glass('trust-medium'));
   });
 
-  it('banned is red (danger)', () => {
-    expect(USER_STATUS_CLASSES['banned']).toContain('red');
+  it('banned is destructive (danger)', () => {
+    expect(USER_STATUS_CLASSES['banned']).toBe(glass('destructive'));
   });
 
-  it('deactivated is zinc (neutral)', () => {
-    expect(USER_STATUS_CLASSES['deactivated']).toContain('zinc');
+  it('deactivated is the neutral badge', () => {
+    expect(USER_STATUS_CLASSES['deactivated']).toBe(NEUTRAL);
   });
 });
 
-describe('JOB_STATUS_CLASSES — semantic colors', () => {
-  it('open is blue (info)', () => {
-    expect(JOB_STATUS_CLASSES['open']).toContain('blue');
+describe('JOB_STATUS_CLASSES — semantic tokens', () => {
+  it('open is status-open (info)', () => {
+    expect(JOB_STATUS_CLASSES['open']).toBe(glass('status-open'));
   });
 
-  it('bidding is amber (in-progress)', () => {
-    expect(JOB_STATUS_CLASSES['bidding']).toContain('amber');
+  it('bidding is status-in-progress', () => {
+    expect(JOB_STATUS_CLASSES['bidding']).toBe(glass('status-in-progress'));
   });
 
-  it('completed is green (success)', () => {
-    expect(JOB_STATUS_CLASSES['completed']).toContain('green');
+  it('completed is status-completed (success)', () => {
+    expect(JOB_STATUS_CLASSES['completed']).toBe(glass('status-completed'));
   });
 
-  it('disputed is red (danger)', () => {
-    expect(JOB_STATUS_CLASSES['disputed']).toContain('red');
+  it('disputed is status-disputed', () => {
+    expect(JOB_STATUS_CLASSES['disputed']).toBe(glass('status-disputed'));
   });
 
-  it('cancelled / closed / expired are zinc (neutral)', () => {
-    expect(JOB_STATUS_CLASSES['cancelled']).toContain('zinc');
-    expect(JOB_STATUS_CLASSES['closed']).toContain('zinc');
-    expect(JOB_STATUS_CLASSES['expired']).toContain('zinc');
+  it('cancelled / closed / expired are neutral', () => {
+    expect(JOB_STATUS_CLASSES['cancelled']).toBe(NEUTRAL);
+    expect(JOB_STATUS_CLASSES['closed']).toBe(NEUTRAL);
+    expect(JOB_STATUS_CLASSES['expired']).toBe(NEUTRAL);
   });
 
-  it('in_progress and bidding share the amber treatment', () => {
+  it('in_progress and bidding share the in-progress treatment', () => {
     expect(JOB_STATUS_CLASSES['in_progress']).toBe(JOB_STATUS_CLASSES['bidding']);
   });
 
-  it('awarded and contract_pending share the purple treatment', () => {
+  it('awarded and contract_pending share the trust-elite treatment', () => {
     expect(JOB_STATUS_CLASSES['awarded']).toBe(JOB_STATUS_CLASSES['contract_pending']);
   });
 });
 
-describe('PAYMENT_STATUS_CLASSES — semantic colors', () => {
-  it('pending is yellow (waiting)', () => {
-    expect(PAYMENT_STATUS_CLASSES['pending']).toContain('yellow');
+describe('PAYMENT_STATUS_CLASSES — semantic tokens', () => {
+  it('pending is trust-medium (waiting)', () => {
+    expect(PAYMENT_STATUS_CLASSES['pending']).toBe(glass('trust-medium'));
   });
 
-  it('escrow is purple (held)', () => {
-    expect(PAYMENT_STATUS_CLASSES['escrow']).toContain('purple');
+  it('escrow is trust-elite (held)', () => {
+    expect(PAYMENT_STATUS_CLASSES['escrow']).toBe(glass('trust-elite'));
   });
 
-  it('released and completed both use green (terminal success)', () => {
-    expect(PAYMENT_STATUS_CLASSES['released']).toContain('green');
-    expect(PAYMENT_STATUS_CLASSES['completed']).toContain('green');
+  it('released is trust-high and completed is status-completed (terminal success)', () => {
+    expect(PAYMENT_STATUS_CLASSES['released']).toBe(glass('trust-high'));
+    expect(PAYMENT_STATUS_CLASSES['completed']).toBe(glass('status-completed'));
   });
 
-  it('failed / disputed / chargeback are red (danger)', () => {
-    expect(PAYMENT_STATUS_CLASSES['failed']).toContain('red');
-    expect(PAYMENT_STATUS_CLASSES['disputed']).toContain('red');
-    expect(PAYMENT_STATUS_CLASSES['chargeback']).toContain('red');
+  it('failed / chargeback are destructive; disputed is status-disputed', () => {
+    expect(PAYMENT_STATUS_CLASSES['failed']).toBe(glass('destructive'));
+    expect(PAYMENT_STATUS_CLASSES['disputed']).toBe(glass('status-disputed'));
+    expect(PAYMENT_STATUS_CLASSES['chargeback']).toBe(glass('destructive'));
   });
 
-  it('refunded variants are orange', () => {
-    expect(PAYMENT_STATUS_CLASSES['refunded']).toContain('orange');
-    expect(PAYMENT_STATUS_CLASSES['partially_refunded']).toContain('orange');
+  it('refunded variants are neutral, never the pending badge', () => {
+    expect(PAYMENT_STATUS_CLASSES['refunded']).toBe(NEUTRAL);
+    expect(PAYMENT_STATUS_CLASSES['partially_refunded']).toBe(NEUTRAL);
+    expect(PAYMENT_STATUS_CLASSES['refunded']).not.toBe(PAYMENT_STATUS_CLASSES['pending']);
   });
 });
 
 describe('FRAUD_RISK_CLASSES — risk ladder', () => {
-  it('low is green', () => {
-    expect(FRAUD_RISK_CLASSES['low']).toContain('green');
+  it('low is trust-high', () => {
+    expect(FRAUD_RISK_CLASSES['low']).toBe(glass('trust-high'));
   });
 
-  it('medium is yellow', () => {
-    expect(FRAUD_RISK_CLASSES['medium']).toContain('yellow');
+  it('medium is trust-medium', () => {
+    expect(FRAUD_RISK_CLASSES['medium']).toBe(glass('trust-medium'));
   });
 
-  it('high is orange', () => {
-    expect(FRAUD_RISK_CLASSES['high']).toContain('orange');
+  it('high is trust-low, not the disputed token', () => {
+    expect(FRAUD_RISK_CLASSES['high']).toBe(glass('trust-low'));
   });
 
-  it('critical is red', () => {
-    expect(FRAUD_RISK_CLASSES['critical']).toContain('red');
+  it('critical is destructive', () => {
+    expect(FRAUD_RISK_CLASSES['critical']).toBe(glass('destructive'));
   });
 });
 
 describe('ADVANCE_STATUS_CLASSES — working capital lifecycle', () => {
-  it('requested is blue (pending decision)', () => {
-    expect(ADVANCE_STATUS_CLASSES['requested']).toContain('blue');
+  it('requested is status-open (pending decision)', () => {
+    expect(ADVANCE_STATUS_CLASSES['requested']).toBe(glass('status-open'));
   });
 
-  it('approved is green', () => {
-    expect(ADVANCE_STATUS_CLASSES['approved']).toContain('green');
+  it('approved is trust-high', () => {
+    expect(ADVANCE_STATUS_CLASSES['approved']).toBe(glass('trust-high'));
   });
 
-  it('disbursed is emerald (money out the door)', () => {
-    expect(ADVANCE_STATUS_CLASSES['disbursed']).toContain('emerald');
+  it('disbursed is bid-winning (money out the door)', () => {
+    expect(ADVANCE_STATUS_CLASSES['disbursed']).toBe(glass('bid-winning'));
   });
 
-  it('repaying is amber (in flight)', () => {
-    expect(ADVANCE_STATUS_CLASSES['repaying']).toContain('amber');
+  it('repaying is status-in-progress (in flight)', () => {
+    expect(ADVANCE_STATUS_CLASSES['repaying']).toBe(glass('status-in-progress'));
   });
 
-  it('defaulted and rejected are red', () => {
-    expect(ADVANCE_STATUS_CLASSES['defaulted']).toContain('red');
-    expect(ADVANCE_STATUS_CLASSES['rejected']).toContain('red');
+  it('defaulted and rejected are destructive', () => {
+    expect(ADVANCE_STATUS_CLASSES['defaulted']).toBe(glass('destructive'));
+    expect(ADVANCE_STATUS_CLASSES['rejected']).toBe(glass('destructive'));
   });
 });
 
 describe('GUARANTEE_STATUS_CLASSES — claim flow', () => {
-  it('open is blue, paid is emerald, denied is red', () => {
-    expect(GUARANTEE_STATUS_CLASSES['open']).toContain('blue');
-    expect(GUARANTEE_STATUS_CLASSES['paid']).toContain('emerald');
-    expect(GUARANTEE_STATUS_CLASSES['denied']).toContain('red');
+  it('open is status-open, paid is bid-winning, denied is destructive', () => {
+    expect(GUARANTEE_STATUS_CLASSES['open']).toBe(glass('status-open'));
+    expect(GUARANTEE_STATUS_CLASSES['paid']).toBe(glass('bid-winning'));
+    expect(GUARANTEE_STATUS_CLASSES['denied']).toBe(glass('destructive'));
   });
 
-  it('investigating and under_review share the purple treatment', () => {
+  it('investigating and under_review share the trust-elite treatment', () => {
     expect(GUARANTEE_STATUS_CLASSES['investigating']).toBe(
       GUARANTEE_STATUS_CLASSES['under_review'],
     );
@@ -214,89 +233,89 @@ describe('GUARANTEE_STATUS_CLASSES — claim flow', () => {
 });
 
 describe('DISPUTE_STATUS_CLASSES', () => {
-  it('open is blue, investigating is purple, resolved is green, escalated is red', () => {
-    expect(DISPUTE_STATUS_CLASSES['open']).toContain('blue');
-    expect(DISPUTE_STATUS_CLASSES['investigating']).toContain('purple');
-    expect(DISPUTE_STATUS_CLASSES['resolved']).toContain('green');
-    expect(DISPUTE_STATUS_CLASSES['escalated']).toContain('red');
+  it('open is status-open, investigating is trust-elite, resolved is status-completed, escalated is status-disputed', () => {
+    expect(DISPUTE_STATUS_CLASSES['open']).toBe(glass('status-open'));
+    expect(DISPUTE_STATUS_CLASSES['investigating']).toBe(glass('trust-elite'));
+    expect(DISPUTE_STATUS_CLASSES['resolved']).toBe(glass('status-completed'));
+    expect(DISPUTE_STATUS_CLASSES['escalated']).toBe(glass('status-disputed'));
   });
 });
 
 describe('FLAG_STATUS_CLASSES — moderation', () => {
-  it('pending is yellow, upheld is red, dismissed is green', () => {
-    expect(FLAG_STATUS_CLASSES['pending']).toContain('yellow');
-    expect(FLAG_STATUS_CLASSES['upheld']).toContain('red');
-    expect(FLAG_STATUS_CLASSES['dismissed']).toContain('green');
+  it('pending is trust-medium, upheld is destructive, dismissed is status-completed', () => {
+    expect(FLAG_STATUS_CLASSES['pending']).toBe(glass('trust-medium'));
+    expect(FLAG_STATUS_CLASSES['upheld']).toBe(glass('destructive'));
+    expect(FLAG_STATUS_CLASSES['dismissed']).toBe(glass('status-completed'));
   });
 });
 
 describe('VERIFICATION_STATUS_CLASSES', () => {
-  it('approved is green, rejected is red, pending is yellow, expired is zinc', () => {
-    expect(VERIFICATION_STATUS_CLASSES['approved']).toContain('green');
-    expect(VERIFICATION_STATUS_CLASSES['rejected']).toContain('red');
-    expect(VERIFICATION_STATUS_CLASSES['pending']).toContain('yellow');
-    expect(VERIFICATION_STATUS_CLASSES['expired']).toContain('zinc');
+  it('approved is trust-high, rejected is destructive, pending is trust-medium, expired is neutral', () => {
+    expect(VERIFICATION_STATUS_CLASSES['approved']).toBe(glass('trust-high'));
+    expect(VERIFICATION_STATUS_CLASSES['rejected']).toBe(glass('destructive'));
+    expect(VERIFICATION_STATUS_CLASSES['pending']).toBe(glass('trust-medium'));
+    expect(VERIFICATION_STATUS_CLASSES['expired']).toBe(NEUTRAL);
   });
 });
 
 describe('FRAUD_ALERT_STATUS_CLASSES', () => {
-  it('both resolved variants are green (clean closure)', () => {
-    expect(FRAUD_ALERT_STATUS_CLASSES['resolved_fraud']).toContain('green');
-    expect(FRAUD_ALERT_STATUS_CLASSES['resolved_legitimate']).toContain('green');
+  it('both resolved variants are status-completed (clean closure)', () => {
+    expect(FRAUD_ALERT_STATUS_CLASSES['resolved_fraud']).toBe(glass('status-completed'));
+    expect(FRAUD_ALERT_STATUS_CLASSES['resolved_legitimate']).toBe(glass('status-completed'));
   });
 
-  it('dismissed is zinc (neutral)', () => {
-    expect(FRAUD_ALERT_STATUS_CLASSES['dismissed']).toContain('zinc');
+  it('dismissed is the neutral badge', () => {
+    expect(FRAUD_ALERT_STATUS_CLASSES['dismissed']).toBe(NEUTRAL);
   });
 });
 
 describe('INSURANCE_POLICY_STATUS_CLASSES', () => {
-  it('active is green, expired is zinc, cancelled is red, claimed is amber', () => {
-    expect(INSURANCE_POLICY_STATUS_CLASSES['active']).toContain('green');
-    expect(INSURANCE_POLICY_STATUS_CLASSES['expired']).toContain('zinc');
-    expect(INSURANCE_POLICY_STATUS_CLASSES['cancelled']).toContain('red');
-    expect(INSURANCE_POLICY_STATUS_CLASSES['claimed']).toContain('amber');
+  it('active is trust-high, expired is neutral, cancelled is destructive, claimed is status-in-progress', () => {
+    expect(INSURANCE_POLICY_STATUS_CLASSES['active']).toBe(glass('trust-high'));
+    expect(INSURANCE_POLICY_STATUS_CLASSES['expired']).toBe(NEUTRAL);
+    expect(INSURANCE_POLICY_STATUS_CLASSES['cancelled']).toBe(glass('destructive'));
+    expect(INSURANCE_POLICY_STATUS_CLASSES['claimed']).toBe(glass('status-in-progress'));
   });
 });
 
 describe('INSURANCE_CLAIM_STATUS_CLASSES', () => {
-  it('filed is blue, paid is emerald, denied is red', () => {
-    expect(INSURANCE_CLAIM_STATUS_CLASSES['filed']).toContain('blue');
-    expect(INSURANCE_CLAIM_STATUS_CLASSES['paid']).toContain('emerald');
-    expect(INSURANCE_CLAIM_STATUS_CLASSES['denied']).toContain('red');
+  it('filed is status-open, paid is bid-winning, denied is destructive', () => {
+    expect(INSURANCE_CLAIM_STATUS_CLASSES['filed']).toBe(glass('status-open'));
+    expect(INSURANCE_CLAIM_STATUS_CLASSES['paid']).toBe(glass('bid-winning'));
+    expect(INSURANCE_CLAIM_STATUS_CLASSES['denied']).toBe(glass('destructive'));
   });
 });
 
 describe('INSTALLMENT_PLAN_STATUS_CLASSES', () => {
-  it('active is blue, completed is green, defaulted is red, cancelled is zinc', () => {
-    expect(INSTALLMENT_PLAN_STATUS_CLASSES['active']).toContain('blue');
-    expect(INSTALLMENT_PLAN_STATUS_CLASSES['completed']).toContain('green');
-    expect(INSTALLMENT_PLAN_STATUS_CLASSES['defaulted']).toContain('red');
-    expect(INSTALLMENT_PLAN_STATUS_CLASSES['cancelled']).toContain('zinc');
+  it('active is status-open, completed is status-completed, defaulted is destructive, cancelled is neutral', () => {
+    expect(INSTALLMENT_PLAN_STATUS_CLASSES['active']).toBe(glass('status-open'));
+    expect(INSTALLMENT_PLAN_STATUS_CLASSES['completed']).toBe(glass('status-completed'));
+    expect(INSTALLMENT_PLAN_STATUS_CLASSES['defaulted']).toBe(glass('destructive'));
+    expect(INSTALLMENT_PLAN_STATUS_CLASSES['cancelled']).toBe(NEUTRAL);
   });
 });
 
 describe('SCHEDULED_INSTALLMENT_STATUS_CLASSES', () => {
-  it('scheduled is zinc, processing is blue, paid is green, failed is red, retrying is amber', () => {
-    expect(SCHEDULED_INSTALLMENT_STATUS_CLASSES['scheduled']).toContain('zinc');
-    expect(SCHEDULED_INSTALLMENT_STATUS_CLASSES['processing']).toContain('blue');
-    expect(SCHEDULED_INSTALLMENT_STATUS_CLASSES['paid']).toContain('green');
-    expect(SCHEDULED_INSTALLMENT_STATUS_CLASSES['failed']).toContain('red');
-    expect(SCHEDULED_INSTALLMENT_STATUS_CLASSES['retrying']).toContain('amber');
+  it('scheduled is neutral, processing is status-open, paid is status-completed, failed is destructive, retrying is status-in-progress', () => {
+    expect(SCHEDULED_INSTALLMENT_STATUS_CLASSES['scheduled']).toBe(NEUTRAL);
+    expect(SCHEDULED_INSTALLMENT_STATUS_CLASSES['processing']).toBe(glass('status-open'));
+    expect(SCHEDULED_INSTALLMENT_STATUS_CLASSES['paid']).toBe(glass('status-completed'));
+    expect(SCHEDULED_INSTALLMENT_STATUS_CLASSES['failed']).toBe(glass('destructive'));
+    expect(SCHEDULED_INSTALLMENT_STATUS_CLASSES['retrying']).toBe(glass('status-in-progress'));
   });
 });
 
 describe('EXPENSE_CATEGORY_CLASSES', () => {
-  it('every documented category has a unique-ish color', () => {
-    expect(EXPENSE_CATEGORY_CLASSES['materials']).toContain('blue');
-    expect(EXPENSE_CATEGORY_CLASSES['tools']).toContain('purple');
-    expect(EXPENSE_CATEGORY_CLASSES['transportation']).toContain('amber');
-    expect(EXPENSE_CATEGORY_CLASSES['insurance']).toContain('green');
-    expect(EXPENSE_CATEGORY_CLASSES['licensing']).toContain('cyan');
-    expect(EXPENSE_CATEGORY_CLASSES['marketing']).toContain('pink');
-    expect(EXPENSE_CATEGORY_CLASSES['subcontractor']).toContain('orange');
-    expect(EXPENSE_CATEGORY_CLASSES['office']).toContain('zinc');
-    expect(EXPENSE_CATEGORY_CLASSES['other']).toContain('slate');
+  it('every documented category maps to its token (office and other share the neutral badge)', () => {
+    expect(EXPENSE_CATEGORY_CLASSES['materials']).toBe(glass('status-open'));
+    expect(EXPENSE_CATEGORY_CLASSES['tools']).toBe(glass('trust-elite'));
+    expect(EXPENSE_CATEGORY_CLASSES['transportation']).toBe(glass('status-in-progress'));
+    expect(EXPENSE_CATEGORY_CLASSES['insurance']).toBe(glass('trust-high'));
+    expect(EXPENSE_CATEGORY_CLASSES['licensing']).toBe(glass('bid-active'));
+    expect(EXPENSE_CATEGORY_CLASSES['marketing']).toBe(glass('brand-gold'));
+    expect(EXPENSE_CATEGORY_CLASSES['subcontractor']).toBe(glass('status-disputed'));
+    expect(EXPENSE_CATEGORY_CLASSES['office']).toBe(NEUTRAL);
+    expect(EXPENSE_CATEGORY_CLASSES['other']).toBe(NEUTRAL);
   });
 
   it('returns undefined for an unknown category (caller handles fallback)', () => {

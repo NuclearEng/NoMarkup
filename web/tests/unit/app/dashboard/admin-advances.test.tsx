@@ -1,7 +1,7 @@
 // Smoke + branch tests for the admin advances review page.
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { createElement } from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { withQueryClient } from './_helpers';
 
@@ -68,6 +68,17 @@ const baseAdvance = {
   created_at: '2026-01-01T00:00:00Z',
 };
 
+// jsdom does not implement <dialog>.showModal()/close(), which
+// ActionConfirmDialog drives from an effect.
+beforeAll(() => {
+  HTMLDialogElement.prototype.showModal = function showModal(this: HTMLDialogElement) {
+    this.setAttribute('open', '');
+  };
+  HTMLDialogElement.prototype.close = function close(this: HTMLDialogElement) {
+    this.removeAttribute('open');
+  };
+});
+
 describe('AdminAdvancesPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -108,7 +119,10 @@ describe('AdminAdvancesPage', () => {
     expect(screen.getByRole('button', { name: 'Reject' })).toBeDefined();
   });
 
-  it('calls reviewAdvance with approve action when Approve is clicked', () => {
+  // Since 68a582d5 ("admin money confirms") every advance action goes through
+  // ActionConfirmDialog: the row button only opens the dialog, and the
+  // mutation fires when the admin confirms inside it.
+  it('calls reviewAdvance with approve action only after Approve is confirmed', () => {
     const reviewMutate = vi.fn();
     setHooks({
       data: { advances: [baseAdvance], pagination: { totalPages: 1 } },
@@ -116,12 +130,18 @@ describe('AdminAdvancesPage', () => {
     });
     render(withQueryClient(createElement(AdminAdvancesPage)));
     fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+    expect(reviewMutate).not.toHaveBeenCalled();
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByText('Approve working capital advance?')).toBeDefined();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Approve' }));
+    expect(reviewMutate).toHaveBeenCalledTimes(1);
     expect(reviewMutate).toHaveBeenCalledWith(
-      expect.objectContaining({ advanceId: baseAdvance.id, action: 'approve' }),
+      { advanceId: baseAdvance.id, action: 'approve' },
+      expect.anything(),
     );
   });
 
-  it('calls reviewAdvance with reject action and reason when Reject is clicked', () => {
+  it('calls reviewAdvance with reject action and reason only after Reject is confirmed', () => {
     const reviewMutate = vi.fn();
     setHooks({
       data: { advances: [baseAdvance], pagination: { totalPages: 1 } },
@@ -129,9 +149,34 @@ describe('AdminAdvancesPage', () => {
     });
     render(withQueryClient(createElement(AdminAdvancesPage)));
     fireEvent.click(screen.getByRole('button', { name: 'Reject' }));
+    expect(reviewMutate).not.toHaveBeenCalled();
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByText('Reject working capital advance?')).toBeDefined();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Reject' }));
+    expect(reviewMutate).toHaveBeenCalledTimes(1);
     expect(reviewMutate).toHaveBeenCalledWith(
-      expect.objectContaining({ advanceId: baseAdvance.id, action: 'reject' }),
+      {
+        advanceId: baseAdvance.id,
+        action: 'reject',
+        reason: 'Does not meet eligibility criteria',
+      },
+      expect.anything(),
     );
+  });
+
+  it('does not fire the mutation when the confirm dialog is cancelled', () => {
+    const reviewMutate = vi.fn();
+    setHooks({
+      data: { advances: [baseAdvance], pagination: { totalPages: 1 } },
+      reviewMutate,
+    });
+    render(withQueryClient(createElement(AdminAdvancesPage)));
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+    fireEvent.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel action' }),
+    );
+    expect(reviewMutate).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 
   it('renders Disburse button for an approved advance', () => {
@@ -146,7 +191,13 @@ describe('AdminAdvancesPage', () => {
     render(withQueryClient(createElement(AdminAdvancesPage)));
     const btn = screen.getByRole('button', { name: 'Disburse' });
     fireEvent.click(btn);
-    expect(disburseMutate).toHaveBeenCalledWith(baseAdvance.id);
+    // Money leaves the platform here: nothing fires until the admin confirms.
+    expect(disburseMutate).not.toHaveBeenCalled();
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByText('Disburse working capital advance?')).toBeDefined();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Disburse' }));
+    expect(disburseMutate).toHaveBeenCalledTimes(1);
+    expect(disburseMutate).toHaveBeenCalledWith(baseAdvance.id, expect.anything());
   });
 
   it('renders no actions for a repaid advance', () => {
@@ -178,7 +229,10 @@ describe('AdminAdvancesPage', () => {
     expect(container.textContent).toMatch(/tr_abcdefghijk12/);
   });
 
-  it('renders the spinner inside the Approve button when reviewAdvance is pending', () => {
+  // The per-button spinners were removed with the move to the confirm dialog
+  // (68a582d5); the in-flight signal is now the disabled row buttons (the
+  // dialog itself shows "Processing...").
+  it('disables Approve and Reject while reviewAdvance is pending', () => {
     vi.mocked(useAdminAdvances).mockReturnValue({
       data: { advances: [baseAdvance], pagination: { totalPages: 1 } },
       isLoading: false,
@@ -192,13 +246,12 @@ describe('AdminAdvancesPage', () => {
       mutate: vi.fn(),
       isPending: false,
     } as unknown as ReturnType<typeof useDisburseAdvance>);
-    const { container } = render(withQueryClient(createElement(AdminAdvancesPage)));
-    expect(container.querySelector('.animate-spin')).not.toBeNull();
-    // Approve and Reject are disabled while pending
-    expect(screen.getByRole<HTMLButtonElement>('button', { name: /Approve/i }).disabled).toBe(true);
+    render(withQueryClient(createElement(AdminAdvancesPage)));
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Approve' }).disabled).toBe(true);
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Reject' }).disabled).toBe(true);
   });
 
-  it('renders the spinner inside the Disburse button when disburseAdvance is pending', () => {
+  it('disables Disburse while disburseAdvance is pending', () => {
     vi.mocked(useAdminAdvances).mockReturnValue({
       data: {
         advances: [{ ...baseAdvance, status: 'approved' }],
@@ -215,9 +268,8 @@ describe('AdminAdvancesPage', () => {
       mutate: vi.fn(),
       isPending: true,
     } as unknown as ReturnType<typeof useDisburseAdvance>);
-    const { container } = render(withQueryClient(createElement(AdminAdvancesPage)));
-    expect(container.querySelector('.animate-spin')).not.toBeNull();
-    expect(screen.getByRole<HTMLButtonElement>('button', { name: /Disburse/i }).disabled).toBe(true);
+    render(withQueryClient(createElement(AdminAdvancesPage)));
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Disburse' }).disabled).toBe(true);
   });
 
   it('falls back to truncated contract_id when contract_number is missing', () => {

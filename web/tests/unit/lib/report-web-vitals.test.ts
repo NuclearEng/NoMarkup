@@ -112,7 +112,9 @@ describe('postFieldRum', () => {
     expect(init.method).toBe('POST');
     expect(init.credentials).toBe('omit');
     expect(init.keepalive).toBe(true);
-    const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+    const rawBody = init.body;
+    if (typeof rawBody !== 'string') throw new Error('expected a JSON string body');
+    const body = JSON.parse(rawBody) as Record<string, unknown>;
     expect(Object.keys(body).sort()).toEqual(['name', 'path', 'rating', 'value']);
     expect(body['name']).toBe('LCP');
     expect(body['value']).toBe(1800);

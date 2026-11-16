@@ -97,7 +97,22 @@ jobs:
             echo "::error::No Xcode ${XCODE_MAJOR}.x on this runner image. ASC upload floor is Xcode ${XCODE_MAJOR}.0+ (docs/compliance/testflight-process.md §1) — bump runs-on to an image that ships it (see github.com/actions/runner-images)."
             exit 1
           fi
-          selected="$(printf '%s\n' "${pool[@]}" | sort -V | tail -n1)"
+          # Highest version first, but it must have an iPhone simulator: hosted
+          # images ship several 26.x installs and the newest one sometimes has no
+          # iOS simulator runtime yet (2026-11-16: Xcode 26.3 selected, "Unable to
+          # find a device matching ... name:iPhone 16", only placeholders listed;
+          # the same commit range passed when an older 26.x was the newest).
+          selected=""
+          while IFS= read -r app; do
+            if DEVELOPER_DIR="${app}/Contents/Developer" xcrun simctl list devices available 2>/dev/null | grep -q 'iPhone'; then
+              selected="${app}"; break
+            fi
+            echo "::warning::${app} has no available iPhone simulator; trying an older ${XCODE_MAJOR}.x"
+          done < <(printf '%s\n' "${pool[@]}" | sort -rV)
+          if [ -z "${selected}" ]; then
+            selected="$(printf '%s\n' "${pool[@]}" | sort -V | tail -n1)"
+            echo "::warning::No Xcode ${XCODE_MAJOR}.x on this image has an iPhone simulator; using ${selected}, the test step will list what exists."
+          fi
           echo "Selecting ${selected}"
           sudo xcode-select -s "${selected}/Contents/Developer"
           echo "DEVELOPER_DIR=${selected}/Contents/Developer" >> "$GITHUB_ENV"
@@ -123,10 +138,23 @@ jobs:
       - name: Run unit tests (NoMarkupTests, iOS Simulator)
         run: |
           set -euo pipefail
+          # iPhone 16 when the selected Xcode has it, otherwise the first available
+          # iPhone: the unit tests do not depend on the model. Addressed by id, so
+          # a name with parentheses ("iPhone SE (3rd generation)") cannot be misread.
+          devices="$(xcrun simctl list devices available | grep 'iPhone' || true)"
+          line="$(printf '%s\n' "${devices}" | grep -E '^ *iPhone 16 \(' | head -n1 || true)"
+          if [ -z "${line}" ]; then line="$(printf '%s\n' "${devices}" | head -n1)"; fi
+          udid="$(printf '%s\n' "${line}" | grep -oE '[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}' | head -n1 || true)"
+          if [ -z "${udid}" ]; then
+            xcrun simctl list devices available
+            echo "::error::No iPhone simulator is available for the selected Xcode."
+            exit 1
+          fi
+          echo "Testing on:${line}"
           xcodebuild test \
             -project ios/NoMarkup.xcodeproj \
             -scheme NoMarkup \
-            -destination 'platform=iOS Simulator,name=iPhone 16' \
+            -destination "platform=iOS Simulator,id=${udid}" \
             -only-testing:NoMarkupTests \
             -derivedDataPath ios/DerivedData \
             -resultBundlePath ios/TestResults/NoMarkupTests.xcresult

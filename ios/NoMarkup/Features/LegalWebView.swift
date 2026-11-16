@@ -310,16 +310,17 @@ enum LegalOfflineCopy {
     }
 
     private static let privacyFallback = """
-    This summary is stored in the app because the privacy page could not be loaded. It is not the full policy.
+    This summary is stored in the app for when the privacy page cannot be loaded. It lists the same categories as the in-app privacy manifest.
 
-    The app collects:
-    - Account information you provide, including email and phone
-    - Location when you use the map
-    - Photos you choose for a job or listing
-    - Payments processed by Stripe (the app does not store your full card number)
-    - A device identifier so push notifications can reach this phone
+    The app collects name, email, phone, a user identifier, date of birth for the 18+ check, government-ID or license images you submit, precise job-site check-in location, coarse market location, addresses needed for a job or pickup, photos and videos you choose, chat and other content you post, payment metadata and purchase history processed by Stripe, a device identifier for push, and support messages.
 
-    For privacy requests, email support@no-markup.com. Signed-in users can export data or schedule account deletion under Account, Your data.
+    On a device that can screen images, an upload that cannot be screened or that is flagged as sensitive is refused. Flagged images stay hidden until you choose to show them. The app does not store your full card number.
+
+    We use this information to run the marketplace, take payments and escrow, verify eligibility, send transactional notices, and handle reports and disputes. Service providers that process personal data for us must protect it to the same or equal standard as this policy. We do not sell personal information.
+
+    Signed-in users can export data or schedule deletion under Account. You can turn optional on-device activity recording on or off under Account, Request log.
+
+    For privacy requests, email support@no-markup.com.
     """
 
     private static let guidelinesFallback = """

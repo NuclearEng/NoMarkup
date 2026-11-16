@@ -46,6 +46,8 @@ export interface MarketplaceSpectatorTerminalResult {
   sim: SimulationData;
   providers: typeof ANONYMOUS_PROVIDERS;
   spectatorCount: number;
+  /** Distinct bidders on the listing, from the listing API (`bidder_count`). */
+  bidderCount: number;
   isConnected: boolean;
   auctionEndsAt: string | null;
   startingPriceCents: number;
@@ -55,6 +57,10 @@ export interface MarketplaceSpectatorTerminalResult {
   jobCategory: string;
   isLoading: boolean;
   isError: boolean;
+  /** True while the listing query is in flight (including a retry). */
+  isFetching: boolean;
+  /** Re-run the listing query — the error state's Retry action. */
+  retry: () => void;
 }
 
 /**
@@ -67,7 +73,7 @@ export interface MarketplaceSpectatorTerminalResult {
 export function useMarketplaceSpectatorTerminal(
   listingId: string | undefined,
 ): MarketplaceSpectatorTerminalResult {
-  const { data: listing, isLoading, isError } = useListing(listingId ?? '');
+  const { data: listing, isLoading, isError, isFetching, refetch } = useListing(listingId ?? '');
   const { data: bidHistory } = useListingBids(listingId ?? '');
   const { isConnected, lastBid, watcherCount } = useMarketplaceSpectator(listingId);
 
@@ -274,6 +280,7 @@ export function useMarketplaceSpectatorTerminal(
     sim,
     providers: ANONYMOUS_PROVIDERS,
     spectatorCount: watcherCount,
+    bidderCount: listing?.bidder_count ?? 0,
     isConnected,
     auctionEndsAt: liveEnds,
     startingPriceCents: listing?.starting_price_cents ?? 0,
@@ -284,5 +291,9 @@ export function useMarketplaceSpectatorTerminal(
     jobCategory: listing?.category_name ?? listing?.condition ?? '',
     isLoading,
     isError,
+    isFetching,
+    retry: () => {
+      void refetch();
+    },
   };
 }

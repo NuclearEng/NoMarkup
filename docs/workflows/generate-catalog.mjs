@@ -233,7 +233,12 @@ function walkPages(dir, acc = []) {
 }
 
 function writePagesJson() {
-  const files = walkPages(appDir);
+  // Sort by repo-relative path with a plain code-unit compare: readdir order
+  // differs between filesystems (APFS vs ext4), and CI diffs this file.
+  const files = walkPages(appDir)
+    .map((f) => ({ f, key: relative(root, f).replace(/\\/g, '/') }))
+    .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))
+    .map((x) => x.f);
   const routes = files.map((f) => {
     let rel = relative(appDir, f).replace(/\\/g, '/').replace(/\/page\.tsx$/, '');
     rel = rel
@@ -245,13 +250,12 @@ function writePagesJson() {
     return {
       id: `web.page.${route.replace(/\//g, '.').replace(/^\./, '') || 'home'}`,
       route,
-      file: relative(root, f),
+      file: relative(root, f).replace(/\\/g, '/'),
     };
   });
-  writeFileSync(
-    pagesOut,
-    `${JSON.stringify({ generated: new Date().toISOString().slice(0, 10), routes }, null, 2)}\n`,
-  );
+  // No timestamp: the output must depend only on the page files, so that
+  // `make check-catalog` can fail on drift.
+  writeFileSync(pagesOut, `${JSON.stringify({ routes }, null, 2)}\n`);
   return routes.length;
 }
 

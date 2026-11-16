@@ -162,7 +162,7 @@ vi.mock('@/hooks/useProviderProfile', () => ({
   indexDocumentsByType: (docs: Array<Record<string, unknown>> | undefined) => {
     const map: Record<string, Record<string, unknown>> = {};
     for (const doc of docs ?? []) {
-      const key = String(doc.document_type ?? '');
+      const key = typeof doc.document_type === 'string' ? doc.document_type : '';
       if (!key) continue;
       const existing = map[key];
       const count = Number(doc.resubmission_count ?? 0);

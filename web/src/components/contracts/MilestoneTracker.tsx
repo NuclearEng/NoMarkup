@@ -10,7 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useApproveMilestone, useRequestRevision, useSubmitMilestone } from '@/hooks/useContracts';
 import { MILESTONE_STATUS_DOT_CLASSES } from '@/lib/status-badge-classes';
 import { cn, formatCents } from '@/lib/utils';
-import { revisionNotesSchema } from '@/lib/validations';
+import { REVISION_NOTES_RULE, textRuleError } from '@/lib/text-rules';
 import { useAuthStore } from '@/stores/auth-store';
 import type { Milestone } from '@/types';
 import { MILESTONE_STATUS } from '@/types';
@@ -108,9 +108,9 @@ function MilestoneCard({
   }
 
   function handleRequestRevision() {
-    const result = revisionNotesSchema.safeParse(revisionNotes);
-    if (!result.success) {
-      setValidationError(result.error.issues[0]?.message || 'Invalid revision notes');
+    const error = textRuleError(REVISION_NOTES_RULE, revisionNotes);
+    if (error !== null) {
+      setValidationError(error);
       return;
     }
     setValidationError(null);

@@ -111,8 +111,20 @@ function groupOf(key: string): FlagGroup {
   return FINANCIAL_FLAG_KEYS.has(key) ? FLAG_GROUP.FINANCIAL : FLAG_GROUP.PLATFORM;
 }
 
-function isBinaryOnlyFlag(flag: AdminFeatureFlag): boolean {
+// Wire shape as a pre-migration-115 gateway may still send it: both sticky-%
+// fields can be absent from a stale response even though AdminFeatureFlag
+// declares them required.
+type StaleTolerantFlag = Omit<AdminFeatureFlag, 'binary_only' | 'rollout_percent'> & {
+  binary_only?: boolean;
+  rollout_percent?: number;
+};
+
+function isBinaryOnlyFlag(flag: StaleTolerantFlag): boolean {
   return flag.binary_only ?? BINARY_ONLY_FALLBACK.has(flag.key);
+}
+
+function savedRolloutPercent(flag: StaleTolerantFlag): number {
+  return clampPercent(flag.rollout_percent ?? 100);
 }
 
 function clampPercent(value: number): number {
@@ -156,7 +168,7 @@ interface FlagRowProps {
 function FlagRow({ flag, pending, onToggle, onRollout }: FlagRowProps) {
   const switchId = `flag-${flag.key}`;
   const binary = isBinaryOnlyFlag(flag);
-  const savedPercent = clampPercent(flag.rollout_percent ?? 100);
+  const savedPercent = savedRolloutPercent(flag);
   const [draftPercent, setDraftPercent] = useState(savedPercent);
   const [savingRollout, setSavingRollout] = useState(false);
 
@@ -319,7 +331,7 @@ export default function AdminFlagsPage() {
         enabled: flag.enabled,
         rollout_percent: percent,
       });
-      toast.success(`${flagLabel(flag.key)} rollout set to ${percent}%`);
+      toast.success(`${flagLabel(flag.key)} rollout set to ${String(percent)}%`);
     } catch (err) {
       toast.error(getApiErrorMessage(err, 'Failed to update rollout percent'));
     }

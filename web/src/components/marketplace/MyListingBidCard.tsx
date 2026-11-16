@@ -29,7 +29,7 @@ function remainingRetractMs(createdAt: string, nowMs: number): number {
 
 export const MyListingBidCard = memo(function MyListingBidCard({ entry }: MyListingBidCardProps) {
   const { bid, listing } = entry;
-  const heroPhoto = listing.photos?.[0] ?? null;
+  const heroPhoto = listing.photos[0] ?? null;
   const retract = useRetractListingBid();
 
   // Tick every 250ms while a retract window may still be open so the button

@@ -357,7 +357,7 @@ export function VerificationDocumentsPanel() {
 
 function ExistingDocumentRow({ doc }: { doc: ProviderVerificationDocument }) {
   const locked = isDocumentResubmissionLocked(doc.resubmission_count);
-  const status = doc.status?.toLowerCase() ?? '';
+  const status = doc.status.toLowerCase();
   const resubmissionCount = doc.resubmission_count ?? 0;
   const showResubmission = resubmissionCount > 0 || status === 'rejected';
   const remaining = Math.max(0, MAX_DOCUMENT_RESUBMISSIONS - resubmissionCount);
@@ -521,7 +521,7 @@ function DocumentUploadField({
   const isPdf = document?.file.type === 'application/pdf';
   const resubmissionCount = existing?.resubmission_count ?? 0;
   const showResubmission =
-    resubmissionCount > 0 || existing?.status?.toLowerCase() === 'rejected';
+    resubmissionCount > 0 || existing?.status.toLowerCase() === 'rejected';
   const remaining = Math.max(0, MAX_DOCUMENT_RESUBMISSIONS - resubmissionCount);
 
   return (
@@ -576,7 +576,7 @@ function DocumentUploadField({
             </p>
           ) : null}
         </div>
-        {document || (existing && !locked && existing.status?.toLowerCase() === 'verified') ? (
+        {document || (existing && !locked && existing.status.toLowerCase() === 'verified') ? (
           <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-400" aria-label="Uploaded" />
         ) : null}
       </div>

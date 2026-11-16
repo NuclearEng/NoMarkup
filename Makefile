@@ -10,7 +10,7 @@ generate-catalog:
 	node docs/workflows/generate-catalog.mjs
 
 check-catalog: generate-catalog
-	git diff --exit-code -- docs/workflows/catalog.json
+	git diff --exit-code -- docs/workflows/catalog.json docs/workflows/pages.json
 
 # Catalog-driven E2E. CI (no SEED_PASSWORD) runs the VCR/backendless path.
 # Full login + hop walk needs bin/dev + SEED_PASSWORD.

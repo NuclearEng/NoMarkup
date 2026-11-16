@@ -2,7 +2,7 @@ module github.com/nomarkup/nomarkup/services/job
 
 go 1.26.0
 
-toolchain go1.26.5
+toolchain go1.26.11
 
 require (
 	github.com/exaring/otelpgx v0.11.1
@@ -27,7 +27,7 @@ require (
 )
 
 require (
-	github.com/andybalholm/brotli v1.1.1 // indirect
+	github.com/andybalholm/brotli v1.2.7 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect

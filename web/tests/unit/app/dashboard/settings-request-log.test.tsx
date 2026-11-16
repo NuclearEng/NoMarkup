@@ -9,7 +9,7 @@ import {
 
 import { withQueryClient } from './_helpers';
 
-const fetchMeActivity = vi.fn();
+const fetchMeActivity = vi.fn<(...args: unknown[]) => Promise<unknown>>();
 let isAuthenticated = true;
 
 vi.mock('next/navigation', () => ({

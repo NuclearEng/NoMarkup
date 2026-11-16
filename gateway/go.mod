@@ -2,7 +2,7 @@ module github.com/nomarkup/nomarkup/gateway
 
 go 1.26.0
 
-toolchain go1.26.5
+toolchain go1.26.11
 
 require (
 	github.com/MicahParks/keyfunc/v3 v3.8.0
@@ -36,7 +36,7 @@ require (
 require (
 	cloud.google.com/go/compute/metadata v0.9.0 // indirect
 	github.com/MicahParks/jwkset v0.11.0 // indirect
-	github.com/andybalholm/brotli v1.1.1 // indirect
+	github.com/andybalholm/brotli v1.2.7 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect

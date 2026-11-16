@@ -185,29 +185,48 @@ describe('PaymentMethodsPage', () => {
     expect(screen.getByTestId('add-pm-form')).toBeDefined();
   });
 
-  it('renders Setup Required badge when stripe account is not charges_enabled', () => {
-    setHooks({ stripeData: { charges_enabled: false } });
+  // The payout section is the shared <StripeOnboarding /> surface since
+  // 68a582d5 ("Full onboarding surface (create + embedded resume) — not
+  // create-only"), which replaced this page's inline badge/CTA markup
+  // ("Setup Required", "Active", "Set Up Payouts"). The scenarios below are
+  // the same ones the inline markup was tested for, asserted against what the
+  // page renders now.
+  it('renders the setup-incomplete state when the stripe account is not payout-ready', () => {
+    setHooks({ stripeData: { account_exists: true, charges_enabled: false, payouts_enabled: false, details_submitted: true } });
     render(withQueryClient(createElement(PaymentMethodsPage)));
-    expect(screen.getByText('Setup Required')).toBeDefined();
+    expect(screen.getByRole('heading', { name: 'Complete Stripe setup' })).toBeDefined();
+    expect(screen.queryByRole('heading', { name: 'Stripe connected' })).toBeNull();
   });
 
-  it('renders Active badge when stripe account is charges_enabled', () => {
-    setHooks({ stripeData: { charges_enabled: true } });
+  it('renders the connected state when the stripe account is payout-ready', () => {
+    setHooks({
+      stripeData: {
+        account_exists: true,
+        charges_enabled: true,
+        payouts_enabled: true,
+        details_submitted: true,
+        transfers_ready: true,
+      },
+    });
     render(withQueryClient(createElement(PaymentMethodsPage)));
-    expect(screen.getByText('Active')).toBeDefined();
+    expect(screen.getByRole('heading', { name: 'Stripe connected' })).toBeDefined();
+    expect(screen.queryByRole('heading', { name: 'Complete Stripe setup' })).toBeNull();
   });
 
   it('renders the connect Stripe CTA when no stripe account is connected', () => {
     setHooks({ stripeData: undefined });
     render(withQueryClient(createElement(PaymentMethodsPage)));
-    expect(screen.getByRole('button', { name: 'Set Up Payouts' })).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Connect with Stripe' })).toBeDefined();
   });
 
-  it('shows the customer-only fallback when stripe status errors out', () => {
+  // Customers no longer reach an error fallback at all — the section is hidden
+  // for them (see the customer-role tests below). For a provider, a failed
+  // status load is surfaced next to the onboarding card.
+  it('tells a provider when the Connect status could not be loaded', () => {
     setHooks({ stripeError: true });
     render(withQueryClient(createElement(PaymentMethodsPage)));
     expect(
-      screen.getByText('Payout settings are only available for provider accounts.'),
+      screen.getByText('Could not load Connect status. Try again from the card above.'),
     ).toBeDefined();
   });
 
@@ -236,11 +255,11 @@ describe('PaymentMethodsPage', () => {
     expect(screen.queryByTestId('add-pm-form')).toBeNull();
   });
 
-  it('invokes createStripeAccount mutateAsync when Set Up Payouts is clicked', () => {
+  it('invokes createStripeAccount mutateAsync when Connect with Stripe is clicked', () => {
     const mutateAsync = vi.fn().mockResolvedValue(undefined);
     setHooks({ stripeData: undefined, createMutateAsync: mutateAsync });
     render(withQueryClient(createElement(PaymentMethodsPage)));
-    fireEvent.click(screen.getByRole('button', { name: 'Set Up Payouts' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Connect with Stripe' }));
     expect(mutateAsync).toHaveBeenCalledTimes(1);
   });
 
@@ -278,27 +297,37 @@ describe('PaymentMethodsPage', () => {
     await Promise.resolve();
   });
 
-  it('renders provider connected with charges_enabled true and active state', () => {
-    setHooks({ stripeData: { charges_enabled: true } });
+  it('renders the payout-ready guidance text for a connected provider', () => {
+    setHooks({
+      stripeData: {
+        account_exists: true,
+        charges_enabled: true,
+        payouts_enabled: true,
+        details_submitted: true,
+        transfers_ready: true,
+      },
+    });
     render(withQueryClient(createElement(PaymentMethodsPage)));
-    expect(screen.getByText('Active')).toBeDefined();
     expect(
-      screen.getByText('Your Stripe account is connected and ready to receive payouts.'),
+      screen.getByText('Your account is ready to receive payouts for completed work.'),
     ).toBeDefined();
+    expect(screen.getByText('Payouts enabled')).toBeDefined();
   });
 
-  it('renders provider with charges_enabled false guidance text', () => {
-    setHooks({ stripeData: { charges_enabled: false } });
+  it('renders the finish-setup guidance text when the account is not payout-ready', () => {
+    setHooks({ stripeData: { account_exists: true, charges_enabled: false, payouts_enabled: false, details_submitted: true } });
     render(withQueryClient(createElement(PaymentMethodsPage)));
     expect(
-      screen.getByText('Complete your Stripe account setup to receive payouts for completed jobs.'),
+      screen.getByText(
+        'Your Stripe account needs additional information before you can receive payouts.',
+      ),
     ).toBeDefined();
   });
 
   // --- Customer role: the provider payout (Stripe Connect) section is hidden
   // and the provider-only status query is gated off, so no 403 fires. ---
 
-  it('shows Set as default only for non-default methods and calls the hook', async () => {
+  it('shows Set as default only for non-default methods and calls the hook', () => {
     const setDefault = vi.fn().mockResolvedValue(undefined);
     setHooks({
       methods: [
@@ -334,7 +363,7 @@ describe('PaymentMethodsPage', () => {
     setHooks({ stripeData: { charges_enabled: true } });
     render(withQueryClient(createElement(PaymentMethodsPage)));
     expect(screen.queryByText('Provider Payouts')).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Set Up Payouts' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Connect with Stripe' })).toBeNull();
     // The customer still sees their saved-cards section.
     expect(screen.getByText('Saved Payment Methods')).toBeDefined();
   });

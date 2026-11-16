@@ -17,7 +17,7 @@ import {
 
 import { GradientMesh } from '@/components/landing/GradientMesh';
 import { TerminalToolbar } from '@/components/terminal/terminal-toolbar';
-import { TerminalGrid } from '@/components/terminal/terminal-grid';
+import { LazyTerminalGrid, preloadTerminalGrid } from '@/components/terminal/terminal-grid-lazy';
 import { Badge } from '@/components/ui/badge';
 import { Slider } from '@/components/ui/slider';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -187,6 +187,9 @@ export default function AuctionReplayPage() {
   const jobId = params.id;
   const replay = useReplayTerminal(jobId);
   const [overlayDismissed, setOverlayDismissed] = useState(false);
+
+  // Fetch the grid's code while the auction data loads (see terminal-grid-lazy).
+  useEffect(preloadTerminalGrid, []);
 
   // Reset overlay dismissal when replay restarts (isComplete goes false)
   useEffect(() => {
@@ -417,7 +420,7 @@ export default function AuctionReplayPage() {
 
       {/* ─── Terminal grid ─── */}
       <div className="relative z-[2] mx-auto max-w-[1400px] px-4 py-4 sm:px-6">
-        <TerminalGrid
+        <LazyTerminalGrid
           sim={replay.sim}
           auctionEndsAt={auctionEndsAt}
           startingPriceCents={replay.startingBidCents}

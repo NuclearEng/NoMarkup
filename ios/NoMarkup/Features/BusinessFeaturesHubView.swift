@@ -586,7 +586,7 @@ struct InsuranceQuoteFlowView: View {
                     }
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(BrandTheme.gold)
+                .tint(BrandTheme.goldBright)
                 .foregroundStyle(BrandTheme.ctaLabelOnGold)
                 .disabled(isQuoting || selectedProductId == nil)
                 .listRowBackground(BrandTheme.navyElevated)
@@ -656,7 +656,7 @@ struct InsuranceQuoteFlowView: View {
                             }
                         }
                         .buttonStyle(.borderedProminent)
-                        .tint(BrandTheme.gold)
+                        .tint(BrandTheme.goldBright)
                         .foregroundStyle(BrandTheme.ctaLabelOnGold)
                         .disabled(isPurchasing || selectedPaymentMethodId == nil)
                         .listRowBackground(BrandTheme.navyElevated)
@@ -876,7 +876,7 @@ struct AdvancesView: View {
                     }
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(BrandTheme.gold)
+                .tint(BrandTheme.goldBright)
                 .foregroundStyle(BrandTheme.ctaLabelOnGold)
                 .disabled(isRequesting)
                 .listRowBackground(BrandTheme.navyElevated)
@@ -1096,7 +1096,7 @@ struct InstantPayoutView: View {
                     }
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(BrandTheme.gold)
+                .tint(BrandTheme.goldBright)
                 .foregroundStyle(BrandTheme.ctaLabelOnGold)
                 .disabled(isSubmitting)
                 .listRowBackground(BrandTheme.navyElevated)

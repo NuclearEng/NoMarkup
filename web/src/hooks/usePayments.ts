@@ -52,7 +52,7 @@ function createPaymentOpKey(input: CreatePaymentInput): string {
   // Sticky per contract+amount+instance so retries soft-replay the same PI.
   // Instance-scoped for FR-18 visits (matches iOS create-payment key shape).
   const inst = input.recurring_instance_id ?? input.milestone_id ?? '';
-  return `create-payment:${input.contract_id ?? ''}:${String(input.amount_cents)}:${inst}`;
+  return `create-payment:${input.contract_id}:${String(input.amount_cents)}:${inst}`;
 }
 
 export function useCreatePayment() {

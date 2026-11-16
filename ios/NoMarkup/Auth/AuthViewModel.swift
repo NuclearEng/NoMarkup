@@ -119,9 +119,18 @@ final class AuthViewModel: ObservableObject {
 
     private let tokenStore = KeychainTokenStore()
     private let api = APIClient.shared
+    /// Shown for the last 20 seconds of the role idle window, with Stay signed in.
+    @Published var sessionEndingSoon = false
+
     /// NotificationCenter token for mid-session expiry (posted by APIClient).
-    /// `nonisolated(unsafe)` so `deinit` can remove the observer without MainActor hop.
+    // SAFETY: written on the main actor in init and removed in deinit of this instance. Not shared across tasks.
     nonisolated(unsafe) private var sessionExpiredObserver: NSObjectProtocol?
+    // SAFETY: same lifetime as sessionExpiredObserver. Removed in deinit. Not shared across tasks.
+    nonisolated(unsafe) private var sessionActivityObserver: NSObjectProtocol?
+
+    private var idleTouchAt: Date?
+    private var idleWindow: TimeInterval = SessionIdleWindow.defaultSeconds
+    private var idleWatchTask: Task<Void, Never>?
 
     /// Bumped on every successful auth write and on sign-out. In-flight Keychain
     /// restore / stale `.noMarkupSessionExpired` handlers compare against this so
@@ -197,6 +206,9 @@ final class AuthViewModel: ObservableObject {
         if let sessionExpiredObserver {
             NotificationCenter.default.removeObserver(sessionExpiredObserver)
         }
+        if let sessionActivityObserver {
+            NotificationCenter.default.removeObserver(sessionActivityObserver)
+        }
     }
 
     /// Restore from Keychain.
@@ -218,6 +230,7 @@ final class AuthViewModel: ObservableObject {
         // Optimistic signed-in while (optional) refresh runs so RootView doesn't flash login.
         isAuthenticated = true
         isScaffoldSession = false
+        noteAuthenticatedActivity()
 
         if hasRefresh {
             Task { await restoreViaRefresh() }
@@ -232,6 +245,7 @@ final class AuthViewModel: ObservableObject {
             guard epoch == sessionEpoch else { return }
             isScaffoldSession = false
             isAuthenticated = true
+            noteAuthenticatedActivity()
         } catch let error as APIClientError where error.isUnauthorized {
             guard epoch == sessionEpoch else { return }
             // Definitive auth failure — clear session so RootView returns to LoginView.
@@ -253,6 +267,15 @@ final class AuthViewModel: ObservableObject {
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.handleSessionExpiredNotification()
+            }
+        }
+        sessionActivityObserver = NotificationCenter.default.addObserver(
+            forName: .noMarkupAuthenticatedActivity,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.noteAuthenticatedActivity()
             }
         }
     }
@@ -282,6 +305,10 @@ final class AuthViewModel: ObservableObject {
     /// server-confirmed auth death (not network blips).
     /// RootView observes `isAuthenticated` → false and already calls `push.resetSessionState()`.
     private func handleDefinitiveAuthFailure(reason: AuthFailureReason) {
+        idleWatchTask?.cancel()
+        idleWatchTask = nil
+        idleTouchAt = nil
+        sessionEndingSoon = false
         beginNewSessionEpoch()
         // Capture Bearer and end activities before Keychain clear. Unregister
         // must not re-read Keychain or block the signed-out UI flip.
@@ -301,6 +328,7 @@ final class AuthViewModel: ObservableObject {
         switch reason {
         case .refreshRejected, .sessionExpired:
             statusMessage = "Your session expired. Please sign in again."
+            AccessibilityNotification.Announcement("Your session expired. Please sign in again.").post()
         }
         Task {
             await Self.unregisterPushDevice(
@@ -324,7 +352,60 @@ final class AuthViewModel: ObservableObject {
 
     /// Notify app root to re-fetch feature flags after a successful interactive sign-in.
     private func notifyAuthSucceeded() {
+        noteAuthenticatedActivity()
         NotificationCenter.default.post(name: .noMarkupAuthDidSucceed, object: nil)
+    }
+
+    /// Reset the idle clock from a successful sign-in or an authenticated response.
+    /// The window matches the server role timeout. Stay signed in can extend it.
+    func noteAuthenticatedActivity(accessToken: String? = nil) {
+        guard isAuthenticated, !isScaffoldSession else { return }
+        idleTouchAt = Date()
+        let token = accessToken ?? (try? tokenStore.read(.accessToken))
+        if let token, let roles = AccessTokenClaimsReader.roles(in: token), !roles.isEmpty {
+            idleWindow = SessionIdleWindow.seconds(for: roles)
+        }
+        sessionEndingSoon = false
+        scheduleIdleWarning()
+    }
+
+    func staySignedIn() async {
+        let epoch = sessionEpoch
+        do {
+            let pair = try await api.refreshSession()
+            guard epoch == sessionEpoch else { return }
+            noteAuthenticatedActivity(accessToken: pair.accessToken)
+            AccessibilityNotification.Announcement("You stayed signed in.").post()
+        } catch {
+            guard epoch == sessionEpoch else { return }
+            handleDefinitiveAuthFailure(reason: .sessionExpired)
+        }
+    }
+
+    private func scheduleIdleWarning() {
+        idleWatchTask?.cancel()
+        guard isAuthenticated, !isScaffoldSession, let touch = idleTouchAt else {
+            sessionEndingSoon = false
+            return
+        }
+        let epoch = sessionEpoch
+        let warnAt = touch.addingTimeInterval(idleWindow - SessionIdleWindow.warningLead)
+        let endAt = touch.addingTimeInterval(idleWindow)
+        idleWatchTask = Task { @MainActor [weak self] in
+            let warnDelay = warnAt.timeIntervalSinceNow
+            if warnDelay > 0 {
+                try? await Task.sleep(nanoseconds: UInt64(warnDelay * 1_000_000_000))
+            }
+            guard !Task.isCancelled, let self, self.sessionEpoch == epoch, self.isAuthenticated, !self.isScaffoldSession else { return }
+            self.sessionEndingSoon = true
+            AccessibilityNotification.Announcement("Your session will end soon. Choose Stay signed in to keep your place.").post()
+            let endDelay = endAt.timeIntervalSinceNow
+            if endDelay > 0 {
+                try? await Task.sleep(nanoseconds: UInt64(endDelay * 1_000_000_000))
+            }
+            guard !Task.isCancelled, self.sessionEpoch == epoch, self.isAuthenticated, !self.isScaffoldSession else { return }
+            self.handleDefinitiveAuthFailure(reason: .sessionExpired)
+        }
     }
 
     /// Adopt a session already written to Keychain (e.g. passkey verify).
@@ -546,6 +627,10 @@ final class AuthViewModel: ObservableObject {
     }
 
     func signOut() {
+        idleWatchTask?.cancel()
+        idleWatchTask = nil
+        idleTouchAt = nil
+        sessionEndingSoon = false
         beginNewSessionEpoch()
         // Capture tokens first — Keychain must be empty before this returns so a
         // force-quit cannot restore the session, and a fast re-login cannot be
@@ -671,6 +756,18 @@ final class AuthViewModel: ObservableObject {
                 errorMessage = "Sign in with Apple could not be verified on this attempt. Please try again."
                 return
             }
+            guard let codeData = credential.authorizationCode,
+                  let authorizationCode = String(data: codeData, encoding: .utf8),
+                  !authorizationCode.isEmpty
+            else {
+                errorMessage = "Sign in with Apple did not return an authorization code."
+                return
+            }
+            let appleUserID = credential.user.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !appleUserID.isEmpty else {
+                errorMessage = "Sign in with Apple did not return a user id."
+                return
+            }
 
             var fullName: String?
             if let name = credential.fullName {
@@ -680,17 +777,13 @@ final class AuthViewModel: ObservableObject {
                 }
             }
 
-            // Single-use code; the gateway trades it for an Apple refresh token
-            // (stored encrypted) so account deletion can revoke the SIWA grant.
-            let authorizationCode = credential.authorizationCode
-                .flatMap { String(data: $0, encoding: .utf8) }
-
             Task {
                 await exchangeAppleIdentityToken(
                     identityToken,
+                    authorizationCode: authorizationCode,
+                    appleUserID: appleUserID,
                     fullName: fullName,
-                    nonce: rawNonce,
-                    authorizationCode: authorizationCode
+                    nonce: rawNonce
                 )
             }
         case .failure(let error):
@@ -782,9 +875,10 @@ final class AuthViewModel: ObservableObject {
     /// - Parameter nonce: RAW request nonce (gateway re-hashes; required for native).
     private func exchangeAppleIdentityToken(
         _ identityToken: String,
+        authorizationCode: String,
+        appleUserID: String,
         fullName: String?,
-        nonce: String?,
-        authorizationCode: String? = nil
+        nonce: String?
     ) async {
         guard !isBusy else { return }
         isLoading = true
@@ -792,13 +886,63 @@ final class AuthViewModel: ObservableObject {
         do {
             let result = try await api.signInWithApple(
                 identityToken: identityToken,
+                authorizationCode: authorizationCode,
+                appleUserID: appleUserID,
                 fullName: fullName,
-                nonce: nonce,
-                authorizationCode: authorizationCode
+                nonce: nonce
             )
             applyOAuthLoginResult(result, successMessage: "Signed in with Apple.")
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+}
+
+/// Role idle windows. Matches gateway `idleTTLForRoles`: the smallest recognized role wins.
+enum SessionIdleWindow {
+    static let warningLead: TimeInterval = 20
+    static let defaultSeconds: TimeInterval = 30 * 60
+
+    static func seconds(for roles: [String]) -> TimeInterval {
+        var ttl: TimeInterval = 0
+        for role in roles {
+            let candidate: TimeInterval
+            switch role {
+            case "customer":
+                candidate = 60 * 60
+            case "provider":
+                candidate = 120 * 60
+            case "admin":
+                candidate = 30 * 60
+            default:
+                continue
+            }
+            if ttl == 0 || candidate < ttl {
+                ttl = candidate
+            }
+        }
+        return ttl == 0 ? defaultSeconds : ttl
+    }
+}
+
+/// Reads `roles` from an access-token payload to pick the idle window.
+/// This does not authenticate the token. The server still enforces the window.
+enum AccessTokenClaimsReader {
+    struct Payload: Decodable {
+        var roles: [String]?
+    }
+
+    static func roles(in jwt: String) -> [String]? {
+        let parts = jwt.split(separator: ".")
+        guard parts.count >= 2 else { return nil }
+        var base64 = String(parts[1])
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        let remainder = base64.count % 4
+        if remainder != 0 {
+            base64 += String(repeating: "=", count: 4 - remainder)
+        }
+        guard let data = Data(base64Encoded: base64) else { return nil }
+        return try? JSONDecoder().decode(Payload.self, from: data).roles
     }
 }

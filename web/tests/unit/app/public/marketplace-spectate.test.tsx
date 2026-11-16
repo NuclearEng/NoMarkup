@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { withQueryClient } from '../dashboard/_helpers';
 import { LISTING_STATUS } from '@/types';
-import type { ListingDetail } from '@/types';
+import type { ListingBidHistory, ListingDetail } from '@/types';
 
 const listingState: {
   data: ListingDetail | undefined;
@@ -21,7 +21,7 @@ const listingState: {
   refetch: vi.fn(),
 };
 
-const bidsState = { data: undefined };
+const bidsState: { data: ListingBidHistory | undefined } = { data: undefined };
 
 const spectatorState: {
   isConnected: boolean;
@@ -53,12 +53,30 @@ vi.mock('@/components/landing/GradientMesh', () => ({
   GradientMesh: () => createElement('div', { 'data-testid': 'gradient-mesh' }),
 }));
 
-vi.mock('@/components/jobs/AuctionTimer', () => ({
-  AuctionTimer: () => createElement('div', { 'data-testid': 'timer' }),
+// Since afe7d21a the page is a thin shell around the shared TerminalGrid
+// (hero price, bid count and timer are terminal widgets with their own tests,
+// and need ResizeObserver/tooltip providers). Stub the grid like the jobs
+// spectate test does and assert the data the page feeds it. The adapter hook
+// useMarketplaceSpectatorTerminal is NOT mocked: it runs for real on top of
+// the mocked listing/bids/spectator hooks below.
+interface GridProps {
+  sim: { currentLowest: number | undefined; bidCount: number; isRunning: boolean };
+  auctionEndsAt: string;
+  startingPriceCents: number;
+  jobId: string;
+  jobTitle: string;
+}
+const gridProps: { last: GridProps | undefined } = { last: undefined };
+
+vi.mock('@/components/terminal/terminal-grid', () => ({
+  TerminalGrid: (props: GridProps) => {
+    gridProps.last = props;
+    return createElement('div', { 'data-testid': 'terminal-grid' });
+  },
 }));
 
-vi.mock('@/components/ui/sparkline', () => ({
-  Sparkline: () => createElement('div', { 'data-testid': 'sparkline' }),
+vi.mock('@/components/terminal/terminal-toolbar', () => ({
+  TerminalToolbar: () => createElement('div', { 'data-testid': 'terminal-toolbar' }),
 }));
 
 vi.mock('@/hooks/useListings', () => ({
@@ -71,6 +89,10 @@ vi.mock('@/hooks/useMarketplaceSpectator', () => ({
 }));
 
 import SpectatePage from '@/app/(public)/marketplace/[id]/spectate/page';
+
+function renderPage() {
+  return render(withQueryClient(createElement(SpectatePage)));
+}
 
 const detail: ListingDetail = {
   id: 'l-1',
@@ -111,6 +133,8 @@ const detail: ListingDetail = {
 };
 
 beforeEach(() => {
+  gridProps.last = undefined;
+  bidsState.data = undefined;
   listingState.data = undefined;
   listingState.isLoading = false;
   listingState.isError = false;
@@ -128,29 +152,47 @@ afterEach(() => {
 describe('SpectatePage', () => {
   it('renders the loading skeleton when loading', () => {
     listingState.isLoading = true;
-    render(withQueryClient(createElement(SpectatePage)));
+    renderPage();
     expect(screen.getByRole('status', { name: 'Loading auction' })).toBeDefined();
   });
 
   it('renders Retry on error and invokes refetch', () => {
     listingState.isError = true;
     listingState.data = undefined;
-    render(withQueryClient(createElement(SpectatePage)));
+    renderPage();
     expect(screen.getByText('Failed to load listing')).toBeDefined();
     screen.getByRole('button', { name: /Retry/i }).click();
     expect(listingState.refetch).toHaveBeenCalled();
   });
 
+  // The count was on the page until afe7d21a rebuilt it around TerminalGrid.
+  it('shows how many bidders the listing has, even with the socket down', () => {
+    listingState.data = detail;
+    renderPage();
+    expect(screen.getByTestId('spectate-bidder-count').textContent).toBe('4 bidders');
+  });
+
+  it('uses the singular for one bidder and shows zero honestly', () => {
+    listingState.data = { ...detail, bidder_count: 1 };
+    const first = renderPage();
+    expect(screen.getByTestId('spectate-bidder-count').textContent).toBe('1 bidder');
+    first.unmount();
+
+    listingState.data = { ...detail, bidder_count: 0 };
+    renderPage();
+    expect(screen.getByTestId('spectate-bidder-count').textContent).toBe('0 bidders');
+  });
+
   it('renders the SPECTATE badge', () => {
     listingState.data = detail;
-    render(withQueryClient(createElement(SpectatePage)));
+    renderPage();
     expect(screen.getByText('SPECTATE')).toBeDefined();
   });
 
   it('does not claim LIVE when the spectator socket is disconnected', () => {
     listingState.data = detail;
     spectatorState.isConnected = false;
-    render(withQueryClient(createElement(SpectatePage)));
+    renderPage();
     expect(screen.getByText('OFFLINE')).toBeDefined();
     expect(screen.queryByText('LIVE')).toBeNull();
   });
@@ -159,25 +201,50 @@ describe('SpectatePage', () => {
     listingState.data = detail;
     spectatorState.isConnected = true;
     spectatorState.connectionStatus = 'connected';
-    render(withQueryClient(createElement(SpectatePage)));
+    renderPage();
     expect(screen.getByText('LIVE')).toBeDefined();
   });
 
-  it('renders the current bid as the hero number', () => {
+  it('feeds the current high bid to the terminal as the hero price', () => {
     listingState.data = detail;
-    render(withQueryClient(createElement(SpectatePage)));
-    expect(screen.getByText('$85.00')).toBeDefined();
+    renderPage();
+    expect(screen.getByTestId('terminal-grid')).toBeDefined();
+    // Goods are ascending auctions: the terminal's price slot carries the
+    // leading (high) bid, here the listing's current bid of $85.00.
+    expect(gridProps.last?.sim.currentLowest).toBe(8500);
+    expect(gridProps.last?.startingPriceCents).toBe(5000);
+    expect(gridProps.last?.jobId).toBe('l-1');
+    expect(gridProps.last?.jobTitle).toBe('Spectator listing');
   });
 
-  it('renders the bidder/bid count summary line', () => {
+  it('feeds the bid history count and leading bid to the terminal', () => {
     listingState.data = detail;
-    render(withQueryClient(createElement(SpectatePage)));
-    expect(screen.getByText(/4 bidders · 9 bids/)).toBeDefined();
+    const mkBid = (id: string, amount: number, at: string) => ({
+      id,
+      listing_id: 'l-1',
+      bidder_id: `b-${id}`,
+      bidder_display_name: '',
+      amount_cents: amount,
+      is_winning: false,
+      created_at: at,
+    });
+    bidsState.data = {
+      bids: [
+        mkBid('1', 6000, '2026-04-20T01:00:00Z'),
+        mkBid('2', 7000, '2026-04-20T02:00:00Z'),
+        mkBid('3', 8500, '2026-04-20T03:00:00Z'),
+      ],
+      current_bid_cents: 8500,
+      bidder_count: 3,
+    };
+    renderPage();
+    expect(gridProps.last?.sim.bidCount).toBe(3);
+    expect(gridProps.last?.sim.currentLowest).toBe(8500);
   });
 
-  it('renders the timer panel', () => {
+  it('feeds the auction end time to the terminal timer', () => {
     listingState.data = detail;
-    render(withQueryClient(createElement(SpectatePage)));
-    expect(screen.getByTestId('timer')).toBeDefined();
+    renderPage();
+    expect(gridProps.last?.auctionEndsAt).toBe(detail.auction_ends_at);
   });
 });

@@ -302,7 +302,7 @@ extension APIClient {
     @discardableResult
     func generateTaxForm(year: Int) async throws -> TaxForm {
         guard year >= 2020, year <= 2100 else {
-            throw APIClientError.httpStatus(400, detail: "Invalid tax year.")
+            throw APIClientError.httpStatus(400, detail: "Enter a tax year from 2020 through 2100.")
         }
         let response: TaxFormEnvelope = try await postJSON(
             pathComponents: ["api", "v1", "providers", "me", "tax-forms", String(year), "generate"],
@@ -318,7 +318,7 @@ extension APIClient {
     /// GET `/api/v1/providers/me/tax-forms/{year}/download` — HTML 1099-NEC attachment bytes.
     func downloadTaxForm(year: Int) async throws -> Data {
         guard year >= 2020, year <= 2100 else {
-            throw APIClientError.httpStatus(400, detail: "Invalid tax year.")
+            throw APIClientError.httpStatus(400, detail: "Enter a tax year from 2020 through 2100.")
         }
         return try await getData(
             pathComponents: ["api", "v1", "providers", "me", "tax-forms", String(year), "download"],

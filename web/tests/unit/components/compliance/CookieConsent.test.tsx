@@ -118,8 +118,8 @@ describe('CookieConsent', () => {
         <CookieConsent />
       </Wrapper>,
     );
-    const analytics = screen.getByTestId('cookie-consent-analytics') as HTMLInputElement;
-    const marketing = screen.getByTestId('cookie-consent-marketing') as HTMLInputElement;
+    const analytics = screen.getByTestId<HTMLInputElement>('cookie-consent-analytics');
+    const marketing = screen.getByTestId<HTMLInputElement>('cookie-consent-marketing');
     expect(analytics.checked).toBe(false);
     expect(marketing.checked).toBe(false);
   });

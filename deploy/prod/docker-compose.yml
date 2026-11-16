@@ -190,9 +190,12 @@ services:
       VERIFICATION_SECRET: ${VERIFICATION_SECRET:-}
       BASE_URL: ${BASE_URL:-https://no-markup.com}
       FRONTEND_URL: ${FRONTEND_URL:-https://no-markup.com}
-      # Sign in with Apple token revocation on account deletion. When
-      # APPLE_CLIENT_ID is set the other three are required (startup fails).
+      # Sign in with Apple token revocation on account deletion. The client
+      # secret is APPLE_CLIENT_SECRET when set, otherwise minted from
+      # APPLE_TEAM_ID / APPLE_KEY_ID / APPLE_PRIVATE_KEY. With APPLE_CLIENT_ID
+      # set and no static secret, a partial key triple fails startup.
       APPLE_CLIENT_ID: ${APPLE_CLIENT_ID:-}
+      APPLE_CLIENT_SECRET: ${APPLE_CLIENT_SECRET:-}
       APPLE_NATIVE_CLIENT_ID: ${APPLE_NATIVE_CLIENT_ID:-}
       APPLE_TEAM_ID: ${APPLE_TEAM_ID:-}
       APPLE_KEY_ID: ${APPLE_KEY_ID:-}

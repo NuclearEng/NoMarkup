@@ -158,7 +158,7 @@ struct ProviderInvoicesView: View {
                     }
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(BrandTheme.gold)
+                .tint(BrandTheme.goldBright)
                 .foregroundStyle(BrandTheme.ctaLabelOnGold)
                 .disabled(downloadingID != nil)
                 .accessibilityLabel("Share invoice for \(contract.displayTitle)")

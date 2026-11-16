@@ -21,7 +21,6 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 	"github.com/nomarkup/nomarkup/gateway/internal/sessionflag"
-	"github.com/nomarkup/nomarkup/pkg/appleauth"
 	userv1 "github.com/nomarkup/nomarkup/proto/user/v1"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
@@ -98,11 +97,7 @@ type OAuthHandler struct {
 	sessionSecret []byte
 	frontendURL   string
 	authMW        *middleware.AuthMiddleware
-
-	// Sign in with Apple refresh-token capture for revocation on account
-	// deletion (see apple_tokens.go). Nil = disabled.
-	appleExchanger  appleCodeExchanger
-	appleTokenSaver AppleRefreshTokenSaver
+	appleRefresh  AppleRefreshSaver
 }
 
 // NewOAuthHandler creates a new OAuthHandler.
@@ -125,6 +120,38 @@ func NewOAuthHandler(userClient userv1.UserServiceClient, secureCookie bool, ses
 func (h *OAuthHandler) WithIdleSession(authMW *middleware.AuthMiddleware) *OAuthHandler {
 	h.authMW = authMW
 	return h
+}
+
+// WithAppleRefreshSaver stores Apple refresh tokens after a code exchange so
+// account deletion can revoke them. Nil skips storage outside production.
+func (h *OAuthHandler) WithAppleRefreshSaver(saver AppleRefreshSaver) *OAuthHandler {
+	h.appleRefresh = saver
+	return h
+}
+
+// persistAppleRefresh keeps the refresh token returned by Apple's token endpoint.
+// An empty token is ignored (Apple omits it on some repeat web exchanges).
+// Production and staging fail the request when the token cannot be stored.
+func (h *OAuthHandler) persistAppleRefresh(ctx context.Context, userID, clientID, refreshToken string) error {
+	refreshToken = strings.TrimSpace(refreshToken)
+	if refreshToken == "" {
+		return nil
+	}
+	if h.appleRefresh == nil {
+		if appleRefreshStoreRequired() {
+			return errors.New("apple refresh token store is not configured")
+		}
+		slog.Warn("apple refresh token not stored; saver is not configured")
+		return nil
+	}
+	if err := h.appleRefresh.SaveAppleRefreshToken(ctx, userID, clientID, refreshToken); err != nil {
+		if !appleRefreshStoreRequired() && errors.Is(err, errAppleRefreshColumnMissing) {
+			slog.Warn("apple refresh token column missing; run migration 136", "error", err)
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
 func (h *OAuthHandler) seedIdleSession(ctx context.Context, accessToken, fallbackUserID string) {
@@ -159,24 +186,9 @@ func googleOAuthConfig() *oauth2.Config {
 }
 
 // appleWebClientSecret returns the client_secret for the web (Services ID)
-// code exchange. A static APPLE_CLIENT_SECRET wins for backward
-// compatibility; otherwise a fresh ES256 JWT is minted from APPLE_TEAM_ID,
-// APPLE_KEY_ID and APPLE_PRIVATE_KEY so the secret never expires (Apple caps
-// a client-secret JWT at 6 months). Returns "" when neither is configured.
+// code exchange. See appleClientSecret. Returns "" when not configured.
 func appleWebClientSecret() string {
-	if v := strings.TrimSpace(os.Getenv("APPLE_CLIENT_SECRET")); v != "" {
-		return v
-	}
-	c, err := appleauth.New(appleauth.ConfigFromEnv())
-	if err != nil {
-		return ""
-	}
-	secret, err := c.ClientSecret(strings.TrimSpace(os.Getenv("APPLE_CLIENT_ID")))
-	if err != nil {
-		slog.Error("apple web sign-in: mint client secret failed", "error", err)
-		return ""
-	}
-	return secret
+	return appleClientSecret(os.Getenv("APPLE_CLIENT_ID"))
 }
 
 func appleOAuthConfig() *oauth2.Config {
@@ -520,7 +532,15 @@ func (h *OAuthHandler) AppleOAuthCallback(w http.ResponseWriter, r *http.Request
 		Name:       name,
 		AvatarUrl:  "", // Apple does not provide avatar URLs.
 	})
+	webClientID := config.ClientID
 	if err != nil {
+		if lr := oauthMFAFromError(err); lr != nil {
+			if pErr := h.persistAppleRefresh(r.Context(), lr.GetUserId(), webClientID, token.RefreshToken); pErr != nil {
+				slog.Error("apple oauth: refresh token store failed", "error", pErr)
+				http.Redirect(w, r, h.frontendURL+"/login?error=apple_token_store_failed", http.StatusTemporaryRedirect)
+				return
+			}
+		}
 		if h.writeOAuthMFARedirect(w, r, err) {
 			return
 		}
@@ -528,8 +548,11 @@ func (h *OAuthHandler) AppleOAuthCallback(w http.ResponseWriter, r *http.Request
 		http.Redirect(w, r, h.frontendURL+"/login?error=auth_failed", http.StatusTemporaryRedirect)
 		return
 	}
-
-	h.storeAppleWebRefreshToken(r.Context(), result.GetUserId(), claims.Subject, token.RefreshToken)
+	if pErr := h.persistAppleRefresh(r.Context(), result.GetUserId(), webClientID, token.RefreshToken); pErr != nil {
+		slog.Error("apple oauth: refresh token store failed", "error", pErr)
+		http.Redirect(w, r, h.frontendURL+"/login?error=apple_token_store_failed", http.StatusTemporaryRedirect)
+		return
+	}
 
 	h.completeOAuthLogin(w, r, result)
 }
@@ -745,10 +768,14 @@ type nativeAppleSignInRequest struct {
 	// (IOS-SEC.1): without it a captured Apple id_token could be replayed
 	// against this endpoint from any device.
 	Nonce string `json:"nonce"`
-	// AuthorizationCode is ASAuthorizationAppleIDCredential.authorizationCode.
-	// Optional; exchanged server-side for a refresh token so account deletion
-	// can revoke the Apple grant (Guideline 5.1.1(v)).
+	// AuthorizationCode is the AuthenticationServices authorization code.
+	// The server exchanges it at Apple's token endpoint. The client secret
+	// stays server-side (APPLE_CLIENT_SECRET, or minted from the .p8 key) and
+	// is never accepted from the client.
 	AuthorizationCode string `json:"authorization_code"`
+	// AppleUserID is ASAuthorizationAppleIDCredential.user. It must match
+	// the identity token subject.
+	AppleUserID string `json:"user"`
 }
 
 // NativeAppleSignIn exchanges a Sign in with Apple identity token from a
@@ -777,6 +804,16 @@ func (h *OAuthHandler) NativeAppleSignIn(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, "nonce is required: send the raw nonce generated for this Sign in with Apple attempt")
 		return
 	}
+	authCode := strings.TrimSpace(req.AuthorizationCode)
+	if authCode == "" {
+		writeError(w, http.StatusBadRequest, "authorization_code is required")
+		return
+	}
+	appleUserID := strings.TrimSpace(req.AppleUserID)
+	if appleUserID == "" {
+		writeError(w, http.StatusBadRequest, "user is required")
+		return
+	}
 
 	claims, err := verifyAppleIDToken(r.Context(), idToken, sha256Hex(rawNonce))
 	if err != nil {
@@ -785,6 +822,24 @@ func (h *OAuthHandler) NativeAppleSignIn(w http.ResponseWriter, r *http.Request)
 			"code", "oauth_invalid_signature",
 		)
 		writeError(w, http.StatusUnauthorized, "invalid apple identity token")
+		return
+	}
+	if appleUserID != claims.Subject {
+		writeError(w, http.StatusUnauthorized, "apple user id does not match identity token")
+		return
+	}
+
+	clientID := nativeAppleClientID()
+	clientSecret := appleClientSecret(clientID)
+	if clientID == "" || clientSecret == "" {
+		slog.Error("native apple sign-in: Apple client id or client secret (APPLE_CLIENT_SECRET, or APPLE_TEAM_ID/APPLE_KEY_ID/APPLE_PRIVATE_KEY) is not configured")
+		writeError(w, http.StatusServiceUnavailable, "Sign in with Apple is not configured")
+		return
+	}
+	refreshToken, err := exchangeAppleAuthorizationCodeFn(r.Context(), authCode, clientID, clientSecret)
+	if err != nil {
+		slog.Warn("native apple sign-in: authorization code exchange failed", "error", err)
+		writeError(w, http.StatusUnauthorized, "apple authorization code exchange failed")
 		return
 	}
 
@@ -807,15 +862,24 @@ func (h *OAuthHandler) NativeAppleSignIn(w http.ResponseWriter, r *http.Request)
 		AvatarUrl:  "",
 	})
 	if err != nil {
-		if writeOAuthMFAJSON(w, err) {
+		if lr := oauthMFAFromError(err); lr != nil {
+			if pErr := h.persistAppleRefresh(r.Context(), lr.GetUserId(), clientID, refreshToken); pErr != nil {
+				slog.Error("native apple sign-in: refresh token store failed", "error", pErr)
+				writeError(w, http.StatusServiceUnavailable, "Sign in with Apple could not be completed")
+				return
+			}
+			writeOAuthMFAJSON(w, err)
 			return
 		}
 		slog.Error("native apple sign-in: find or create user failed", "error", err)
 		writeGRPCError(w, err)
 		return
 	}
-
-	h.captureAppleRefreshToken(r.Context(), result.GetUserId(), claims.Subject, nativeAppleClientID(), req.AuthorizationCode)
+	if pErr := h.persistAppleRefresh(r.Context(), result.GetUserId(), clientID, refreshToken); pErr != nil {
+		slog.Error("native apple sign-in: refresh token store failed", "error", pErr)
+		writeError(w, http.StatusServiceUnavailable, "Sign in with Apple could not be completed")
+		return
+	}
 
 	// Mobile clients need the refresh token in the JSON body (no cookie jar
 	// reliance). Still set cookies for any hybrid webview callers.

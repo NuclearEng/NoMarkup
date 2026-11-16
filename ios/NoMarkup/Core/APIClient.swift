@@ -9,9 +9,9 @@ actor APIClient {
 
     private let session: URLSession
     /// Shared keychain store — also used by auth helpers via `tokenStoreForAuth`.
-    /// `nonisolated(unsafe)` so `APIClient+Auth` can persist login tokens onto the
-    /// same injected store tests use (Keychain itself is process-global + locked).
-    nonisolated(unsafe) private let tokenStore: KeychainTokenStore
+    /// `nonisolated` because the store is an immutable Sendable reference. Keychain
+    /// calls are synchronized by Security.framework.
+    nonisolated private let tokenStore: KeychainTokenStore
     private let decoder: JSONDecoder
     /// Single-flight refresh so parallel 401s don't rotate the refresh token twice.
     private var refreshTask: Task<AuthTokenPair, Error>?
@@ -177,6 +177,7 @@ actor APIClient {
         if let newRefresh = pair.refreshToken {
             try tokenStore.save(newRefresh, for: .refreshToken)
         }
+        NotificationCenter.default.post(name: .noMarkupAuthenticatedActivity, object: nil)
         return pair
     }
 
@@ -200,7 +201,7 @@ actor APIClient {
     }
 
     private func recordHop(request: URLRequest, response: URLResponse?, error: Error?, started: Date) {
-        ClientActionLog.shared.record(request: request, response: response, error: error, started: started)
+        ClientActionLog.enqueueHTTP(request: request, response: response, started: started)
     }
 
     /// POST /api/v1/auth/apple/native — AuthenticationServices identityToken exchange.
@@ -209,14 +210,12 @@ actor APIClient {
     ///   `nonce` claim). REQUIRED by the gateway for native exchanges (absent → 400);
     ///   it re-hashes and verifies `sha256hex(body.nonce) == id_token.nonce`
     ///   (IOS-SEC.1 replay binding).
-    /// - Parameter authorizationCode: single-use `ASAuthorizationAppleIDCredential.authorizationCode`.
-    ///   Optional; the gateway exchanges it server-side for an Apple refresh token so
-    ///   account deletion can revoke the Sign in with Apple grant (Guideline 5.1.1(v)).
     func signInWithApple(
         identityToken: String,
+        authorizationCode: String,
+        appleUserID: String,
         fullName: String?,
-        nonce: String? = nil,
-        authorizationCode: String? = nil
+        nonce: String? = nil
     ) async throws -> AuthLoginResult {
         let url = AppConfig.apiBaseURL.appending(path: "api/v1/auth/apple/native")
         var request = URLRequest(url: url)
@@ -224,15 +223,16 @@ actor APIClient {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         applyClientIdentity(to: &request)
-        var body: [String: String] = ["identity_token": identityToken]
+        var body: [String: String] = [
+            "identity_token": identityToken,
+            "authorization_code": authorizationCode,
+            "user": appleUserID,
+        ]
         if let fullName, !fullName.isEmpty {
             body["full_name"] = fullName
         }
         if let nonce, !nonce.isEmpty {
             body["nonce"] = nonce
-        }
-        if let authorizationCode, !authorizationCode.isEmpty {
-            body["authorization_code"] = authorizationCode
         }
         request.httpBody = try JSONEncoder().encode(body)
 
@@ -1841,6 +1841,9 @@ actor APIClient {
         }
 
         try Self.throwIfNeeded(response: response, data: data)
+        if auth != .none {
+            NotificationCenter.default.post(name: .noMarkupAuthenticatedActivity, object: nil)
+        }
         return data
     }
 
@@ -1949,6 +1952,9 @@ actor APIClient {
         }
 
         try Self.throwIfNeeded(response: response, data: data)
+        if auth != .none {
+            NotificationCenter.default.post(name: .noMarkupAuthenticatedActivity, object: nil)
+        }
         return data
     }
 
@@ -2380,6 +2386,9 @@ extension Notification.Name {
     /// App root observes this to re-fetch feature flags for the new session.
     /// Raw name: `NoMarkupAuthDidSucceed`.
     static let noMarkupAuthDidSucceed = Notification.Name("NoMarkupAuthDidSucceed")
+
+    /// Posted after an authenticated request succeeds. Resets the idle-session warning.
+    static let noMarkupAuthenticatedActivity = Notification.Name("NoMarkupAuthenticatedActivity")
 
     /// Posted after a successful `PUT /me/dob` so the global age gate can dismiss.
     /// Raw name: `noMarkupAgeVerified`.

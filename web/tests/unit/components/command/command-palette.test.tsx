@@ -29,8 +29,9 @@ describe('CommandPalette', () => {
   it('opens on meta+k and lists jump commands', async () => {
     render(<CommandPalette />);
 
-    await act(async () => {
+    await act(() => {
       fireEvent.keyDown(window, { key: 'k', metaKey: true });
+      return Promise.resolve();
     });
 
     expect(await screen.findByPlaceholderText('Jump to…')).toBeInTheDocument();
@@ -42,8 +43,9 @@ describe('CommandPalette', () => {
     const user = userEvent.setup();
     render(<CommandPalette />);
 
-    await act(async () => {
+    await act(() => {
       fireEvent.keyDown(window, { key: 'k', metaKey: true });
+      return Promise.resolve();
     });
     const input = await screen.findByPlaceholderText('Jump to…');
     // Unique prefix so we do not also match "Browse jobs" (keyword: market).
@@ -54,16 +56,18 @@ describe('CommandPalette', () => {
       expect(screen.getByRole('option', { name: /Marketplace/i })).toBeInTheDocument();
     });
 
-    await act(async () => {
+    await act(() => {
       fireEvent.keyDown(input, { key: 'Enter' });
+      return Promise.resolve();
     });
     expect(push).toHaveBeenCalledWith('/marketplace');
   });
 
   it('opens via the custom event used by the header trigger', async () => {
     render(<CommandPalette />);
-    await act(async () => {
+    await act(() => {
       window.dispatchEvent(new Event('nomarkup:open-command-palette'));
+      return Promise.resolve();
     });
     expect(await screen.findByPlaceholderText('Jump to…')).toBeInTheDocument();
   });

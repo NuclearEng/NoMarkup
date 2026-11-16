@@ -78,9 +78,10 @@ export function useTerminalHotkeys(options: {
         }
         const speeds = r.speeds ?? [0.5, 1, 2, 4];
         const speedIdx = ['1', '2', '3', '4'].indexOf(key);
-        if (speedIdx >= 0 && speeds[speedIdx] !== undefined) {
+        const speed = speedIdx >= 0 ? speeds[speedIdx] : undefined;
+        if (speed !== undefined) {
           e.preventDefault();
-          r.setSpeed?.(speeds[speedIdx]!);
+          r.setSpeed?.(speed);
           return;
         }
       }

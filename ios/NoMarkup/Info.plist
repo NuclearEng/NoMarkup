@@ -102,10 +102,8 @@
 	-->
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>NoMarkup uses your location to suggest the nearest marketplace city and, when you check in to a job, to confirm you arrived at the job site for dispute protection. You can pick a city manually.</string>
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>NoMarkup needs access to your photos so you can set a profile picture, add portfolio images, and attach photos to jobs, listings, and claims.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>NoMarkup uses the camera so you can take photos for jobs, listings, or your profile instead of choosing an existing photo.</string>
+	<string>NoMarkup uses the camera to photograph jobs, listings, your profile, chat attachments, contract completion or claim photos, and verification documents such as a driver license.</string>
 	<!-- Face ID for optional app lock + sensitive actions (IOS-SEC.7). -->
 	<key>NSFaceIDUsageDescription</key>
 	<string>NoMarkup uses Face ID to protect sensitive actions like account deletion and removing payment methods, and to unlock the app when you enable app lock.</string>

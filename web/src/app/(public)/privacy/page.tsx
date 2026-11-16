@@ -80,14 +80,26 @@ export default function PrivacyPolicyPage() {
                 </li>
                 <li>
                   <strong>Location</strong> — approximate or precise location for search, matching,
-                  maps, local pickup radius, and safety/fraud signals. Public map views may use
-                  coarsened coordinates; exact points needed for fulfillment may be encrypted at
-                  rest and shared only as required between transaction parties.
+                  maps, local pickup radius, and safety/fraud signals. Job-site check-in stores
+                  a precise location with the contract for dispute protection. Public map views
+                  may use coarsened coordinates; exact points needed for fulfillment may be
+                  encrypted at rest and shared only as required between transaction parties.
+                </li>
+                <li>
+                  <strong>Identity and eligibility</strong> — name, date of birth for the 18+
+                  check, and government-ID or license images you submit for verification.
+                </li>
+                <li>
+                  <strong>Purchases</strong> — orders, bids, escrow, and payout history for the
+                  jobs and goods you buy or sell.
                 </li>
                 <li>
                   <strong>Photos and media</strong> — images you upload for jobs, listings,
-                  completion proof, or profile. They are stored and shown with that item.
-                  NoMarkup does not screen those images for safety.
+                  completion proof, profile, chat, or verification. They are stored and shown
+                  with that item. On a device that can run Apple’s sensitive-content
+                  analysis, an upload that cannot be screened, or that the analyzer flags,
+                  is refused before it is stored. Flagged images already in the app stay
+                  hidden until you choose to show them.
                 </li>
                 <li>
                   <strong>Payments</strong> — payment method metadata, Stripe customer and Connect
@@ -170,7 +182,7 @@ export default function PrivacyPolicyPage() {
                 Third parties that process personal data on our behalf (including payment
                 processors, hosting, and error-monitoring providers) are required to provide the
                 same or equal protection of that data as described in this Policy and as required
-                by applicable law and the Apple App Store Review Guidelines.
+                by applicable law and the App Store Review Guidelines.
               </p>
               <p>
                 We do not sell personal information for money. We do not share payment card data

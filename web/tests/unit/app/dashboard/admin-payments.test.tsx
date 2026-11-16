@@ -401,8 +401,9 @@ describe('AdminPaymentsPage', () => {
     render(withQueryClient(createElement(AdminPaymentsPage)));
     fireEvent.change(screen.getByLabelText(/^Name$/i), { target: { value: 'Featured listing' } });
     fireEvent.change(screen.getByLabelText(/Default %/i), { target: { value: '5' } });
-    await act(async () => {
+    await act(() => {
       fireEvent.click(screen.getByRole('button', { name: /^Add fee$/i }));
+      return Promise.resolve();
     });
     expect(createFeeMutate).toHaveBeenCalledWith({
       name: 'Featured listing',

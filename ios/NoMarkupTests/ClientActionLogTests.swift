@@ -31,8 +31,7 @@ final class ClientActionLogTests: XCTestCase {
     }
 
     func testRecordUIDoesNotUseHTTPOutcome() {
-        // Direct record with kind ui.
-        ClientActionLog.shared.recordUI(method: "TAP", path: "Sign in")
+        ClientActionLog.enqueueUI(method: "TAP", path: "Sign in")
         XCTAssertEqual(ClientActionLog.outcome(status: 1, error: nil, kind: "ui"), "ui")
     }
 
@@ -66,19 +65,18 @@ final class ClientActionLogTests: XCTestCase {
         XCTAssertEqual(ClientActionLog.formatDebugSummary([]), "")
     }
 
-    func testDebugSummaryReadsRecordedHttpEvent() {
-        let log = ClientActionLog()
-        let exp = expectation(description: "record landed on main")
-        log.record(
-            method: "GET",
-            path: "/api/v1/users/me",
-            status: 200,
-            durationMs: 12,
-            requestID: "abc123abc123abcd"
-        )
-        DispatchQueue.main.async { exp.fulfill() }
-        wait(for: [exp], timeout: 1)
-        let summary = log.debugSummary()
+    func testDebugSummaryReadsRecordedHttpEvent() async {
+        let log = await MainActor.run { ClientActionLog() }
+        await MainActor.run {
+            log.record(
+                method: "GET",
+                path: "/api/v1/users/me",
+                status: 200,
+                durationMs: 12,
+                requestID: "abc123abc123abcd"
+            )
+        }
+        let summary = await MainActor.run { log.debugSummary() }
         XCTAssertTrue(summary.contains("GET /api/v1/users/me 200 abc123abc123abcd"))
     }
 

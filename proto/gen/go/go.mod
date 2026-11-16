@@ -2,7 +2,7 @@ module github.com/nomarkup/nomarkup/proto
 
 go 1.26.0
 
-toolchain go1.26.4
+toolchain go1.26.11
 
 require (
 	google.golang.org/grpc v1.83.2

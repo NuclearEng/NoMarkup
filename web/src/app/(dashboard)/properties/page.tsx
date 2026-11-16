@@ -32,8 +32,7 @@ import {
   usePreferredProviders,
   useProperties,
 } from '@/hooks/useProperties';
-import { propertySchema } from '@/lib/validations';
-import type { PropertyFormValues } from '@/lib/validations';
+import { propertySchema, type PropertyFormValues } from '@/lib/schemas/properties';
 import { UPLOAD_CONTEXT } from '@/types';
 
 export default function PropertiesPage() {

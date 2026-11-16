@@ -1767,7 +1767,7 @@ describe('JobPostingForm', () => {
     await user.click(homeOption);
 
     await waitFor(() => {
-      const address = screen.getByPlaceholderText(/123 Main St/) as HTMLInputElement;
+      const address = screen.getByPlaceholderText<HTMLInputElement>(/123 Main St/);
       expect(address.value).toContain('123 Main St');
       expect(address.value).toContain('78701');
     });
@@ -1807,7 +1807,7 @@ describe('JobPostingForm', () => {
     await advanceToStep(2, user);
 
     await waitFor(() => {
-      const address = screen.getByPlaceholderText(/123 Main St/) as HTMLInputElement;
+      const address = screen.getByPlaceholderText<HTMLInputElement>(/123 Main St/);
       expect(address.value).toContain('123 Main St');
     });
     expect(screen.getByRole('combobox', { name: /Saved property/i })).toBeDefined();

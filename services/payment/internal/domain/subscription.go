@@ -103,4 +103,9 @@ type SubscriptionRepository interface {
 	UpdateSubscriptionPeriod(ctx context.Context, id string, periodStart, periodEnd time.Time) error
 	GetUsage(ctx context.Context, userID string) (activeBids int32, serviceCategories int32, portfolioImages int32, err error)
 	AdminListSubscriptions(ctx context.Context, statusFilter string, tierID string, page, pageSize int) ([]*Subscription, int, int64, error)
+	// ClaimStripeEvent reports whether this Stripe event id was already
+	// processed or is in flight. false means the caller owns the event.
+	ClaimStripeEvent(ctx context.Context, eventID, eventType string) (already bool, err error)
+	// FinishStripeEvent stamps the event processed after side effects land.
+	FinishStripeEvent(ctx context.Context, eventID string) error
 }

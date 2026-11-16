@@ -1169,7 +1169,7 @@ struct AdminFeesView: View {
 
                     Section {
                         Toggle("Lead-gen fee enabled", isOn: $leadGenEnabled)
-                            .tint(BrandTheme.gold)
+                            .tint(BrandTheme.goldBright)
                             .accessibilityIdentifier("admin.fees.leadGenEnabled")
                         HStack {
                             Text("Lead-gen %")
@@ -1628,6 +1628,7 @@ struct AdminBankingView: View {
                             .listRowBackground(BrandTheme.navyElevated)
                             .accessibilityIdentifier("admin.banking.token")
                         TextField("Account holder name", text: $holderName)
+                            .textContentType(.name)
                             .listRowBackground(BrandTheme.navyElevated)
                             .accessibilityIdentifier("admin.banking.holderName")
                         Picker("Holder type", selection: $holderType) {
@@ -1665,7 +1666,7 @@ struct AdminBankingView: View {
             isPresented: $showDeleteConfirm,
             titleVisibility: .visible
         ) {
-            Button("Delete account", role: .destructive) { Task { await deleteAccount() } }
+            Button("Remove bank account", role: .destructive) { Task { await deleteAccount() } }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Platform fee payouts will stop routing until a new account is set.")

@@ -68,7 +68,7 @@ function rememberEnabledRoleSession(raw: EnableRoleApiResponse, user: User): voi
     }
   }
   const base = previous ?? useAuthStore.getState().user;
-  const roles = user.roles ?? [];
+  const roles = user.roles;
   if (!base) {
     if (token.length > 0) {
       useAuthStore.getState().setUser({ ...user, roles });
@@ -82,7 +82,7 @@ function rememberEnabledRoleSession(raw: EnableRoleApiResponse, user: User): voi
     displayName: user.displayName || base.displayName,
     avatarUrl: user.avatarUrl ?? base.avatarUrl,
     roles: roles.length > 0 ? roles : base.roles,
-    status: user.status || base.status,
+    status: user.status,
     emailVerified: user.emailVerified,
     phoneVerified: user.phoneVerified,
     phone: user.phone ?? base.phone,

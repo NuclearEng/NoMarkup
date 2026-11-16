@@ -104,7 +104,7 @@ export default function PropertyDetailPage() {
     enabled: Boolean(propertyId) && hasActiveHistoryFilters,
   });
 
-  const allJobs = jobsQuery.data?.jobs ?? [];
+  const allJobs = useMemo(() => jobsQuery.data?.jobs ?? [], [jobsQuery.data]);
   const activeJobs = useMemo(() => allJobs.filter(isActiveWork), [allJobs]);
   const upcomingJobs = useMemo(() => allJobs.filter(isUpcomingWork), [allJobs]);
   const historyJobs = useMemo(() => allJobs.filter(isHistoryWork), [allJobs]);
@@ -112,8 +112,8 @@ export default function PropertyDetailPage() {
   const historyCategoryOptions = useMemo(() => {
     const byId = new Map<string, string>();
     for (const job of historyJobs) {
-      const id = job.category_id?.trim() ?? '';
-      const name = job.category_name?.trim() ?? '';
+      const id = job.category_id.trim();
+      const name = job.category_name.trim();
       if (!id) continue;
       if (!byId.has(id)) {
         byId.set(id, name || id);
@@ -126,7 +126,7 @@ export default function PropertyDetailPage() {
 
   const filteredHistoryJobs = useMemo(() => {
     let base: Job[];
-    if (hasActiveHistoryFilters && filteredHistoryQuery.isSuccess && filteredHistoryQuery.data) {
+    if (hasActiveHistoryFilters && filteredHistoryQuery.isSuccess) {
       base = filteredHistoryQuery.data.jobs.filter(isHistoryWork);
     } else {
       base = historyJobs;
@@ -134,7 +134,7 @@ export default function PropertyDetailPage() {
     // Client re-apply so filters stay correct if server filter soft-fails.
     return base.filter((job) => {
       if (historyCategoryId) {
-        if ((job.category_id ?? '') !== historyCategoryId) return false;
+        if (job.category_id !== historyCategoryId) return false;
       }
       if (dateFrom) {
         const created = Date.parse(job.created_at);
@@ -269,14 +269,14 @@ export default function PropertyDetailPage() {
             existingImages={photoUrls}
             onUploadComplete={(result) => {
               setEditPhotos((prev) => {
-                const base = prev ?? property?.photo_urls ?? [];
+                const base = prev ?? property.photo_urls ?? [];
                 if (base.length >= 5) return base;
                 return [...base, result.confirmedUrl];
               });
             }}
             onRemove={(url) => {
               setEditPhotos((prev) => {
-                const base = prev ?? property?.photo_urls ?? [];
+                const base = prev ?? property.photo_urls ?? [];
                 return base.filter((u) => u !== url);
               });
             }}

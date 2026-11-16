@@ -1,4 +1,3 @@
-import PassKit
 import SwiftUI
 
 /// Buyer/seller order list — pay pending orders and complete escrow pickup handshake.
@@ -28,6 +27,7 @@ struct MyOrdersView: View {
     @State private var reviewOrder: ListingOrderSummary?
     @State private var orderChatChannel: ChatChannelSummary?
     @State private var openingChatOrderID: String?
+    @State private var pendingGoodsCharge: GoodsChargeBreakdown?
 
     private var isBusy: Bool {
         payingOrderID != nil || actingOrderID != nil || cancelingOrderID != nil
@@ -39,7 +39,7 @@ struct MyOrdersView: View {
                 BrandEmptyState(
                     title: "Sign in required",
                     systemImage: "person.crop.circle.badge.exclamationmark",
-                    message: "Sign in to view marketplace orders and pay with Apple Pay when an auction ends or you buy now.",
+                    message: "Sign in to view marketplace orders and pay when an auction ends or you buy now.",
                     actionTitle: "Sign in"
                 ) {
                     auth.signOut()
@@ -100,6 +100,27 @@ struct MyOrdersView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .brandNavigationBarChrome()
+        .alert(
+            "Review payment",
+            isPresented: Binding(
+                get: { pendingGoodsCharge != nil },
+                set: { if !$0 { pendingGoodsCharge = nil } }
+            ),
+            presenting: pendingGoodsCharge
+        ) { charge in
+            Button("Pay \(MoneyFormat.usd(cents: charge.totalCents))") {
+                let snapshot = charge
+                pendingGoodsCharge = nil
+                Task { await confirmReviewedOrderPayment(snapshot) }
+            }
+            Button("Cancel", role: .cancel) {
+                pendingGoodsCharge = nil
+                statusIsError = false
+                statusMessage = "Payment not started."
+            }
+        } message: { charge in
+            Text(charge.summary)
+        }
         .task { await load() }
         .refreshable { await load() }
         .navigationDestination(item: $orderChatChannel) { channel in
@@ -234,15 +255,17 @@ struct MyOrdersView: View {
                         .frame(maxWidth: .infinity, minHeight: 44)
                         .accessibilityLabel("Processing payment")
                 } else {
-                    PayWithApplePayButton(.plain) {
+                    Button {
                         Task { await pay(order) }
+                    } label: {
+                        Label("Review payment", systemImage: "creditcard.fill")
+                            .frame(maxWidth: .infinity, minHeight: 44)
                     }
-                    .frame(maxWidth: .infinity, minHeight: 44)
-                    .payWithApplePayButtonStyle(.automatic)
+                    .buttonStyle(.borderedProminent)
+                    .tint(BrandTheme.accent)
                     .disabled(isBusy)
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Pay with Apple Pay")
-                    .accessibilityHint("Opens Apple Pay or card checkout for this order")
+                    .accessibilityLabel("Review payment")
+                    .accessibilityHint("Shows the item, fee, tax, and total before checkout")
                     .accessibilityIdentifier("orders.pay")
                 }
                 if cancelingOrderID == order.id {
@@ -407,6 +430,32 @@ struct MyOrdersView: View {
     }
 
     @MainActor
+    private func confirmReviewedOrderPayment(_ charge: GoodsChargeBreakdown) async {
+        payingOrderID = charge.orderId
+        defer { payingOrderID = nil }
+        do {
+            try await RailACheckout.presentPaymentSheet(clientSecret: charge.clientSecret)
+            statusIsError = false
+            statusMessage = "Confirming payment…"
+            await load()
+            if let orderID = charge.orderId,
+               let updated = orders.first(where: { $0.id == orderID }),
+               updated.serverRecordsEscrow {
+                BrandHaptics.success()
+                statusMessage = "Payment confirmed — funds are held in escrow until pickup."
+            } else {
+                statusMessage = "Payment submitted. Escrow is recorded when the server confirms the charge."
+            }
+        } catch let error as RailACheckout.CheckoutError where error.isCanceled {
+            statusIsError = false
+            statusMessage = "Payment canceled."
+        } catch {
+            statusIsError = true
+            statusMessage = error.localizedDescription
+        }
+    }
+
+    @MainActor
     private func pay(_ order: ListingOrderSummary) async {
         statusMessage = nil
         statusIsError = false
@@ -415,16 +464,14 @@ struct MyOrdersView: View {
 
         do {
             let intent = try await APIClient.shared.payOrder(orderId: order.id)
-            guard let secret = intent.clientSecret, intent.hasConfirmableSecret else {
+            guard let charge = GoodsChargeBreakdown(envelope: intent, context: .order) else {
                 statusIsError = true
                 statusMessage = "Could not start payment for this order. Try again shortly."
                 return
             }
-            try await RailACheckout.presentPaymentSheet(clientSecret: secret)
-            BrandHaptics.success()
+            pendingGoodsCharge = charge
             statusIsError = false
-            statusMessage = "Payment complete — funds are held in escrow until pickup."
-            await load()
+            statusMessage = "Review the item, fee, tax, and total before paying."
         } catch let error as RailACheckout.CheckoutError where error.isCanceled {
             statusIsError = false
             statusMessage = "Payment canceled."

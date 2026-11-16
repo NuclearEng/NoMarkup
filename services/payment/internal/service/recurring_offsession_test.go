@@ -19,6 +19,9 @@ func recurringVisitRepo() *mockPaymentRepo {
 	payments := map[string]*domain.Payment{}
 
 	repo := reconcileRepo(100_000)
+	repo.getRecurringInstanceAmountFn = func(_ context.Context, _ string) (string, int64, error) {
+		return "contract-1", 7500, nil
+	}
 	repo.createPaymentFn = func(_ context.Context, payment *domain.Payment) error {
 		mu.Lock()
 		defer mu.Unlock()
@@ -215,7 +218,7 @@ func TestCreatePayment_NonRecurringDoesNotAttemptOffSession(t *testing.T) {
 	payment, secret, err := svc.CreatePayment(context.Background(), domain.CreatePaymentInput{
 		ContractID:     "contract-1",
 		CustomerID:     "cust-1",
-		AmountCents:    7500,
+		AmountCents:    100_000, // one-shot charge is the unpaid contract balance
 		IdempotencyKey: "ordinary-pay-1",
 	})
 	require.NoError(t, err)

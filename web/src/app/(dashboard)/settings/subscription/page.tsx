@@ -479,12 +479,12 @@ export default function SubscriptionPage() {
               Failed to change plan. Please try again.
             </div>
           ) : null}
-          {changeTier.isSuccess && changeTier.data?.tier_applied === false && !checkout ? (
+          {changeTier.isSuccess && changeTier.data.tier_applied === false && !checkout ? (
             <div className="rounded-lg border border-[var(--brand-gold)]/20 bg-[var(--brand-gold)]/10 p-3 text-sm text-zinc-200">
               Your current plan stays until the charge succeeds.
             </div>
           ) : null}
-          {changeTier.isSuccess && changeTier.data?.tier_applied !== false ? (
+          {changeTier.isSuccess && changeTier.data.tier_applied !== false ? (
             <div className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-lg p-3 text-sm">
               Plan changed successfully.
               {prorationCents > 0 ? (

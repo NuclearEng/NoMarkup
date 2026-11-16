@@ -142,7 +142,7 @@ export function useProviderVerificationDocuments() {
   return useQuery({
     queryKey: providerDocumentsQueryKey,
     queryFn: async (): Promise<ProviderVerificationDocument[]> => {
-      const res = await api.get<{ documents: ProviderVerificationDocument[] }>(
+      const res = await api.get<{ documents?: ProviderVerificationDocument[] | null }>(
         '/api/v1/providers/me/documents',
       );
       return res.documents ?? [];
@@ -167,7 +167,7 @@ export function indexDocumentsByType(
   const map: Record<string, ProviderVerificationDocument> = {};
   if (!documents) return map;
   for (const doc of documents) {
-    const raw = doc.document_type?.trim();
+    const raw = doc.document_type.trim();
     if (!raw) continue;
     const key = normalizeDocumentTypeKey(raw);
     // Prefer the row with the higher resubmission_count when duplicates exist.

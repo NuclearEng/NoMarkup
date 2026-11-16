@@ -86,7 +86,11 @@ describe('FraudAlertList', () => {
     } as unknown as ReturnType<typeof useFraudAlerts>);
 
     const { container } = render(createElement(FraudAlertList));
-    expect(container.querySelector('.animate-pulse')).not.toBeNull();
+    // Loading placeholders are the shared <Skeleton> (shimmer, no
+    // animate-pulse) inside an aria-busy region since b80f1d05.
+    const busy = container.querySelector('[aria-busy="true"]');
+    expect(busy?.getAttribute('aria-label')).toBe('Loading fraud alerts');
+    expect(busy?.querySelectorAll('[role="presentation"]').length).toBeGreaterThan(0);
   });
 
   it('renders error state', () => {

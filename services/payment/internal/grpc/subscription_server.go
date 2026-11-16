@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
+	"strings"
 	"time"
 
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
@@ -187,6 +189,22 @@ func (s *SubscriptionServer) HandleSubscriptionWebhook(ctx context.Context, req 
 		return nil, status.Errorf(codes.InvalidArgument, "invalid webhook payload: %v", err)
 	}
 
+	// Event id dedupe. Signature verification above uses
+	// stripe.webhooks.constructEvent() before this claim.
+	var eventID struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal([]byte(req.GetPayload()), &eventID); err != nil || strings.TrimSpace(eventID.ID) == "" {
+		return nil, status.Error(codes.InvalidArgument, "event id is required")
+	}
+	already, err := s.svc.ClaimStripeEvent(ctx, eventID.ID, event.Type)
+	if err != nil {
+		return nil, status.Error(codes.Internal, "webhook claim failed")
+	}
+	if already {
+		return &subscriptionv1.HandleSubscriptionWebhookResponse{Processed: true}, nil
+	}
+
 	// Current invoice payloads put the subscription on parent.subscription_details.
 	// An invoice id is never used as the subscription id.
 	stripeSubID := resolvedSubscriptionID(event.Type, []byte(req.GetPayload()), event.Data.Object.ID, event.Data.Object.Subscription)
@@ -203,7 +221,7 @@ func (s *SubscriptionServer) HandleSubscriptionWebhook(ctx context.Context, req 
 
 	// Signature verification above uses the same rule as stripe.webhooks.constructEvent().
 	payload := []byte(req.GetPayload())
-	err := s.svc.HandleSubscriptionWebhook(
+	err = s.svc.HandleSubscriptionWebhook(
 		ctx,
 		event.Type,
 		stripeSubID,
@@ -214,6 +232,10 @@ func (s *SubscriptionServer) HandleSubscriptionWebhook(ctx context.Context, req 
 	)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "webhook processing failed: %v", err)
+	}
+	// Stamp only after a verified event (stripe.webhooks.constructEvent()) is applied.
+	if stampErr := s.svc.FinishStripeEvent(ctx, eventID.ID); stampErr != nil {
+		slog.ErrorContext(ctx, "subscription event handled but stamp failed", "event_id", eventID.ID, "error", stampErr)
 	}
 
 	return &subscriptionv1.HandleSubscriptionWebhookResponse{Processed: true}, nil

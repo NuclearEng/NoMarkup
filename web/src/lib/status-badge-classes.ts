@@ -1,3 +1,6 @@
+import type { BadgeProps } from '@/components/ui/badge';
+import { LISTING_ORDER_STATUS } from '@/types';
+
 /**
  * Glass-styled status badge classes for dark UI.
  *
@@ -50,7 +53,8 @@ export const JOB_STATUS_CLASSES: Record<string, string> = {
   reposted: 'bg-bid-active/10 text-bid-active border-bid-active/30',
   closed: 'bg-muted text-muted-foreground border-border',
   closed_zero_bids: 'bg-muted text-muted-foreground border-border',
-  expired: 'bg-bid-expired/10 text-bid-expired border-bid-expired/30',
+  // An expired job is over, like a closed or cancelled one: neutral.
+  expired: 'bg-muted text-muted-foreground border-border',
   suspended: 'bg-destructive/10 text-destructive border-destructive/30',
 };
 
@@ -85,8 +89,11 @@ export const PAYMENT_STATUS_CLASSES: Record<string, string> = {
   released: 'bg-trust-high/10 text-trust-high border-trust-high/30',
   completed: 'bg-status-completed/10 text-status-completed border-status-completed/30',
   failed: 'bg-destructive/10 text-destructive border-destructive/30',
-  refunded: 'bg-trust-medium/10 text-trust-medium border-trust-medium/30',
-  partially_refunded: 'bg-trust-medium/10 text-trust-medium border-trust-medium/30',
+  // A refund is settled, not waiting on anyone, so it must not share the
+  // pending (trust-medium) badge. The tokens have no orange; settled-and-closed
+  // reads as neutral.
+  refunded: 'bg-muted text-muted-foreground border-border',
+  partially_refunded: 'bg-muted text-muted-foreground border-border',
   disputed: 'bg-status-disputed/10 text-status-disputed border-status-disputed/30',
   chargeback: 'bg-destructive/10 text-destructive border-destructive/30',
 };
@@ -121,7 +128,9 @@ export const VERIFICATION_STATUS_CLASSES: Record<string, string> = {
 export const FRAUD_RISK_CLASSES: Record<string, string> = {
   low: 'bg-trust-high/10 text-trust-high border-trust-high/30',
   medium: 'bg-trust-medium/10 text-trust-medium border-trust-medium/30',
-  high: 'bg-status-disputed/10 text-status-disputed border-status-disputed/30',
+  // Risk runs along the trust scale (high risk = low trust); status-disputed
+  // is reserved for things actually in dispute.
+  high: 'bg-trust-low/10 text-trust-low border-trust-low/30',
   critical: 'bg-destructive/10 text-destructive border-destructive/30',
 };
 
@@ -184,3 +193,18 @@ export const EXPENSE_CATEGORY_CLASSES: Record<string, string> = {
 /** Default muted badge when status is unknown */
 export const DEFAULT_STATUS_CLASS =
   'bg-muted text-muted-foreground border-border';
+
+/** Goods order status → Badge variant (variants are defined in badge.tsx). */
+export const LISTING_ORDER_STATUS_VARIANT: Record<string, NonNullable<BadgeProps['variant']>> = {
+  [LISTING_ORDER_STATUS.PENDING]: 'pending',
+  [LISTING_ORDER_STATUS.PAID]: 'active',
+  [LISTING_ORDER_STATUS.PICKED_UP]: 'active',
+  [LISTING_ORDER_STATUS.COMPLETED]: 'completed',
+  [LISTING_ORDER_STATUS.DISPUTED]: 'disputed',
+  [LISTING_ORDER_STATUS.CANCELLED]: 'cancelled',
+};
+
+/** Badge variant for a goods order; an unknown status gets the neutral chip. */
+export function listingOrderStatusVariant(status: string): NonNullable<BadgeProps['variant']> {
+  return LISTING_ORDER_STATUS_VARIANT[status] ?? 'secondary';
+}

@@ -8,17 +8,24 @@
 // both POST and PUT change-order endpoints.
 //
 // Run:
-//   DATABASE_URL=postgres://nomarkup@localhost:5433/nomarkup?sslmode=disable \
-//   go test -tags=integration -count=1 -run TestChangeOrder ./internal/repository/...
 //
-// The tests seed their own contract (reusing a real job_id/bid_id so the NOT
-// NULL FKs are satisfied) and delete it in cleanup, so they leave no residue.
+//	DATABASE_URL=postgres://nomarkup@localhost:5433/nomarkup?sslmode=disable \
+//	go test -tags=integration -count=1 -run TestChangeOrder ./internal/repository/...
+//
+// Every contract gets its OWN job + bid (seedChangeOrderJob). CreateContract is
+// idempotent per job (uq_contracts_live_job, migration 078): a second create
+// for a job that already has a live contract returns the existing row. Sharing
+// one hard-coded job across tests — and across the repository and service test
+// binaries, which `go test ./...` runs concurrently — therefore handed tests
+// each other's contracts (wrong amounts, "contract not found" after the other
+// binary's cleanup). Only the two seed users (`make seed`) are shared.
 package repository
 
 import (
 	"context"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nomarkup/nomarkup/services/job/internal/domain"
 	"github.com/stretchr/testify/require"
 )
@@ -26,21 +33,61 @@ import (
 const (
 	coCustomerID = "00000000-0000-0000-0000-000000000002"
 	coProviderID = "00000000-0000-0000-0000-000000000004"
-	// A real job/bid pair from the seeded data — the contracts FKs are NOT NULL.
-	coJobID = "ec6b56bd-4348-446a-875e-21b0359a06cb"
-	coBidID = "fa199d9a-491d-4883-b52b-b992b7ac8355"
 )
 
-// seedActiveContract creates an active contract with a single full-amount
-// milestone and returns its ID, registering cleanup.
-func seedActiveContract(t *testing.T, repo *PostgresRepository, amountCents int64) string {
+// seedChangeOrderJob inserts a fresh job (owned by the seed customer) with one
+// bid from the seed provider, and registers cleanup for the job and everything
+// hanging off it. It returns the job and bid IDs.
+func seedChangeOrderJob(t *testing.T, pool *pgxpool.Pool) (jobID, bidID string) {
 	t.Helper()
 	ctx := context.Background()
-	c, err := repo.CreateContract(ctx, &domain.Contract{
-		JobID:            coJobID,
+
+	var catID string
+	require.NoError(t,
+		pool.QueryRow(ctx, `SELECT id::text FROM service_categories ORDER BY id LIMIT 1`).Scan(&catID),
+		"need service_categories taxonomy — run migrations first")
+
+	require.NoError(t, pool.QueryRow(ctx, `
+		INSERT INTO jobs (customer_id, title, description, category_id,
+			service_city, service_state, service_zip,
+			service_location, approximate_location, status)
+		VALUES ($1::uuid, 'Change-order fixture',
+			'Created by change_order_test (integration).', $2::uuid,
+			'Austin', 'TX', '78701',
+			ST_SetSRID(ST_MakePoint(-97.74, 30.27), 4326),
+			ST_SetSRID(ST_MakePoint(-97.74, 30.27), 4326),
+			'awarded')
+		RETURNING id::text`, coCustomerID, catID).Scan(&jobID),
+		"provision change-order fixture job (seed users required — run `make seed`)")
+
+	t.Cleanup(func() {
+		cctx := context.Background()
+		// Children first: contracts hold FKs onto jobs and bids; change_orders
+		// and milestones cascade on contract delete.
+		_, _ = pool.Exec(cctx, `DELETE FROM contracts WHERE job_id = $1::uuid`, jobID)
+		_, _ = pool.Exec(cctx, `DELETE FROM bids WHERE job_id = $1::uuid`, jobID)
+		_, _ = pool.Exec(cctx, `DELETE FROM jobs WHERE id = $1::uuid`, jobID)
+	})
+
+	require.NoError(t, pool.QueryRow(ctx, `
+		INSERT INTO bids (job_id, provider_id, amount_cents, original_amount_cents)
+		VALUES ($1::uuid, $2::uuid, 100000, 100000)
+		RETURNING id::text`, jobID, coProviderID).Scan(&bidID),
+		"provision change-order fixture bid")
+	return jobID, bidID
+}
+
+// seedActiveContract creates an active contract with a single full-amount
+// milestone on its own fresh job and returns its ID. Cleanup is registered by
+// seedChangeOrderJob.
+func seedActiveContract(t *testing.T, repo *PostgresRepository, amountCents int64) string {
+	t.Helper()
+	jobID, bidID := seedChangeOrderJob(t, repo.pool)
+	c, err := repo.CreateContract(context.Background(), &domain.Contract{
+		JobID:            jobID,
 		CustomerID:       coCustomerID,
 		ProviderID:       coProviderID,
-		BidID:            coBidID,
+		BidID:            bidID,
 		AmountCents:      amountCents,
 		PaymentTiming:    "completion",
 		Status:           "active",
@@ -48,12 +95,6 @@ func seedActiveContract(t *testing.T, repo *PostgresRepository, amountCents int6
 		ProviderAccepted: true,
 	}, []domain.MilestoneInput{{Description: "Complete work", AmountCents: amountCents}})
 	require.NoError(t, err)
-
-	pool := repo.pool
-	t.Cleanup(func() {
-		// change_orders + milestones cascade on contract delete.
-		_, _ = pool.Exec(context.Background(), `DELETE FROM contracts WHERE id = $1`, c.ID)
-	})
 	return c.ID
 }
 

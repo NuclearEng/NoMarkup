@@ -13,13 +13,18 @@ import { LISTING_STATUS, type Listing } from '@/types';
 // a settled payment, and the no-secret path still lands the buyer on the
 // unpaid order. NOT PROVEN: Stripe behaviour.
 
-const { post } = vi.hoisted(() => ({
+const { post, clearIdempotencyKey } = vi.hoisted(() => ({
   post: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
+  clearIdempotencyKey: vi.fn<(operationKey: string) => void>(),
 }));
 
 vi.mock('@/lib/api', () => ({
   api: { post },
   idempotencyHeader: () => ({ 'Idempotency-Key': 'test-key' }),
+  // useBuyNow releases its per-listing key on success (0c3654a5). Without
+  // this export the hook's onSuccess threw and the component's own onSuccess
+  // (payment dialog / order redirect) never ran.
+  clearIdempotencyKey,
   getApiErrorMessage: (_err: unknown, fallback: string) => fallback,
   ApiError: class extends Error {},
 }));
@@ -161,6 +166,8 @@ describe('BuyItNowButton payment wiring', () => {
     post.mockResolvedValue({ order_id: 'order-1', client_secret: TOKEN });
     await buyNow();
     await screen.findByTestId('payment-dialog');
+    // The per-listing idempotency key is released once the order exists.
+    expect(clearIdempotencyKey).toHaveBeenCalledWith('buy-now:listing-1');
 
     dialogProps?.onSucceeded({});
     await waitFor(() => {

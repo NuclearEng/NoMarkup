@@ -510,7 +510,7 @@ describe('useCustomerJobs', () => {
     );
   });
 
-  it('respects enabled: false (no request)', async () => {
+  it('respects enabled: false (no request)', () => {
     const { result } = renderHook(
       () => useCustomerJobs({ property_id: 'prop-1', enabled: false }),
       { wrapper: createWrapper(queryClient) },

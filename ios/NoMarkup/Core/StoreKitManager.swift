@@ -42,13 +42,39 @@ final class StoreKitManager: ObservableObject {
 
     // MARK: - Lifecycle
 
-    /// Starts `Transaction.updates` listening when the flag is on. Safe to call multiple times.
+    /// Starts transaction maintenance at launch. Safe to call multiple times.
+    ///
+    /// Unfinished transactions are finished on every launch. Entitlements are
+    /// recorded only when `AppConfig.storeKitEnabled` is true, so a Release
+    /// build with purchases off does not unlock paid plans.
     func startIfEnabled() {
+        Task { await reconcileLaunchTransactions() }
         guard AppConfig.storeKitEnabled else { return }
         if updatesTask == nil {
             updatesTask = listenForTransactions()
         }
-        Task { await refreshEntitlementsFromStore() }
+    }
+
+    /// Iterates `Transaction.unfinished` and `Transaction.currentEntitlements`.
+    private func reconcileLaunchTransactions() async {
+        for await result in Transaction.unfinished {
+            do {
+                let transaction = try checkVerified(result)
+                if AppConfig.storeKitEnabled {
+                    await applyEntitlement(for: transaction, jwsRepresentation: result.jwsRepresentation)
+                }
+                await transaction.finish()
+            } catch {
+                lastErrorMessage = error.localizedDescription
+            }
+        }
+        if AppConfig.storeKitEnabled {
+            await refreshEntitlementsFromStore()
+            return
+        }
+        for await result in Transaction.currentEntitlements {
+            _ = try? checkVerified(result)
+        }
     }
 
     // MARK: - Products
@@ -183,6 +209,8 @@ final class StoreKitManager: ObservableObject {
                     let transaction = try self.checkVerified(result)
                     await self.applyEntitlement(for: transaction, jwsRepresentation: result.jwsRepresentation)
                     await transaction.finish()
+                } catch is CancellationError {
+                    continue
                 } catch {
                     await MainActor.run {
                         self.lastErrorMessage = error.localizedDescription

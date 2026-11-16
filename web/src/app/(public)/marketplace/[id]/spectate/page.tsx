@@ -4,10 +4,10 @@ import { ArrowLeft, MapPin, Radio, RefreshCw, Wifi, WifiOff } from 'lucide-react
 import type { Route } from 'next';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 
 import { GradientMesh } from '@/components/landing/GradientMesh';
-import { TerminalGrid } from '@/components/terminal/terminal-grid';
+import { LazyTerminalGrid, preloadTerminalGrid } from '@/components/terminal/terminal-grid-lazy';
 import { TerminalToolbar } from '@/components/terminal/terminal-toolbar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -32,6 +32,9 @@ export default function ListingSpectatePage() {
   const listingId = params.id;
 
   const terminal = useMarketplaceSpectatorTerminal(listingId);
+
+  // Fetch the grid's code while the auction data loads (see terminal-grid-lazy).
+  useEffect(preloadTerminalGrid, []);
 
   const auctionEndsAt = useMemo(
     () =>
@@ -65,12 +68,23 @@ export default function ListingSpectatePage() {
             title="Failed to load listing"
             description="We could not load this auction. Check your connection and try again."
             action={
-              <Button type="button" className="min-h-11" asChild>
-                <Link href={`/marketplace/${listingId}` as Route}>
+              <div className="flex flex-col items-center gap-3 sm:flex-row">
+                <Button
+                  type="button"
+                  className="min-h-11"
+                  disabled={terminal.isFetching}
+                  onClick={terminal.retry}
+                >
                   <RefreshCw className="mr-2 h-4 w-4" aria-hidden="true" />
-                  Back to listing
-                </Link>
-              </Button>
+                  Retry
+                </Button>
+                <Button type="button" variant="outline" className="min-h-11" asChild>
+                  <Link href={`/marketplace/${listingId}` as Route}>
+                    <ArrowLeft className="mr-2 h-4 w-4" aria-hidden="true" />
+                    Back to listing
+                  </Link>
+                </Button>
+              </div>
             }
           />
         </div>
@@ -125,6 +139,10 @@ export default function ListingSpectatePage() {
                 {String(terminal.spectatorCount)} watching
               </span>
             ) : null}
+            {/* From the listing API, so it shows with or without the socket. */}
+            <span className="text-xs text-white/45" data-testid="spectate-bidder-count">
+              {String(terminal.bidderCount)} {terminal.bidderCount === 1 ? 'bidder' : 'bidders'}
+            </span>
           </div>
           <div className="hidden items-center gap-3 text-sm md:flex">
             <h1 className="font-semibold text-white/90">{terminal.jobTitle}</h1>
@@ -143,7 +161,7 @@ export default function ListingSpectatePage() {
       </div>
 
       <div className="relative z-[2] mx-auto max-w-[1400px] px-4 py-4 sm:px-6">
-        <TerminalGrid
+        <LazyTerminalGrid
           sim={terminal.sim}
           auctionEndsAt={auctionEndsAt}
           startingPriceCents={terminal.startingPriceCents}

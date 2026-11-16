@@ -40,7 +40,7 @@ type Workflow = CatalogWorkflow & {
 
 const catalog = JSON.parse(
   readFileSync(join(ROOT, 'docs/workflows/catalog.json'), 'utf8'),
-) as { personas: Persona[]; workflows: Workflow[] };
+) as { personas: string[]; workflows: Workflow[] };
 
 const pages = JSON.parse(
   readFileSync(join(ROOT, 'docs/workflows/pages.json'), 'utf8'),
@@ -184,14 +184,14 @@ test.describe('catalog VCR (backendless)', () => {
       }
       const fixture = loadFixtureForWorkflow(wf);
       if (fixture.method !== (wf.method ?? '').toUpperCase()) {
-        missing.push(`${wf.id}: fixture method ${fixture.method} != ${wf.method}`);
+        missing.push(`${wf.id}: fixture method ${fixture.method} != ${String(wf.method)}`);
       }
       if (fixture.path !== wf.path) {
-        missing.push(`${wf.id}: fixture path ${fixture.path} != ${wf.path}`);
+        missing.push(`${wf.id}: fixture path ${fixture.path} != ${String(wf.path)}`);
       }
       const allowed = statusList(wf.status);
       if (!allowed.includes(fixture.status)) {
-        missing.push(`${wf.id}: fixture status ${fixture.status} not in ${JSON.stringify(allowed)}`);
+        missing.push(`${wf.id}: fixture status ${String(fixture.status)} not in ${JSON.stringify(allowed)}`);
       }
     }
     expect(missing, missing.join('\n')).toEqual([]);
@@ -232,7 +232,7 @@ test.describe('catalog VCR (backendless)', () => {
       }
       if (!allowed.has(result.status)) {
         failures.push(
-          `${wf.id}: ${method} ${path} → ${result.status} (fixture ${fixture.status}, allowed ${[...allowed].join(',')})`,
+          `${wf.id}: ${method} ${path} → ${String(result.status)} (fixture ${String(fixture.status)}, allowed ${[...allowed].join(',')})`,
         );
       }
     }

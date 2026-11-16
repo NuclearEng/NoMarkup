@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from 'next';
-import { Instrument_Serif, JetBrains_Mono, Outfit, Syne } from 'next/font/google';
+import localFont from 'next/font/local';
 import { headers } from 'next/headers';
 import { preconnect } from 'react-dom';
 import '@/styles/globals.css';
@@ -16,40 +16,97 @@ import { InstallPrompt } from '@/components/pwa/InstallPrompt';
 import { ServiceWorkerRegistrar } from '@/components/pwa/ServiceWorkerRegistrar';
 import { BUYER_PAYS_AGREED_PRICE } from '@/lib/constants';
 import { Toaster } from 'sonner';
+import { siteUrl } from '@/lib/site-url';
 
 // Showcase type stack — docs/brand/showcase-ssot.md (qa/showcase/index.html)
-const instrument = Instrument_Serif({
-  subsets: ['latin'],
-  weight: '400',
-  style: ['normal', 'italic'],
+//
+// Self-hosted (next/font/local) so neither `next dev` nor `next build` talks
+// to fonts.googleapis.com — a slow or unreachable Google Fonts used to fail
+// both. The files in src/fonts/ are the exact latin-subset woff2 files Google
+// Fonts served for these families (byte-identical, so rendering is unchanged);
+// all four families are SIL OFL 1.1 — licence texts sit next to the files.
+// Only the latin subset goes through next/font (and is preloaded). The other
+// subsets Google declared (latin-ext, greek, cyrillic, vietnamese — user-entered
+// names and addresses need them) are the "<Family> Subsets" faces in
+// globals.css, fetched on demand.
+//
+// `unicode-range` mirrors Google's latin subset (repeated in each call:
+// next/font only accepts literal values). The metric-adjusted
+// "<Family> Fallback" faces that prevent layout shift while the web font
+// loads are declared in src/styles/globals.css with the values
+// next/font/google generated, which is why adjustFontFallback is off here.
+const instrument = localFont({
+  src: [
+    { path: '../fonts/instrument-serif-latin-400-normal.woff2', weight: '400', style: 'normal' },
+    { path: '../fonts/instrument-serif-latin-400-italic.woff2', weight: '400', style: 'italic' },
+  ],
   variable: '--font-instrument',
   display: 'swap',
+  fallback: ['Instrument Serif Subsets', 'Instrument Serif Fallback'],
+  adjustFontFallback: false,
+  declarations: [
+    {
+      prop: 'unicode-range',
+      value:
+        'U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD',
+    },
+  ],
 });
 
-const syne = Syne({
-  subsets: ['latin'],
-  weight: ['500', '600', '700', '800'],
+const syne = localFont({
+  src: '../fonts/syne-latin-wght-normal.woff2',
+  weight: '500 800',
+  style: 'normal',
   variable: '--font-syne',
   display: 'swap',
+  fallback: ['Syne Subsets', 'Syne Fallback'],
+  adjustFontFallback: false,
+  declarations: [
+    {
+      prop: 'unicode-range',
+      value:
+        'U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD',
+    },
+  ],
 });
 
-const outfit = Outfit({
-  subsets: ['latin'],
-  weight: ['300', '400', '500', '600', '700'],
+const outfit = localFont({
+  src: '../fonts/outfit-latin-wght-normal.woff2',
+  weight: '300 700',
+  style: 'normal',
   variable: '--font-outfit',
   display: 'swap',
+  fallback: ['Outfit Subsets', 'Outfit Fallback'],
+  adjustFontFallback: false,
+  declarations: [
+    {
+      prop: 'unicode-range',
+      value:
+        'U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD',
+    },
+  ],
 });
 
-const jetbrains = JetBrains_Mono({
-  subsets: ['latin'],
-  weight: ['400', '500', '600'],
+const jetbrains = localFont({
+  src: '../fonts/jetbrains-mono-latin-wght-normal.woff2',
+  weight: '400 600',
+  style: 'normal',
   variable: '--font-jetbrains',
   display: 'swap',
+  fallback: ['JetBrains Mono Subsets', 'JetBrains Mono Fallback'],
+  adjustFontFallback: false,
+  declarations: [
+    {
+      prop: 'unicode-range',
+      value:
+        'U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD',
+    },
+  ],
 });
 
 // Public site origin — drives canonical URLs and absolute OG/Twitter image URLs.
 // no-markup.com is the owned, hyphenated production zone (CLAUDE.md §2).
-const SITE_URL = process.env['NEXT_PUBLIC_SITE_URL'] ?? 'https://no-markup.com';
+const SITE_URL = siteUrl();
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
@@ -67,7 +124,7 @@ export const metadata: Metadata = {
     'local contractors',
     'fair price',
     'local marketplace',
-    'verified providers',
+    'local providers',
   ],
   alternates: { canonical: '/' },
   // Favicon + apple-touch-icon come from App Router file conventions:

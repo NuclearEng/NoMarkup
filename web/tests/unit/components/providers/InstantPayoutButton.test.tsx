@@ -60,7 +60,11 @@ describe('InstantPayoutButton', () => {
   it('shows fee breakdown panel when amount is positive', () => {
     render(<InstantPayoutButton availableBalanceCents={10000} />);
     expect(screen.getByText('Amount')).toBeDefined();
-    expect(screen.getByText(/Fee \(1%\)/)).toBeDefined();
+    // 0fcb540f aligned the display with the server fee: 150 bps, $1 floor.
+    // $100.00 -> fee $1.50 -> net $98.50.
+    expect(screen.getByText('Fee (1.5%, $1 min)')).toBeDefined();
+    expect(screen.getByText('-$1.50')).toBeDefined();
     expect(screen.getByText('You receive')).toBeDefined();
+    expect(screen.getByText('$98.50')).toBeDefined();
   });
 });

@@ -291,9 +291,12 @@ describe('useCheckIn — geolocation errors', () => {
     result.current.mutate();
     await waitFor(() => { expect(result.current.isError).toBe(true); });
 
-    expect((result.current.error as Error | null)?.message).toContain('Location access was denied');
+    // Copy since e076df18 (ASR-5.1.5): says why GPS is needed and how to fix it.
+    const message = (result.current.error as Error | null)?.message;
+    expect(message).toContain('GPS is required for check-in');
+    expect(message).toContain('Enable location access and try again');
     expect(vi.mocked(toast.error)).toHaveBeenCalledWith(
-      expect.stringContaining('Location access was denied'),
+      expect.stringContaining('Enable location access and try again'),
     );
   });
 
@@ -304,7 +307,10 @@ describe('useCheckIn — geolocation errors', () => {
     result.current.mutate();
     await waitFor(() => { expect(result.current.isError).toBe(true); });
 
-    expect((result.current.error as Error | null)?.message).toContain('Unable to determine your location');
+    const message = (result.current.error as Error | null)?.message;
+    expect(message).toContain('We could not read your location');
+    // Must not blame permissions when the failure is not a permission denial.
+    expect(message).not.toContain('Enable location access');
   });
 
   it('surfaces api.post failures via the error toast', async () => {

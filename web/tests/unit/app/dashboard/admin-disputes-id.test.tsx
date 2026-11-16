@@ -1,10 +1,10 @@
 // Tests for the admin dispute detail page — exercises loading, error, info card,
 // resolution form interactions (notes, refund, guarantee checkbox), full
 // handleResolve flow with router push, and resolved-state read-only branch.
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createElement } from 'react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { withQueryClient } from './_helpers';
 
@@ -109,6 +109,17 @@ function makeDispute(overrides: Record<string, unknown> = {}): Record<string, un
     ...overrides,
   };
 }
+
+// jsdom does not implement <dialog>.showModal()/close(), which
+// ActionConfirmDialog drives from an effect.
+beforeAll(() => {
+  HTMLDialogElement.prototype.showModal = function showModal(this: HTMLDialogElement) {
+    this.setAttribute('open', '');
+  };
+  HTMLDialogElement.prototype.close = function close(this: HTMLDialogElement) {
+    this.removeAttribute('open');
+  };
+});
 
 beforeEach(() => {
   disputeState.data = undefined;
@@ -283,6 +294,13 @@ describe('AdminDisputeDetailPage', () => {
     });
     await user.click(resolveBtn);
 
+    // Since 68a582d5 ("admin money confirms") the page button only opens
+    // ActionConfirmDialog; the resolution is submitted on confirm.
+    expect(resolveMutate).not.toHaveBeenCalled();
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByText('Resolve this dispute?')).toBeDefined();
+    await user.click(within(dialog).getByRole('button', { name: 'Resolve dispute' }));
+
     await waitFor(() => {
       expect(resolveMutate).toHaveBeenCalledTimes(1);
     });
@@ -315,6 +333,13 @@ describe('AdminDisputeDetailPage', () => {
       expect((resolveBtn as HTMLButtonElement).disabled).toBe(false);
     });
     await user.click(resolveBtn);
+
+    // Since 68a582d5 ("admin money confirms") the page button only opens
+    // ActionConfirmDialog; the resolution is submitted on confirm.
+    expect(resolveMutate).not.toHaveBeenCalled();
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByText('Resolve this dispute?')).toBeDefined();
+    await user.click(within(dialog).getByRole('button', { name: 'Resolve dispute' }));
 
     await waitFor(() => {
       expect(resolveMutate).toHaveBeenCalledTimes(1);

@@ -134,8 +134,12 @@ struct LoginView: View {
     }
 
     private var credentialForm: some View {
-        VStack(spacing: 12) {
-            TextField("Email", text: $auth.email)
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Email")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(BrandTheme.textSecondary)
+            TextField("name@example.com", text: $auth.email)
+                .accessibilityLabel("Email")
                 .textContentType(.username)
                 .keyboardType(.emailAddress)
                 .textInputAutocapitalization(.never)
@@ -153,7 +157,11 @@ struct LoginView: View {
                 .onSubmit { focusedField = .password }
                 .disabled(auth.isBusy)
 
+            Text("Password")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(BrandTheme.textSecondary)
             SecureField("Password", text: $auth.password)
+                .accessibilityLabel("Password")
                 .textContentType(.password)
                 .accessibilityIdentifier("login.password")
                 .foregroundStyle(BrandTheme.textPrimary)
@@ -227,7 +235,8 @@ struct LoginView: View {
             }
             .brandPrimaryButton()
             .disabled(auth.isBusy)
-            .accessibilityLabel("Verify authenticator code and sign in")
+            .accessibilityLabel("Verify and sign in")
+            .accessibilityInputLabels(["Verify and sign in", "Verify authenticator code and sign in"])
             .accessibilityIdentifier("login.mfaSubmit")
 
             Button("Back to sign in") {
@@ -337,11 +346,11 @@ struct LoginView: View {
 
     private var divider: some View {
         HStack {
-            Rectangle().frame(height: 1).foregroundStyle(BrandTheme.gold.opacity(0.2))
+            Rectangle().frame(height: 1).foregroundStyle(BrandTheme.goldBright.opacity(0.2))
             Text("or")
                 .font(.caption)
                 .foregroundStyle(BrandTheme.textSecondary)
-            Rectangle().frame(height: 1).foregroundStyle(BrandTheme.gold.opacity(0.2))
+            Rectangle().frame(height: 1).foregroundStyle(BrandTheme.goldBright.opacity(0.2))
         }
     }
 

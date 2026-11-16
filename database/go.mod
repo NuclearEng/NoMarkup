@@ -2,7 +2,7 @@ module github.com/nomarkup/nomarkup/database
 
 go 1.26.0
 
-toolchain go1.26.5
+toolchain go1.26.11
 
 require (
 	github.com/jackc/pgx/v5 v5.9.2

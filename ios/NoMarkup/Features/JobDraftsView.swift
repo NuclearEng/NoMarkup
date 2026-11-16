@@ -180,7 +180,7 @@ struct JobDraftsView: View {
                 .frame(maxWidth: .infinity, minHeight: 44)
             }
             .buttonStyle(.borderedProminent)
-            .tint(BrandTheme.gold)
+            .tint(BrandTheme.goldBright)
             .foregroundStyle(BrandTheme.ctaLabelOnGold)
             .disabled(publishingID != nil)
             .accessibilityLabel("Publish \(job.displayTitle)")
