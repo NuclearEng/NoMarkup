@@ -118,7 +118,8 @@ export const useAuthStore = create<AuthState & AuthActions>()((set) => ({
     // The MFA verify endpoint may not return user_id in the body,
     // so we extract it from the JWT payload (sub claim).
     const userId = data.user_id || (payload ? payload.sub : '');
-    if (!payload || userId === '') {
+    // A token with no `sub` yields undefined here, not '': reject both.
+    if (!payload || !userId) {
       clearTokens();
       throw new Error('Login succeeded but the session could not be restored. Please try again.');
     }
@@ -192,9 +193,8 @@ export const useAuthStore = create<AuthState & AuthActions>()((set) => ({
       // checks (e.g. isProvider) work on public pages where
       // AuthRestorer hydrates the store asynchronously.
       const payload = parseJwtPayload(data.access_token);
-      const user = payload
-        ? userFromJwt(payload.sub, payload)
-        : null;
+      // No subject means no identity: same as an unreadable token.
+      const user = payload?.sub ? userFromJwt(payload.sub, payload) : null;
 
       set({
         user,
@@ -213,7 +213,8 @@ export const useAuthStore = create<AuthState & AuthActions>()((set) => ({
   adoptSession: (data: AuthResponse) => {
     const payload = parseJwtPayload(data.access_token);
     const userId = data.user_id || (payload ? payload.sub : '');
-    if (!payload || userId === '') {
+    // A token with no `sub` yields undefined here, not '': reject both.
+    if (!payload || !userId) {
       clearTokens();
       throw new Error('Sign-in succeeded but the session could not be restored. Please try again.');
     }
