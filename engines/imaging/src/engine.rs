@@ -1553,21 +1553,21 @@ mod tests {
     fn encode_jpeg_produces_bytes() {
         let img = make_test_image(100, 100);
         let encoded = encode_image(&img, ImageFormat::Jpeg, 85).expect("encode JPEG");
-        assert!(!encoded.is_empty());
+        assert!(!encoded.is_empty(), "JPEG encoder produced no bytes");
     }
 
     #[test]
     fn encode_png_produces_bytes() {
         let img = make_test_image(100, 100);
         let encoded = encode_image(&img, ImageFormat::Png, 85).expect("encode PNG");
-        assert!(!encoded.is_empty());
+        assert!(!encoded.is_empty(), "PNG encoder produced no bytes");
     }
 
     #[test]
     fn encode_webp_produces_bytes() {
         let img = make_test_image(100, 100);
         let encoded = encode_image(&img, ImageFormat::WebP, 85).expect("encode WebP");
-        assert!(!encoded.is_empty());
+        assert!(!encoded.is_empty(), "WebP encoder produced no bytes");
     }
 
     #[test]
@@ -1878,7 +1878,7 @@ mod tests {
     fn blur_hash_produces_nonempty_string() {
         let img = make_test_image(100, 100);
         let hash = compute_blur_hash(&img);
-        assert!(!hash.is_empty());
+        assert!(!hash.is_empty(), "blur hash must not be empty");
     }
 
     #[test]
@@ -2011,7 +2011,10 @@ mod tests {
             let inline_encoded = encode_image(&resized, opts.format, opts.quality).expect("encode");
             let after_inline = ticks.load(Ordering::Relaxed);
 
-            assert!(!inline_encoded.is_empty());
+            assert!(
+                !inline_encoded.is_empty(),
+                "inline encode produced no bytes"
+            );
             assert_eq!(
                 after_inline, before_inline,
                 "control: inline CPU work starves every other task on the runtime"
@@ -2024,7 +2027,10 @@ mod tests {
 
             heartbeat.abort();
 
-            assert!(!rendered.image.data.is_empty());
+            assert!(
+                !rendered.image.data.is_empty(),
+                "render_processed produced no bytes"
+            );
             assert!(rendered.blur_hash.is_some());
             assert_eq!(rendered.original_width, 1600);
             assert_eq!(rendered.original_height, 1200);

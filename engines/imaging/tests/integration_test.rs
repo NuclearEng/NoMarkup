@@ -42,7 +42,7 @@ fn process_pipeline_resize_and_encode_jpeg() {
         .write_with_encoder(jpeg_encoder)
         .expect("encode JPEG");
     let encoded = buf.into_inner();
-    assert!(!encoded.is_empty());
+    assert!(!encoded.is_empty(), "JPEG encoder produced no bytes");
 }
 
 #[test]
@@ -51,7 +51,7 @@ fn process_pipeline_resize_and_encode_png() {
     let resized = img.resize(400, 300, image::imageops::FilterType::Lanczos3);
 
     let encoded = encode_test_image(&resized, image::ImageFormat::Png);
-    assert!(!encoded.is_empty());
+    assert!(!encoded.is_empty(), "PNG encoder produced no bytes");
 
     // Decode back and verify dimensions.
     let decoded = image::load_from_memory(&encoded).expect("decode PNG");
@@ -66,7 +66,7 @@ fn process_pipeline_resize_and_encode_webp() {
     let resized = img.resize(320, 240, image::imageops::FilterType::Lanczos3);
 
     let encoded = encode_test_image(&resized, image::ImageFormat::WebP);
-    assert!(!encoded.is_empty());
+    assert!(!encoded.is_empty(), "WebP encoder produced no bytes");
 }
 
 // ---------------------------------------------------------------------------
@@ -116,7 +116,7 @@ fn jpeg_to_png_conversion() {
     let jpeg_bytes = encode_test_image(&img, image::ImageFormat::Jpeg);
     let decoded = image::load_from_memory(&jpeg_bytes).expect("decode JPEG");
     let png_bytes = encode_test_image(&decoded, image::ImageFormat::Png);
-    assert!(!png_bytes.is_empty());
+    assert!(!png_bytes.is_empty(), "PNG re-encode produced no bytes");
 
     let final_img = image::load_from_memory(&png_bytes).expect("decode PNG");
     let (w, h) = final_img.dimensions();
@@ -130,7 +130,7 @@ fn png_to_webp_conversion() {
     let png_bytes = encode_test_image(&img, image::ImageFormat::Png);
     let decoded = image::load_from_memory(&png_bytes).expect("decode PNG");
     let webp_bytes = encode_test_image(&decoded, image::ImageFormat::WebP);
-    assert!(!webp_bytes.is_empty());
+    assert!(!webp_bytes.is_empty(), "WebP re-encode produced no bytes");
 }
 
 // ---------------------------------------------------------------------------
@@ -352,7 +352,7 @@ fn full_pipeline_create_resize_encode_decode() {
 
     // Encode as JPEG.
     let encoded = encode_test_image(&resized, image::ImageFormat::Jpeg);
-    assert!(!encoded.is_empty());
+    assert!(!encoded.is_empty(), "JPEG encoder produced no bytes");
     assert!(
         i64::try_from(encoded.len()).expect("len fits in i64") < MAX_FILE_SIZE_BYTES,
         "Encoded size {} should be under limit",

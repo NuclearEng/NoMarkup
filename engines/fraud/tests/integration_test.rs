@@ -170,7 +170,7 @@ fn check_result_from_score_low() {
     assert_eq!(result.risk_level, RiskLevel::Low);
     assert_eq!(result.decision, FraudDecision::Allow);
     assert!((result.risk_score - 0.1).abs() < f64::EPSILON);
-    assert!(result.reasons.is_empty());
+    assert_eq!(result.reasons, Vec::<String>::new());
     assert!(!result.shill_bid_detected);
 }
 

@@ -171,7 +171,7 @@ fn deterministic_including_hash() {
     let a = underwrite(&f);
     let b = underwrite(&f);
     assert_eq!(a, b);
-    assert!(!a.decision_hash.is_empty());
+    assert_ne!(a.decision_hash, "");
     assert_eq!(a.decision_hash.len(), 64); // sha-256 hex
 }
 
