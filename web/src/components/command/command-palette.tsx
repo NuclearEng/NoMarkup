@@ -367,7 +367,7 @@ export function CommandPalette() {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent
-        className="max-w-lg gap-0 overflow-hidden border-white/10 bg-[#0e1017] p-0 shadow-2xl sm:rounded-xl"
+        className="max-w-lg gap-0 overflow-hidden border-white/10 bg-secondary p-0 shadow-2xl sm:rounded-xl"
         // cmd-style: no default close X crowding the search field — Esc works.
         // Keep the built-in close for a11y (Dialog already provides it).
       >

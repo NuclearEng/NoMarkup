@@ -118,6 +118,7 @@ xl: ['1.25rem', { lineHeight: '1.75rem' }],
 | `src/app/icon.tsx`, `src/app/apple-icon.tsx` | Next.js `ImageResponse` has no document CSS vars at render time |
 | `src/app/layout.tsx` | `viewport.themeColor` meta needs a concrete color string at module scope |
 | `src/components/auth/oauth-icons.tsx` | Google “G” trademark brand palette (not product tokens) |
+| `src/components/payments/ConnectEmbeddedOnboarding.tsx` | Stripe Connect embedded `appearance.variables` are applied inside Stripe’s cross-origin iframe and need concrete color strings (cannot read our CSS vars) |
 
 **Charts / canvas / SVG / Mapbox:** use CSS vars in `stroke` / `fill` / `stopColor` (browser resolves them). Canvas confetti and Mapbox GL paint resolve `getComputedStyle(…).getPropertyValue('--brand-*' | '--background')` at paint time — do not hardcode hex arrays. Landing atmospheric mesh fills live on `.gradient-blob-*` in `globals.css`, not inline in `GradientMesh.tsx`.
 
