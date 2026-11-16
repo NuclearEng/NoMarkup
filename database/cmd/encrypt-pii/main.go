@@ -942,7 +942,11 @@ func main() {
 	}
 
 	ctx := context.Background()
-	conn, err := pgx.Connect(ctx, databaseURL)
+	connConfig, err := batchConnConfig(databaseURL)
+	if err != nil {
+		log.Fatalf("parse DATABASE_URL: %v", err)
+	}
+	conn, err := pgx.ConnectConfig(ctx, connConfig)
 	if err != nil {
 		log.Fatalf("connect: %v", err)
 	}
@@ -1001,4 +1005,32 @@ func decodeKey(b64 string) (*[keySize]byte, error) {
 	var k [keySize]byte
 	copy(k[:], raw)
 	return &k, nil
+}
+
+// batchConnConfig parses databaseURL and switches off the request-path
+// session timeouts for this connection.
+//
+// Migration 137 makes statement_timeout (10s), lock_timeout (3s) and
+// idle_in_transaction_session_timeout (30s) defaults of the application role,
+// which is the role this backfill runs as. A table-wide re-encryption pass
+// legitimately exceeds all three, so the connection asks for none of them in
+// its startup packet; a value already present in the URL is kept.
+//
+// Startup parameters only reach Postgres on a DIRECT connection. PgBouncer
+// either refuses them ("unsupported startup parameter") or ignores them, so
+// point DATABASE_URL at Postgres itself when running this tool.
+func batchConnConfig(databaseURL string) (*pgx.ConnConfig, error) {
+	cfg, err := pgx.ParseConfig(databaseURL)
+	if err != nil {
+		return nil, err
+	}
+	if cfg.RuntimeParams == nil {
+		cfg.RuntimeParams = map[string]string{}
+	}
+	for _, name := range []string{"statement_timeout", "lock_timeout", "idle_in_transaction_session_timeout"} {
+		if _, pinned := cfg.RuntimeParams[name]; !pinned {
+			cfg.RuntimeParams[name] = "0"
+		}
+	}
+	return cfg, nil
 }

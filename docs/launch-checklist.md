@@ -47,7 +47,7 @@ From code-complete to real users on production. Every item must be checked off o
 
 ### Managed Data Stores
 - [ ] Managed PostgreSQL 16 + PostGIS 3.4
-- [ ] PgBouncer (or managed pooling) sized for prod
+- [ ] PgBouncer (or managed pooling) sized for prod, configured and verified per `docs/operations/pgbouncer.md` (session timeouts read `10s|3s|30s` through the pooler)
 - [ ] Managed Redis 7
 - [ ] Meilisearch 1.x with durable storage
 - [ ] S3 bucket(s): public assets + private docs (no public read on private)

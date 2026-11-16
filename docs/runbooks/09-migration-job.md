@@ -35,6 +35,15 @@ kubectl logs job/db-migrate -n nomarkup
 | ImagePullBackOff | Registry auth / wrong tag | Confirm GHCR push + imagePullSecrets if private |
 | Stuck Pending | Resource quotas / PSPs | `kubectl describe job` + events |
 
+## Statement or lock timeout
+
+`canceling statement due to statement timeout` or `canceling statement due to
+lock timeout`: the migration role carries the request-path session timeouts
+(10 s per statement, 3 s per lock wait; migration 137). A migration that
+needs longer starts with `SET statement_timeout = 0; SET lock_timeout = 0;`.
+Connect the job to Postgres directly, not through PgBouncer. See
+[`../operations/pgbouncer.md`](../operations/pgbouncer.md).
+
 ## Dirty database version
 
 If migrate reports a dirty version:

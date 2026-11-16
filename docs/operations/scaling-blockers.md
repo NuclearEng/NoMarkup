@@ -138,7 +138,8 @@ Redis with optimistic concurrency, which is a larger refactor.
 Every service goes through Postgres. As pods grow, connections grow. Mitigations:
 
 1. **PgBouncer** (transaction pooling) is mandatory in production, sized at
-   100 default pool, 500 max client.
+   100 default pool, 500 max client. Required settings, the startup-parameter
+   failure and how to verify a pooler: [`pgbouncer.md`](pgbouncer.md).
 2. **Read replicas** for analytics, search, profile reads. Wired as
    `DATABASE_URL_REPLICA` (and dbReadPool passed to read paths in gateway + key handlers).
    Primary used for writes/ownership. Gap closed (see gap-closure-plan.md P0-1).
