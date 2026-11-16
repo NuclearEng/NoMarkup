@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft,
   Calendar,
@@ -19,13 +19,13 @@ import {
   WifiOff,
   Zap,
 } from 'lucide-react';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import type { Route } from 'next';
 import { toast } from 'sonner';
 
 import { BidActivityFeed } from '@/components/bids/BidActivityFeed';
-import { BidForm } from '@/components/bids/BidForm';
 import { BidList } from '@/components/bids/BidList';
 import { BidPriceChart } from '@/components/bids/BidPriceChart';
 import { LiveBidTicker } from '@/components/bids/LiveBidTicker';
@@ -48,6 +48,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Separator } from '@/components/ui/separator';
+import { Skeleton } from '@/components/ui/skeleton';
 import { BUYER_PAYS_AGREED_PRICE, ENABLE_LIVE_AUCTION } from '@/lib/constants';
 import { useAuctionTerminal } from '@/hooks/useAuctionTerminal';
 import { useBidCount, useBidsForJob } from '@/hooks/useBids';
@@ -149,6 +150,25 @@ function JobPartyActions({
   );
 }
 
+// PERF-08: the bid form is the only thing on this page that needs
+// react-hook-form + zod (~25 kB gzip). It renders only for a signed-in provider
+// on an active job, and sign-in state is restored in the browser, so it is
+// never part of the server-rendered page. Load it when the viewer turns out to
+// be a provider (see the effect in JobDetailClient) instead of for everyone.
+const loadBidForm = () => import('@/components/bids/BidForm').then((mod) => mod.BidForm);
+
+function BidFormLoading() {
+  return (
+    <div role="status" aria-label="Loading bid form" className="space-y-3">
+      <Skeleton className="h-4 w-32" />
+      <Skeleton className="h-11 w-full" />
+      <Skeleton className="h-11 w-full" />
+    </div>
+  );
+}
+
+const BidForm = dynamic(loadBidForm, { ssr: false, loading: BidFormLoading });
+
 const FALLBACK_MARKET_RANGE: MarketRange = {
   low_cents: 0,
   median_cents: 0,
@@ -227,6 +247,12 @@ export function JobDetailClient({ jobId, initialJob }: JobDetailClientProps) {
 
   // Determine if the job is in a state where bidding/awarding is possible
   const canBid = job?.status === JOB_STATUS.ACTIVE && isProvider && !isJobOwner;
+
+  // Start fetching the bid form as soon as we know it will be shown, so it is
+  // usually ready by the time the bidding section renders.
+  useEffect(() => {
+    if (canBid) void loadBidForm().catch(() => undefined);
+  }, [canBid]);
 
   // Bloomberg keyboard layer on live terminal surfaces.
   useTerminalHotkeys({
