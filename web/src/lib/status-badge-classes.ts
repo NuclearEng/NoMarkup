@@ -4,8 +4,12 @@ import { LISTING_ORDER_STATUS } from '@/types';
 /**
  * Glass-styled status badge classes for dark UI.
  *
- * Semantic design-system tokens (trust / bid / status / brand) only —
- * no raw emerald/blue/amber hex utilities on chrome badges.
+ * Semantic design-system tokens (trust / bid / status / category) only —
+ * no raw emerald/blue/amber palette utilities on chrome badges.
+ *
+ * Within one map, two statuses share a colour only when they mean the same
+ * thing to the reader (see "Status colour rules" in docs/design-system.md and
+ * tests/unit/lib/status-badge-distinct.test.ts, which pins it).
  */
 
 /** User account status */
@@ -19,18 +23,19 @@ export const USER_STATUS_CLASSES: Record<string, string> = {
 /** Dispute status */
 export const DISPUTE_STATUS_CLASSES: Record<string, string> = {
   open: 'bg-status-open/10 text-status-open border-status-open/30',
-  investigating: 'bg-trust-elite/10 text-trust-elite border-trust-elite/30',
+  investigating: 'bg-status-held/10 text-status-held border-status-held/30',
   resolved: 'bg-status-completed/10 text-status-completed border-status-completed/30',
-  escalated: 'bg-status-disputed/10 text-status-disputed border-status-disputed/30',
+  // Escalated = raised a tier and waiting on someone, not failed.
+  escalated: 'bg-status-elevated/10 text-status-elevated border-status-elevated/30',
 };
 
 /** Guarantee claim status (reuses dispute statuses) */
 export const GUARANTEE_STATUS_CLASSES: Record<string, string> = {
   open: 'bg-status-open/10 text-status-open border-status-open/30',
-  under_review: 'bg-trust-elite/10 text-trust-elite border-trust-elite/30',
-  investigating: 'bg-trust-elite/10 text-trust-elite border-trust-elite/30',
+  under_review: 'bg-status-held/10 text-status-held border-status-held/30',
+  investigating: 'bg-status-held/10 text-status-held border-status-held/30',
   resolved: 'bg-status-completed/10 text-status-completed border-status-completed/30',
-  escalated: 'bg-status-disputed/10 text-status-disputed border-status-disputed/30',
+  escalated: 'bg-status-elevated/10 text-status-elevated border-status-elevated/30',
   approved: 'bg-trust-high/10 text-trust-high border-trust-high/30',
   denied: 'bg-destructive/10 text-destructive border-destructive/30',
   paid: 'bg-bid-winning/10 text-bid-winning border-bid-winning/30',
@@ -43,8 +48,8 @@ export const JOB_STATUS_CLASSES: Record<string, string> = {
   active: 'bg-trust-high/10 text-trust-high border-trust-high/30',
   open: 'bg-status-open/10 text-status-open border-status-open/30',
   bidding: 'bg-status-in-progress/10 text-status-in-progress border-status-in-progress/30',
-  awarded: 'bg-trust-elite/10 text-trust-elite border-trust-elite/30',
-  contract_pending: 'bg-trust-elite/10 text-trust-elite border-trust-elite/30',
+  awarded: 'bg-status-held/10 text-status-held border-status-held/30',
+  contract_pending: 'bg-status-held/10 text-status-held border-status-held/30',
   in_progress: 'bg-status-in-progress/10 text-status-in-progress border-status-in-progress/30',
   completed: 'bg-status-completed/10 text-status-completed border-status-completed/30',
   reviewed: 'bg-status-completed/10 text-status-completed border-status-completed/30',
@@ -77,21 +82,21 @@ export const MILESTONE_STATUS_DOT_CLASSES: Record<string, string> = {
   in_progress: 'bg-status-open',
   submitted: 'bg-trust-medium',
   approved: 'bg-status-completed',
-  revision_requested: 'bg-status-disputed',
-  disputed: 'bg-destructive',
+  revision_requested: 'bg-status-elevated',
+  disputed: 'bg-status-disputed',
 };
 
 /** Payment status */
 export const PAYMENT_STATUS_CLASSES: Record<string, string> = {
   pending: 'bg-trust-medium/10 text-trust-medium border-trust-medium/30',
   processing: 'bg-status-open/10 text-status-open border-status-open/30',
-  escrow: 'bg-trust-elite/10 text-trust-elite border-trust-elite/30',
+  // Funds held in escrow: its own hue, apart from processing (blue).
+  escrow: 'bg-status-held/10 text-status-held border-status-held/30',
   released: 'bg-trust-high/10 text-trust-high border-trust-high/30',
   completed: 'bg-status-completed/10 text-status-completed border-status-completed/30',
   failed: 'bg-destructive/10 text-destructive border-destructive/30',
   // A refund is settled, not waiting on anyone, so it must not share the
-  // pending (trust-medium) badge. The tokens have no orange; settled-and-closed
-  // reads as neutral.
+  // pending (trust-medium) badge; settled-and-closed reads as neutral.
   refunded: 'bg-muted text-muted-foreground border-border',
   partially_refunded: 'bg-muted text-muted-foreground border-border',
   disputed: 'bg-status-disputed/10 text-status-disputed border-status-disputed/30',
@@ -128,16 +133,16 @@ export const VERIFICATION_STATUS_CLASSES: Record<string, string> = {
 export const FRAUD_RISK_CLASSES: Record<string, string> = {
   low: 'bg-trust-high/10 text-trust-high border-trust-high/30',
   medium: 'bg-trust-medium/10 text-trust-medium border-trust-medium/30',
-  // Risk runs along the trust scale (high risk = low trust); status-disputed
-  // is reserved for things actually in dispute.
-  high: 'bg-trust-low/10 text-trust-low border-trust-low/30',
+  // Elevated but not yet critical: orange, between medium (amber) and
+  // critical (red). status-disputed is reserved for things actually in dispute.
+  high: 'bg-status-elevated/10 text-status-elevated border-status-elevated/30',
   critical: 'bg-destructive/10 text-destructive border-destructive/30',
 };
 
 /** Fraud alert status */
 export const FRAUD_ALERT_STATUS_CLASSES: Record<string, string> = {
   open: 'bg-status-open/10 text-status-open border-status-open/30',
-  investigating: 'bg-trust-elite/10 text-trust-elite border-trust-elite/30',
+  investigating: 'bg-status-held/10 text-status-held border-status-held/30',
   resolved_fraud: 'bg-status-completed/10 text-status-completed border-status-completed/30',
   resolved_legitimate: 'bg-status-completed/10 text-status-completed border-status-completed/30',
   dismissed: 'bg-muted text-muted-foreground border-border',
@@ -154,7 +159,7 @@ export const INSURANCE_POLICY_STATUS_CLASSES: Record<string, string> = {
 /** Insurance claim status */
 export const INSURANCE_CLAIM_STATUS_CLASSES: Record<string, string> = {
   filed: 'bg-status-open/10 text-status-open border-status-open/30',
-  under_review: 'bg-trust-elite/10 text-trust-elite border-trust-elite/30',
+  under_review: 'bg-status-held/10 text-status-held border-status-held/30',
   approved: 'bg-trust-high/10 text-trust-high border-trust-high/30',
   denied: 'bg-destructive/10 text-destructive border-destructive/30',
   paid: 'bg-bid-winning/10 text-bid-winning border-bid-winning/30',
@@ -177,15 +182,18 @@ export const SCHEDULED_INSTALLMENT_STATUS_CLASSES: Record<string, string> = {
   retrying: 'bg-status-in-progress/10 text-status-in-progress border-status-in-progress/30',
 };
 
-/** Expense category */
+/**
+ * Expense category. Categories are tags, not states, so they use the
+ * categorical palette (identity only) and never a status / trust token.
+ */
 export const EXPENSE_CATEGORY_CLASSES: Record<string, string> = {
-  materials: 'bg-status-open/10 text-status-open border-status-open/30',
-  tools: 'bg-trust-elite/10 text-trust-elite border-trust-elite/30',
-  transportation: 'bg-status-in-progress/10 text-status-in-progress border-status-in-progress/30',
-  insurance: 'bg-trust-high/10 text-trust-high border-trust-high/30',
-  licensing: 'bg-bid-active/10 text-bid-active border-bid-active/30',
-  marketing: 'bg-brand-gold/10 text-brand-gold border-brand-gold/30',
-  subcontractor: 'bg-status-disputed/10 text-status-disputed border-status-disputed/30',
+  materials: 'bg-category-1/10 text-category-1 border-category-1/30',
+  tools: 'bg-category-2/10 text-category-2 border-category-2/30',
+  transportation: 'bg-category-3/10 text-category-3 border-category-3/30',
+  insurance: 'bg-category-4/10 text-category-4 border-category-4/30',
+  licensing: 'bg-category-5/10 text-category-5 border-category-5/30',
+  marketing: 'bg-category-6/10 text-category-6 border-category-6/30',
+  subcontractor: 'bg-category-7/10 text-category-7 border-category-7/30',
   office: 'bg-muted text-muted-foreground border-border',
   other: 'bg-muted text-muted-foreground border-border',
 };

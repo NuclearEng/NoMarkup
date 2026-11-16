@@ -37,7 +37,7 @@ function calculateTimeRemaining(completedAt: string): TimeRemaining {
 function getColorClass(totalMs: number): string {
   const totalHours = totalMs / (1000 * 60 * 60);
   if (totalHours > 72) return 'text-trust-medium';
-  if (totalHours >= 24) return 'text-status-disputed';
+  if (totalHours >= 24) return 'text-status-elevated';
   return 'text-destructive';
 }
 

@@ -40,12 +40,12 @@ describe('AutoReleaseTimer', () => {
     expect(countdown.textContent).toMatch(/^[56]d /);
   });
 
-  it('renders countdown in status-disputed when between 24h and 72h remain', () => {
+  it('renders countdown in status-elevated when between 24h and 72h remain', () => {
     // Completed 5 days, 12 hours ago → ~36h left
     const completedAt = new Date(Date.now() - (5 * 24 + 12) * 60 * 60 * 1000).toISOString();
     render(createElement(AutoReleaseTimer, { completedAt }));
     const countdown = screen.getByLabelText('Auto-release countdown');
-    expect(countdown.className).toContain('text-status-disputed');
+    expect(countdown.className).toContain('text-status-elevated');
   });
 
   it('renders countdown in destructive when fewer than 24h remain', () => {

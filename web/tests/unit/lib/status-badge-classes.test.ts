@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   ADVANCE_STATUS_CLASSES,
+  CONTRACT_STATUS_CLASSES,
   DEFAULT_STATUS_CLASS,
   DISPUTE_STATUS_CLASSES,
   EXPENSE_CATEGORY_CLASSES,
@@ -25,7 +26,9 @@ import {
  * 1. Each map exposes the expected keys with non-empty string values.
  * 2. Each value is the glass triad for the expected SEMANTIC TOKEN of that
  *    state (trust-high = success, destructive = danger, trust-medium =
- *    warning, status-open = info, …). The tables used raw palette families
+ *    warning, status-open = info, status-held = held for a decision,
+ *    status-elevated = raised severity, status-disputed = contested; expense
+ *    categories use the categorical palette). The tables used raw palette families
  *    (green/red/yellow/blue/zinc) until the design-system token migration
  *    (a6ef4b35 + 44e22917, 2026-07-26; raw palette utilities are now banned
  *    on chrome badges), so these assertions name tokens, not colors.
@@ -50,6 +53,7 @@ const ALL_MAPS = {
   JOB_STATUS_CLASSES,
   PAYMENT_STATUS_CLASSES,
   ADVANCE_STATUS_CLASSES,
+  CONTRACT_STATUS_CLASSES,
   FLAG_STATUS_CLASSES,
   VERIFICATION_STATUS_CLASSES,
   FRAUD_RISK_CLASSES,
@@ -80,7 +84,7 @@ describe('status-badge-classes — shape invariants', () => {
           // One semantic token, used consistently for the translucent
           // background, the text, and the translucent border. Raw palette
           // utilities (e.g. green-500) are not allowed here.
-          const triad = /^bg-([a-z]+(?:-[a-z]+)*)\/10 text-([a-z]+(?:-[a-z]+)*) border-([a-z]+(?:-[a-z]+)*)\/30$/.exec(
+          const triad = /^bg-([a-z]+(?:-[a-z0-9]+)*)\/10 text-([a-z]+(?:-[a-z0-9]+)*) border-([a-z]+(?:-[a-z0-9]+)*)\/30$/.exec(
             value,
           );
           expect(triad, value).not.toBeNull();
@@ -145,8 +149,10 @@ describe('JOB_STATUS_CLASSES — semantic tokens', () => {
     expect(JOB_STATUS_CLASSES['in_progress']).toBe(JOB_STATUS_CLASSES['bidding']);
   });
 
-  it('awarded and contract_pending share the trust-elite treatment', () => {
+  it('awarded and contract_pending share the status-held treatment, apart from open', () => {
+    expect(JOB_STATUS_CLASSES['awarded']).toBe(glass('status-held'));
     expect(JOB_STATUS_CLASSES['awarded']).toBe(JOB_STATUS_CLASSES['contract_pending']);
+    expect(JOB_STATUS_CLASSES['awarded']).not.toBe(JOB_STATUS_CLASSES['open']);
   });
 });
 
@@ -155,8 +161,9 @@ describe('PAYMENT_STATUS_CLASSES — semantic tokens', () => {
     expect(PAYMENT_STATUS_CLASSES['pending']).toBe(glass('trust-medium'));
   });
 
-  it('escrow is trust-elite (held)', () => {
-    expect(PAYMENT_STATUS_CLASSES['escrow']).toBe(glass('trust-elite'));
+  it('escrow is status-held, never the processing badge', () => {
+    expect(PAYMENT_STATUS_CLASSES['escrow']).toBe(glass('status-held'));
+    expect(PAYMENT_STATUS_CLASSES['processing']).toBe(glass('status-open'));
   });
 
   it('released is trust-high and completed is status-completed (terminal success)', () => {
@@ -186,8 +193,8 @@ describe('FRAUD_RISK_CLASSES — risk ladder', () => {
     expect(FRAUD_RISK_CLASSES['medium']).toBe(glass('trust-medium'));
   });
 
-  it('high is trust-low, not the disputed token', () => {
-    expect(FRAUD_RISK_CLASSES['high']).toBe(glass('trust-low'));
+  it('high is status-elevated, not the disputed or the critical token', () => {
+    expect(FRAUD_RISK_CLASSES['high']).toBe(glass('status-elevated'));
   });
 
   it('critical is destructive', () => {
@@ -225,19 +232,21 @@ describe('GUARANTEE_STATUS_CLASSES — claim flow', () => {
     expect(GUARANTEE_STATUS_CLASSES['denied']).toBe(glass('destructive'));
   });
 
-  it('investigating and under_review share the trust-elite treatment', () => {
+  it('investigating and under_review share the status-held treatment; escalated is status-elevated', () => {
+    expect(GUARANTEE_STATUS_CLASSES['investigating']).toBe(glass('status-held'));
     expect(GUARANTEE_STATUS_CLASSES['investigating']).toBe(
       GUARANTEE_STATUS_CLASSES['under_review'],
     );
+    expect(GUARANTEE_STATUS_CLASSES['escalated']).toBe(glass('status-elevated'));
   });
 });
 
 describe('DISPUTE_STATUS_CLASSES', () => {
-  it('open is status-open, investigating is trust-elite, resolved is status-completed, escalated is status-disputed', () => {
+  it('open is status-open, investigating is status-held, resolved is status-completed, escalated is status-elevated', () => {
     expect(DISPUTE_STATUS_CLASSES['open']).toBe(glass('status-open'));
-    expect(DISPUTE_STATUS_CLASSES['investigating']).toBe(glass('trust-elite'));
+    expect(DISPUTE_STATUS_CLASSES['investigating']).toBe(glass('status-held'));
     expect(DISPUTE_STATUS_CLASSES['resolved']).toBe(glass('status-completed'));
-    expect(DISPUTE_STATUS_CLASSES['escalated']).toBe(glass('status-disputed'));
+    expect(DISPUTE_STATUS_CLASSES['escalated']).toBe(glass('status-elevated'));
   });
 });
 
@@ -264,6 +273,11 @@ describe('FRAUD_ALERT_STATUS_CLASSES', () => {
     expect(FRAUD_ALERT_STATUS_CLASSES['resolved_legitimate']).toBe(glass('status-completed'));
   });
 
+  it('investigating is status-held, apart from open', () => {
+    expect(FRAUD_ALERT_STATUS_CLASSES['open']).toBe(glass('status-open'));
+    expect(FRAUD_ALERT_STATUS_CLASSES['investigating']).toBe(glass('status-held'));
+  });
+
   it('dismissed is the neutral badge', () => {
     expect(FRAUD_ALERT_STATUS_CLASSES['dismissed']).toBe(NEUTRAL);
   });
@@ -279,8 +293,9 @@ describe('INSURANCE_POLICY_STATUS_CLASSES', () => {
 });
 
 describe('INSURANCE_CLAIM_STATUS_CLASSES', () => {
-  it('filed is status-open, paid is bid-winning, denied is destructive', () => {
+  it('filed is status-open, under_review is status-held, paid is bid-winning, denied is destructive', () => {
     expect(INSURANCE_CLAIM_STATUS_CLASSES['filed']).toBe(glass('status-open'));
+    expect(INSURANCE_CLAIM_STATUS_CLASSES['under_review']).toBe(glass('status-held'));
     expect(INSURANCE_CLAIM_STATUS_CLASSES['paid']).toBe(glass('bid-winning'));
     expect(INSURANCE_CLAIM_STATUS_CLASSES['denied']).toBe(glass('destructive'));
   });
@@ -306,16 +321,22 @@ describe('SCHEDULED_INSTALLMENT_STATUS_CLASSES', () => {
 });
 
 describe('EXPENSE_CATEGORY_CLASSES', () => {
-  it('every documented category maps to its token (office and other share the neutral badge)', () => {
-    expect(EXPENSE_CATEGORY_CLASSES['materials']).toBe(glass('status-open'));
-    expect(EXPENSE_CATEGORY_CLASSES['tools']).toBe(glass('trust-elite'));
-    expect(EXPENSE_CATEGORY_CLASSES['transportation']).toBe(glass('status-in-progress'));
-    expect(EXPENSE_CATEGORY_CLASSES['insurance']).toBe(glass('trust-high'));
-    expect(EXPENSE_CATEGORY_CLASSES['licensing']).toBe(glass('bid-active'));
-    expect(EXPENSE_CATEGORY_CLASSES['marketing']).toBe(glass('brand-gold'));
-    expect(EXPENSE_CATEGORY_CLASSES['subcontractor']).toBe(glass('status-disputed'));
+  it('every category has its own categorical token; office and other share the neutral badge', () => {
+    expect(EXPENSE_CATEGORY_CLASSES['materials']).toBe(glass('category-1'));
+    expect(EXPENSE_CATEGORY_CLASSES['tools']).toBe(glass('category-2'));
+    expect(EXPENSE_CATEGORY_CLASSES['transportation']).toBe(glass('category-3'));
+    expect(EXPENSE_CATEGORY_CLASSES['insurance']).toBe(glass('category-4'));
+    expect(EXPENSE_CATEGORY_CLASSES['licensing']).toBe(glass('category-5'));
+    expect(EXPENSE_CATEGORY_CLASSES['marketing']).toBe(glass('category-6'));
+    expect(EXPENSE_CATEGORY_CLASSES['subcontractor']).toBe(glass('category-7'));
     expect(EXPENSE_CATEGORY_CLASSES['office']).toBe(NEUTRAL);
     expect(EXPENSE_CATEGORY_CLASSES['other']).toBe(NEUTRAL);
+  });
+
+  it('never borrows a status or trust token (a category is not a state)', () => {
+    for (const value of Object.values(EXPENSE_CATEGORY_CLASSES)) {
+      expect(value).not.toMatch(/status-|trust-|bid-|destructive/);
+    }
   });
 
   it('returns undefined for an unknown category (caller handles fallback)', () => {

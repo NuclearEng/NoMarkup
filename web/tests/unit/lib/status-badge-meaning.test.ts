@@ -22,7 +22,7 @@ const NEUTRAL = 'neutral';
 function tokenOf(classes: string | undefined): string | undefined {
   if (classes === undefined) return undefined;
   if (classes === DEFAULT_STATUS_CLASS) return NEUTRAL;
-  const match = /^bg-([a-z-]+)\/10 text-\1 border-\1\/30$/.exec(classes);
+  const match = /^bg-([a-z0-9-]+)\/10 text-\1 border-\1\/30$/.exec(classes);
   return match?.[1];
 }
 
@@ -35,7 +35,7 @@ describe('payment status → token', () => {
     expect(tokens(PAYMENT_STATUS_CLASSES)).toEqual({
       pending: 'trust-medium',
       processing: 'status-open',
-      escrow: 'trust-elite',
+      escrow: 'status-held',
       released: 'trust-high',
       completed: 'status-completed',
       failed: 'destructive',
@@ -68,8 +68,8 @@ describe('job status → token', () => {
       active: 'trust-high',
       open: 'status-open',
       bidding: 'status-in-progress',
-      awarded: 'trust-elite',
-      contract_pending: 'trust-elite',
+      awarded: 'status-held',
+      contract_pending: 'status-held',
       in_progress: 'status-in-progress',
       completed: 'status-completed',
       reviewed: 'status-completed',
@@ -91,11 +91,11 @@ describe('job status → token', () => {
 });
 
 describe('fraud risk → token', () => {
-  it('climbs the trust scale and ends on destructive', () => {
+  it('climbs green, amber, orange and ends on destructive', () => {
     expect(tokens(FRAUD_RISK_CLASSES)).toEqual({
       low: 'trust-high',
       medium: 'trust-medium',
-      high: 'trust-low',
+      high: 'status-elevated',
       critical: 'destructive',
     });
   });

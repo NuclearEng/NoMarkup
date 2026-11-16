@@ -152,7 +152,7 @@ describe('FraudAlertDetail', () => {
     expect(redProgress).not.toBeNull();
   });
 
-  it('uses the medium-risk status-disputed progress class for confidence between 0.5 and 0.8', () => {
+  it('uses the medium-risk status-elevated progress class for confidence between 0.5 and 0.8', () => {
     const { container } = render(
       createElement(FraudAlertDetail, {
         alert: makeAlert({
@@ -160,7 +160,7 @@ describe('FraudAlertDetail', () => {
         }),
       }),
     );
-    const orangeProgress = container.querySelector('.bg-status-disputed');
+    const orangeProgress = container.querySelector('.bg-status-elevated');
     expect(orangeProgress).not.toBeNull();
   });
 

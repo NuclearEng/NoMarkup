@@ -100,7 +100,7 @@ export function ScoreboardCard({
 
   const borderClass =
     urgency === 'critical'
-      ? 'border-destructive/50 shadow-[0_0_30px_hsl(var(--status-disputed)/0.18)] hover:shadow-[0_0_40px_hsl(var(--status-disputed)/0.32)]'
+      ? 'border-destructive/50 shadow-[0_0_30px_color-mix(in_srgb,var(--destructive)_18%,transparent)] hover:shadow-[0_0_40px_color-mix(in_srgb,var(--destructive)_32%,transparent)]'
       : urgency === 'urgent'
         ? 'border-brand-gold/40 shadow-[0_0_24px_var(--brand-gold-glow)] hover:shadow-[0_0_36px_var(--brand-gold-glow)]'
         : 'border-brand-gold/10 hover:border-brand-gold/25';

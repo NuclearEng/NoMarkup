@@ -210,7 +210,27 @@ body {
   --status-open: 220 70% 50%;
   --status-in-progress: 38 92% 50%;
   --status-completed: 142 71% 45%;
-  --status-disputed: 0 84% 60%;
+  /* Contested and awaiting a ruling. Magenta, so it never reads as failed or
+     cancelled (--destructive, red). */
+  --status-disputed: 325 75% 38%;
+  /* Raised severity that still needs someone to act: high (not critical) risk,
+     an escalated case, a revision request. Orange, between the amber of
+     waiting and the red of failure. */
+  --status-elevated: 20 90% 33%;
+  /* Held until someone decides or releases: funds in escrow, a case under
+     review, a job awarded but not yet under contract. Violet, apart from the
+     blue of open / processing. */
+  --status-held: 265 60% 45%;
+
+  /* Categorical tags (expense categories). Identity only: a category colour
+     says "which one", never "how bad". Keep status tokens out of tag maps. */
+  --category-1: 215 75% 40%;
+  --category-2: 268 60% 47%;
+  --category-3: 38 90% 28%;
+  --category-4: 145 70% 25%;
+  --category-5: 188 85% 25%;
+  --category-6: 330 75% 40%;
+  --category-7: 16 90% 35%;
   /* Apple System Colors — Light */
   --apple-blue: #007aff;
   --apple-green: #34c759;
@@ -324,7 +344,17 @@ body {
   --status-open: 220 70% 60%;
   --status-in-progress: 38 80% 45%;
   --status-completed: 142 60% 40%;
-  --status-disputed: 0 63% 45%;
+  --status-disputed: 325 85% 70%;
+  --status-elevated: 20 95% 60%;
+  --status-held: 265 90% 75%;
+
+  --category-1: 215 85% 68%;
+  --category-2: 268 85% 76%;
+  --category-3: 42 85% 55%;
+  --category-4: 145 55% 52%;
+  --category-5: 185 65% 52%;
+  --category-6: 330 85% 72%;
+  --category-7: 16 90% 63%;
 
   /* Elevation on dark terminal surfaces — slightly stronger ambient */
   --elevation-1: 0 1px 2px 0 rgb(0 0 0 / 0.35);
@@ -470,11 +500,22 @@ body {
   --color-bid-winning: hsl(var(--bid-winning));
   --color-bid-expired: hsl(var(--bid-expired));
 
-  /* Job status — bg-status-open, text-status-disputed, … */
+  /* Status — bg-status-open, text-status-disputed, bg-status-held, … */
   --color-status-open: hsl(var(--status-open));
   --color-status-in-progress: hsl(var(--status-in-progress));
   --color-status-completed: hsl(var(--status-completed));
   --color-status-disputed: hsl(var(--status-disputed));
+  --color-status-elevated: hsl(var(--status-elevated));
+  --color-status-held: hsl(var(--status-held));
+
+  /* Categorical tags — bg-category-1 … text-category-7 */
+  --color-category-1: hsl(var(--category-1));
+  --color-category-2: hsl(var(--category-2));
+  --color-category-3: hsl(var(--category-3));
+  --color-category-4: hsl(var(--category-4));
+  --color-category-5: hsl(var(--category-5));
+  --color-category-6: hsl(var(--category-6));
+  --color-category-7: hsl(var(--category-7));
 
   /* Apple system colors (optional semantic aliases) */
   --color-apple-blue: var(--apple-blue);

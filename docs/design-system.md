@@ -74,9 +74,55 @@ Tailwind v4 maps `--color-*`, `--shadow-*`, `--duration-*`, `--ease-*`, and `--t
 |-------|------|-----------|
 | trust | low, medium, high, elite | `bg-trust-high`, `text-trust-low`, … |
 | bid | active, winning, expired | `bg-bid-active`, `text-bid-winning`, … |
-| status | open, in-progress, completed, disputed | `bg-status-open`, `text-status-disputed`, … |
+| status | open, in-progress, completed, disputed, elevated, held | `bg-status-open`, `text-status-disputed`, `bg-status-held`, … |
+| category | 1 … 7 | `bg-category-1`, `text-category-7`, … |
 
 HSL channel vars (`--trust-low: 0 84% 60%`) are wrapped as `hsl(var(--trust-*))` in `@theme`.
+
+### Status colour rules
+
+Status badges live in `web/src/lib/status-badge-classes.ts` (glass triad
+`bg-T/10 text-T border-T/30`) and `web/src/components/ui/badge.tsx` (variants).
+
+| Token | Hue | Means | Used for |
+|-------|-----|-------|----------|
+| `status-open` | blue | open, taking input, being processed | open job / dispute / alert, payment processing |
+| `status-in-progress`, `trust-medium` | amber | under way, or waiting on someone | bidding, in progress, pending, medium risk |
+| `status-completed`, `trust-high`, `bid-winning` | green | healthy or finished well | active, completed, released, approved, paid, low risk |
+| `status-held` | violet | held until someone decides or releases | payment in escrow, case investigating / under review, job awarded / contract pending |
+| `status-elevated` | orange | raised severity that still needs someone to act | high (not critical) fraud risk, escalated case, revision requested, 24–72 h auto-release countdown, 50–80 % fraud confidence |
+| `status-disputed` | magenta | contested, awaiting a ruling | disputed job / contract / payment / milestone / order |
+| `destructive` | red | failed, lost or ended badly | failed, chargeback, cancelled contract, banned, denied, critical risk |
+| neutral (`bg-muted text-muted-foreground border-border`) | grey | not live, nothing to do | draft, closed, expired, refunded, dismissed |
+| `category-1…7` | blue, violet, amber, green, cyan, pink, orange | identity only, no severity | expense categories (materials, tools, transportation, insurance, licensing, marketing, subcontractor) |
+
+Rules:
+- **One meaning, one colour, per map.** Two statuses in the same map share a colour only when they
+  mean the same thing to the reader (e.g. `cancelled` / `voided` / `abandoned`). The allowed groups
+  are listed in `web/tests/unit/lib/status-badge-distinct.test.ts`, which compares the *resolved*
+  colours (several tokens share one value) and fails on any new collision.
+- **Disputed is not red.** Red is reserved for failure; a dispute is open and can still go either way.
+- **Categories are not states.** Tag maps use `category-N`, never a status / trust / bid token.
+- **Never colour alone.** Every badge carries its text label. Badges have no icons, so the new tokens
+  add none.
+- A new hue is a new token in `globals.css` (`:root` and `.dark`, plus `@theme inline` and the
+  `tailwind.config.ts` mirror), named for what it means.
+
+Contrast of the tokens added on 2026-11-16 (WCAG 2.x ratio; text measured on the badge's own 10 %
+tint over each surface, the solid colour measured against the surface for dots and bars; pinned by
+the same test, floors 4.5:1 and 3:1):
+
+| Token | Dark value | Text on tint: page `#07080b` / card `#14161e` / raised `#1e2130` | Solid vs the same | Light value | Text on tint: white / `#f7f7f7` | Solid vs the same |
+|-------|-----------|------|------|------|------|------|
+| `status-elevated` | `20 95% 60%` | 6.78 / 5.90 / 5.16 | 7.49 / 6.75 / 5.97 | `20 90% 33%` | 5.74 / 5.38 | 6.72 / 6.28 |
+| `status-held` | `265 90% 75%` | 6.62 / 5.79 / 5.04 | 7.41 / 6.68 / 5.90 | `265 60% 45%` | 6.70 / 6.29 | 7.90 / 7.37 |
+| `status-disputed` | `325 85% 70%` (was `0 63% 45%`: 3.17 / 2.83 / 2.51) | 6.79 / 5.96 / 5.20 | 7.58 / 6.83 / 6.04 | `325 75% 38%` | 5.80 / 5.43 | 6.86 / 6.40 |
+| `category-1…7` | see `globals.css` | lowest 5.09 (category-7 on raised) | lowest 5.90 | see `globals.css` | lowest 4.90 (category-3 on `#f7f7f7`) | lowest 5.63 |
+
+The app ships dark only (`<html class="dark">`); the light values exist because every token is
+defined for both themes. **Known gap, not fixed here:** older tokens miss 4.5:1 as badge text on a
+card in dark — `status-open` / `trust-elite` / `bid-active` 4.27, `destructive` 4.37, `trust-low`
+2.83 — and most miss it in light.
 
 ### Elevation & motion
 - Shadows: `--elevation-1`…`5` → `shadow-elevation-1`…`5`
@@ -139,7 +185,8 @@ const config = {
         brand: { gold: '', 'gold-dim': '', 'gold-bright': '', 'gold-glow': '' },
         trust: { low: '', medium: '', high: '', elite: '' },
         bid: { active: '', winning: '', expired: '' },
-        status: { open: '', 'in-progress': '', completed: '', disputed: '' },
+        status: { open: '', 'in-progress': '', completed: '', disputed: '', elevated: '', held: '' },
+        category: { 1: '', 2: '', 3: '', 4: '', 5: '', 6: '', 7: '' },
       },
       borderRadius: { lg: '0.75rem', md: '0.5rem', sm: '0.25rem' },
       fontSize: { /* xs…4xl with lineHeight — see above */ },
