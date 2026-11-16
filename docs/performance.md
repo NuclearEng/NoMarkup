@@ -52,6 +52,15 @@ There is currently **no Go `templ` app rendering** and **no Rust WASM in the UI*
   tree: charts are hand-rolled; the only notable dep is `react-grid-layout` for the live-auction
   terminal — lazy-loading the page's primary UI would trade LCP/CLS for bytes. Accepted as the cost
   of the product's most interactive surface. **Revisit if:** the terminal moves off react-grid-layout.
+- **Headroom restored by splitting what is not on screen at first paint (measured 2026-11-16,
+  `npm run build` + `npm run check:bundle`, ceilings unchanged):** `/jobs/new` **320.9 → 266.5 kB**
+  (wizard steps 2–7 each load with their step; the next step's code is fetched while the current
+  one is filled in), `/insurance/[id]` **296.4 → 236.9 kB** (the claim form loads when "File a
+  Claim" is pressed), `/provider/onboarding` **316.6 → 303.9 kB** (portfolio uploader and Stripe
+  payout card load with their steps). Placeholders are `ChunkPlaceholder` (`role="status"`, reserved
+  height). Side effect of the regrouped shared chunks: about 35 other routes moved by +0.5 to
+  +1.2 kB, none past its budget. This supersedes the 309 kB `/jobs/new` overage noted above; the
+  step-1 UI (the page's primary content) is still in the first load.
 - **Validated:** the RSC pilot (`/marketplace` + `/marketplace/[id]`) left First Load JS flat
   (interactivity is irreducible) but delivered server-rendered first paint + SEO. On interactive
   pages, **RSC wins LCP/SEO, not bundle size.** Don't promise a JS cut from RSC on an interactive surface.
