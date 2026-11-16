@@ -24,7 +24,10 @@ import { Toaster } from 'sonner';
 // both. The files in src/fonts/ are the exact latin-subset woff2 files Google
 // Fonts served for these families (byte-identical, so rendering is unchanged);
 // all four families are SIL OFL 1.1 — licence texts sit next to the files.
-// The app is English-only, so only the latin subset is shipped.
+// Only the latin subset goes through next/font (and is preloaded). The other
+// subsets Google declared (latin-ext, greek, cyrillic, vietnamese — user-entered
+// names and addresses need them) are the "<Family> Subsets" faces in
+// globals.css, fetched on demand.
 //
 // `unicode-range` mirrors Google's latin subset (repeated in each call:
 // next/font only accepts literal values). The metric-adjusted
@@ -38,7 +41,7 @@ const instrument = localFont({
   ],
   variable: '--font-instrument',
   display: 'swap',
-  fallback: ['Instrument Serif Fallback'],
+  fallback: ['Instrument Serif Subsets', 'Instrument Serif Fallback'],
   adjustFontFallback: false,
   declarations: [
     {
@@ -55,7 +58,7 @@ const syne = localFont({
   style: 'normal',
   variable: '--font-syne',
   display: 'swap',
-  fallback: ['Syne Fallback'],
+  fallback: ['Syne Subsets', 'Syne Fallback'],
   adjustFontFallback: false,
   declarations: [
     {
@@ -72,7 +75,7 @@ const outfit = localFont({
   style: 'normal',
   variable: '--font-outfit',
   display: 'swap',
-  fallback: ['Outfit Fallback'],
+  fallback: ['Outfit Subsets', 'Outfit Fallback'],
   adjustFontFallback: false,
   declarations: [
     {
@@ -89,7 +92,7 @@ const jetbrains = localFont({
   style: 'normal',
   variable: '--font-jetbrains',
   display: 'swap',
-  fallback: ['JetBrains Mono Fallback'],
+  fallback: ['JetBrains Mono Subsets', 'JetBrains Mono Fallback'],
   adjustFontFallback: false,
   declarations: [
     {
