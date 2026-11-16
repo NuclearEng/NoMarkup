@@ -235,7 +235,6 @@ function main() {
   const rows = [];
 
   // Shared budget
-  const sharedKb = stats.commonBytes / KB;
   const sharedOk = stats.commonBytes <= budgetBytes(SHARED_BUDGET_KB);
   if (!sharedOk) {
     failures.push(

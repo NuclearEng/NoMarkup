@@ -188,7 +188,7 @@ function prepareStandalone() {
 function writeRuntimeConfig(standaloneDir) {
   const baseConfigPath = path.join(webRoot, 'lighthouserc.cjs');
   // Re-require each run so edits are picked up.
-  delete require.cache[require.resolve(baseConfigPath)];
+  Reflect.deleteProperty(require.cache, require.resolve(baseConfigPath));
   const base = require(baseConfigPath);
 
   const urls = ['/', '/marketplace', '/jobs'].map((p) => `${BASE_URL}${p === '/' ? '/' : p}`);
