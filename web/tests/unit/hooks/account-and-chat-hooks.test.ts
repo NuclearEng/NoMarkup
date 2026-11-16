@@ -78,8 +78,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   queryClient = new QueryClient({
     defaultOptions: {
-      // retryDelay 0: useQuoteTemplates passes its own `retry` option, which
-      // replaces the client-level `retry: false` (see the dedicated test).
+      // retryDelay 0 keeps the tests that opt into retries fast.
       queries: { retry: false, retryDelay: 0, gcTime: 0 },
       mutations: { retry: false },
     },
@@ -304,10 +303,9 @@ describe('enabled guards', () => {
     expect(result.current.data).toEqual([{ id: 't-9' }]);
   });
 
-  it('useQuoteTemplates without a retry option does not inherit the client-level retry policy', async () => {
-    // Pins current behaviour: `retry: options?.retry` passes an explicit
-    // `undefined`, which shadows the QueryClient default (here `retry: false`)
-    // and falls through to TanStack's built-in 3 retries.
+  // More retry-policy cases: useQuoteTemplates.retry.test.tsx.
+  it('useQuoteTemplates without a retry option inherits the client-level retry policy', async () => {
+    // The QueryClient default here is `retry: false`: one request, no retries.
     vi.mocked(api.get).mockRejectedValue(new Error('503'));
 
     const { result } = renderHook(() => useQuoteTemplates(), { wrapper });
@@ -315,12 +313,8 @@ describe('enabled guards', () => {
     await waitFor(() => {
       expect(result.current.isError).toBe(true);
     });
-    expect(vi.mocked(api.get)).toHaveBeenCalledTimes(4);
+    expect(vi.mocked(api.get)).toHaveBeenCalledTimes(1);
   });
-
-  it.todo(
-    'BUG src/hooks/useQuoteTemplates.ts:31 — `retry: options?.retry` overrides the app QueryClient retry policy (no retry on ApiError >= 400) with undefined, so a 403/503 on /provider/business/quotes is retried 3x with backoff before the error state shows',
-  );
 
   it('useChatAliases does not retry a failure', async () => {
     queryClient.setDefaultOptions({ queries: { retry: 3, retryDelay: 0, gcTime: 0 } });

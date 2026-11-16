@@ -73,12 +73,11 @@ describe('expiry helpers', () => {
     expect(isDocumentExpiringSoon('2026-03-01T18:00:00Z')).toBe(true);
   });
 
-  it('a document that lapsed under a day ago is not yet "expired" (ceil of a negative fraction is 0)', () => {
+  it('a document that lapsed under a day ago is already expired', () => {
     const value = '2026-03-01T06:00:00Z';
-    // Math.ceil(-0.25) is -0; the boolean helpers treat it as day 0.
-    expect(Math.abs(daysUntilExpiry(value) ?? Number.NaN)).toBe(0);
-    expect(isDocumentExpired(value)).toBe(false);
-    expect(isDocumentExpiringSoon(value)).toBe(true);
+    expect(daysUntilExpiry(value)).toBe(-1);
+    expect(isDocumentExpired(value)).toBe(true);
+    expect(isDocumentExpiringSoon(value)).toBe(false);
   });
 
   it('is expired once a full day has passed', () => {

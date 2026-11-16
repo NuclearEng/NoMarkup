@@ -101,10 +101,7 @@ describe('adoptSession', () => {
     expect(useAuthStore.getState().isAuthenticated).toBe(false);
   });
 
-  // Source bug (auth-store.ts:215-216): the guard is `userId === ''`, but a
-  // decodable token with no `sub` claim at all yields `undefined`, which
-  // passes the guard and signs the user in with `user.id === undefined`.
-  it.todo('refuses a token whose payload has no sub claim when the response has no user_id');
+  // A token with no `sub` claim at all: see auth-store.token-subject.test.ts.
 
   it('replaces a previously adopted session', () => {
     const store = useAuthStore.getState();

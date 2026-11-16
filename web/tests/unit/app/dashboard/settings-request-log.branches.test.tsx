@@ -2,7 +2,7 @@
 // settings-request-log.test.tsx: how local hops and server activity are merged
 // (back-filling, ordering, id-less rows), the outcome label derived per HTTP
 // status for server-only rows, the server note per state, and the Clear button.
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -273,10 +273,32 @@ describe('RequestLogPage — Clear', () => {
     expect(listClientActions()).toHaveLength(0);
   });
 
-  // Source bug: listClientActions() (src/lib/client-action-log.ts:103) returns the
-  // same mutated array, so the useSyncExternalStore snapshot in
-  // settings/request-log/page.tsx:21 never changes identity and the page does not
-  // re-render when hops are recorded or cleared.
-  it.todo('re-renders without the local rows after Clear (stale useSyncExternalStore snapshot)');
-  it.todo('lists a hop recorded after mount (stale useSyncExternalStore snapshot)');
+  // The snapshot identity these two rely on is tested in client-action-log.snapshot.test.tsx.
+  it('re-renders without the local rows after Clear', async () => {
+    recordClientAction({ method: 'GET', path: '/api/v1/local', status: 200, durationMs: 2, requestId: 'local-1' });
+    fetchMeActivity.mockResolvedValue([serverRow({ requestId: 'srv-keep', path: '/api/v1/server' })]);
+    renderPage();
+    await rows(2);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
+
+    const [row] = await rows(1);
+    expect(row).toHaveTextContent('srv-keep');
+    expect(screen.queryByText(/local-1/)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Clear' })).toBeDisabled();
+  });
+
+  it('lists a hop recorded after mount', async () => {
+    renderPage();
+    await note('No server activity (endpoint may be 404). Local hops still appear.');
+    expect(screen.queryAllByRole('listitem')).toHaveLength(0);
+
+    act(() => {
+      recordClientAction({ method: 'GET', path: '/api/v1/late', status: 200, durationMs: 2, requestId: 'late-1' });
+    });
+
+    const [row] = await rows(1);
+    expect(row).toHaveTextContent('/api/v1/late');
+    expect(row).toHaveTextContent('late-1');
+  });
 });

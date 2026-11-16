@@ -196,9 +196,7 @@ describe('AdminMarketsPage — grouping', () => {
     expect(within(notLive).getByRole('button', { name: 'Launch' })).toBeInTheDocument();
   });
 
-  // markets/page.tsx:84-85 — the comment promises "US first, then MX" but
-  // `a.country.localeCompare(b.country)` sorts MX ahead of US.
-  it.todo('lists the United States before Mexico (source sorts MX first — page.tsx:85)');
+  // Country order (US before MX): see admin-markets.country-order.test.tsx.
 });
 
 describe('AdminMarketsPage — disabled bulk actions', () => {

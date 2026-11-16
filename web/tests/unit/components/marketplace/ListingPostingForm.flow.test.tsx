@@ -939,7 +939,7 @@ describe('ListingPostingForm — AI auto-fill from the first photo', () => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
     });
     respond(jsonResponse(ANALYSIS));
-    expect(await screen.findByText(/AI suggested a title, category, and starting price/)).toBeInTheDocument();
+    expect(await screen.findByText(/^AI suggested a starting price/)).toBeInTheDocument();
     expect(screen.queryByText(/Analyzing your photo/)).toBeNull();
   });
 
@@ -983,7 +983,7 @@ describe('ListingPostingForm — AI auto-fill from the first photo', () => {
     render(<ListingPostingForm />);
     await toPhotos(user);
     addPhotos([photo('a.jpg')]);
-    const notice = await screen.findByText(/AI suggested a title, category, and starting price/);
+    const notice = await screen.findByText(/^AI suggested a starting price/);
     expect(notice).toHaveTextContent('($45.00)');
     await next(user, 4);
     fireEvent.change(screen.getByLabelText('Pickup zip'), { target: { value: '94110' } });
@@ -1026,7 +1026,7 @@ describe('ListingPostingForm — AI auto-fill from the first photo', () => {
     render(<ListingPostingForm />);
     await toPhotos(user);
     addPhotos([photo('a.jpg')]);
-    const notice = await screen.findByText(/AI suggested a title, category, and starting price/);
+    const notice = await screen.findByText(/^AI suggested a starting price/);
     expect(notice).not.toHaveTextContent('$');
     await next(user, 4);
     fireEvent.change(screen.getByLabelText('Pickup zip'), { target: { value: '94110' } });

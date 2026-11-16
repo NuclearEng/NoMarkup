@@ -121,12 +121,8 @@ describe('useSelectedMarket', () => {
     expect(result.current[0]).toBeNull();
   });
 
-  // Source bug (useSelectedMarket.ts:56-60): the catch comment promises an
-  // in-memory fallback, but the sync event dispatched on line 60 re-reads the
-  // (still empty) storage and overwrites the state that line 59 just set.
-  it.todo('keeps the picked market in memory when storage refuses the write');
-
-  it('does not throw when storage refuses the write; the pick is currently lost on the sync re-read', () => {
+  // More refused-write cases (sharing, clearing): useSelectedMarket.memory-fallback.test.ts.
+  it('keeps the picked market in memory when storage refuses the write', () => {
     vi.spyOn(storage, 'setItem').mockImplementation(() => {
       throw new Error('SecurityError');
     });
@@ -137,7 +133,7 @@ describe('useSelectedMarket', () => {
     });
 
     expect(storage.getItem(SELECTED_KEY)).toBeNull();
-    expect(result.current[0]).toBeNull();
+    expect(result.current[0]).toEqual(market('boise'));
   });
 
   it('returns null when reading storage throws', () => {
@@ -245,10 +241,7 @@ describe('useRecentMarkets', () => {
     expect(result.current[0].map((m) => m.slug)).toEqual(['x']);
   });
 
-  // Same source bug as above (useSelectedMarket.ts:105-109).
-  it.todo('keeps the new recents list in memory when storage refuses the write');
-
-  it('does not throw when storage refuses the write; the list is currently lost on the sync re-read', () => {
+  it('keeps the new recents list in memory when storage refuses the write', () => {
     vi.spyOn(storage, 'setItem').mockImplementation(() => {
       throw new Error('QuotaExceededError');
     });
@@ -259,7 +252,7 @@ describe('useRecentMarkets', () => {
     });
 
     expect(storage.getItem(RECENTS_KEY)).toBeNull();
-    expect(result.current[0]).toEqual([]);
+    expect(result.current[0]).toEqual([market('q')]);
   });
 
   it('pushRecent is a no-op without a window (server)', () => {

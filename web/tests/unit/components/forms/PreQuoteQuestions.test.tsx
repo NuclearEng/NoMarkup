@@ -20,18 +20,6 @@ vi.mock('@/hooks/useCategoryQuestions', () => ({
   },
 }));
 
-// The shadcn Form primitives call useFormField(), which throws unless they sit
-// inside a <FormField>. PreQuoteQuestions renders them bare (see the it.todo at
-// the bottom), so the field logic is exercised here against pass-through
-// stand-ins.
-vi.mock('@/components/ui/form', () => ({
-  FormItem: ({ children }: { children?: ReactNode }) => <div data-testid="form-item">{children}</div>,
-  FormLabel: ({ children }: { children?: ReactNode }) => <span data-testid="form-label">{children}</span>,
-  FormControl: ({ children }: { children?: ReactNode }) => <>{children}</>,
-  FormDescription: ({ children }: { children?: ReactNode }) => <p>{children}</p>,
-  FormMessage: () => null,
-}));
-
 // Radix Select needs pointer capture + portals; a listbox of clickable options
 // keeps the onValueChange contract without the jsdom gaps.
 vi.mock('@/components/ui/select', () => {
@@ -152,9 +140,9 @@ describe('PreQuoteQuestions gating states', () => {
     ];
     renderForm();
     expect(screen.getByText('Project details')).toBeInTheDocument();
-    const labels = screen.getAllByTestId('form-label').map((l) => l.textContent);
-    expect(labels).toEqual(['First', 'Second*']);
     const boxes = screen.getAllByRole('textbox');
+    // Label text is exact: only the required question carries the marker.
+    expect(boxes).toEqual([screen.getByLabelText('First'), screen.getByLabelText('Second*')]);
     expect(boxes[0]).toHaveAttribute('aria-required', 'false');
     expect(boxes[1]).toHaveAttribute('aria-required', 'true');
   });
@@ -201,8 +189,8 @@ describe('PreQuoteQuestions text / date / fallback fields', () => {
     const unknown = { ...question({ id: 'u1', required: true }), question_type: 'slider' } as unknown as CategoryQuestion;
     queryState.data = [unknown];
     renderForm({ u1: { question_id: 'u1', answer_text: 'abc' } });
-    expect(screen.getByTestId('form-label')).toHaveTextContent(/^How big is the area\?$/);
     const input = screen.getByRole('textbox');
+    expect(input).toHaveAccessibleName('How big is the area?');
     expect(input).toHaveValue('abc');
     fireEvent.change(input, { target: { value: 'abcd' } });
     expect(onChange).toHaveBeenCalledWith({ u1: { question_id: 'u1', answer_text: 'abcd' } });
@@ -337,8 +325,4 @@ describe('PreQuoteQuestions multiselect field', () => {
   });
 });
 
-describe('PreQuoteQuestions known defects', () => {
-  it.todo(
-    'BUG src/components/forms/PreQuoteQuestions.tsx:137 — QuestionField renders FormLabel/FormControl/FormDescription outside a <FormField>, so the real ui/form primitives throw "useFormField should be used within <FormField>" as soon as a category has questions (JobPostingForm.tsx:664)',
-  );
-});
+// Rendering inside the real job form without a <FormField>: see JobPostingForm.prequote.test.tsx.

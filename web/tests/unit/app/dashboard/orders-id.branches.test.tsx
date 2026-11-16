@@ -506,10 +506,11 @@ describe('OrderDetailPage — unpaid order prompt', () => {
     expect(h.order.refetch).toHaveBeenCalledTimes(2);
   });
 
-  it('treats a viewer whose identity has not loaded as the buyer', () => {
+  it('shows the loading state, not the payment prompt, while the viewer’s identity has not loaded', () => {
     h.userId = undefined;
     show(makeOrder({ status: LISTING_ORDER_STATUS.PENDING }));
-    expect(screen.getByTestId('order-payment-prompt')).toBeInTheDocument();
+    expect(screen.getByRole('status', { name: 'Loading order' })).toBeInTheDocument();
+    expect(screen.queryByTestId('order-payment-prompt')).toBeNull();
     expect(screen.queryByText('Awaiting buyer payment')).toBeNull();
   });
 });

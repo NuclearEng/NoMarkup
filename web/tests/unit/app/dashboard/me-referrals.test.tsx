@@ -227,10 +227,7 @@ describe('ReferralsPage — redeem form', () => {
     expect(screen.queryByRole('button', { name: 'Redeem' })).toBeNull();
   });
 
-  // handleRedeem awaits mutateAsync with no try/catch and is invoked as
-  // `void handleRedeem(e)`, so a rejected redeem (e.g. invalid code) becomes an
-  // unhandled promise rejection — src/app/(dashboard)/me/referrals/page.tsx:53.
-  it.todo('handles a rejected redeem without an unhandled promise rejection (page.tsx:53)');
+  // A rejected redeem: see me-referrals.redeem-failure.test.tsx.
 });
 
 describe('ReferralsPage — referrals table', () => {

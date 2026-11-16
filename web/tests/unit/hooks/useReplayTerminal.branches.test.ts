@@ -326,7 +326,5 @@ describe('useReplayTerminal event edge cases', () => {
     expect(result.current.sim.activities.map((a) => a.isLowest)).toEqual([true, false, false, false]);
   });
 
-  it.todo(
-    'BUG useReplayTerminal.ts:323-327 — changing speed while playing schedules a second timer without cancelling the first; the stale timer later rewinds the cursor (and fires after pause)',
-  );
+  // Speed changes while playing (one step timer at a time): see useReplayTerminal.timers.test.ts.
 });

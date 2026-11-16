@@ -335,12 +335,7 @@ describe('marketplace AuctionReplay — pause, restart, speed', () => {
     expect(statValue('Events')).toBe('2 / 4');
   });
 
-  // BUG (AuctionReplay.tsx:97-101): the scheduling effect has no cleanup, so
-  // changing speed mid-playback schedules a second timer and orphans the
-  // first (timerRef only remembers the latest). Pause then clears only the
-  // newest one, and the orphan still reveals an event while PAUSED. Verified
-  // with a probe: play → 4x → pause → advance 5s shows "2 / 3", not "1 / 3".
-  it.todo('stays on the current event when paused right after a speed change');
+  // Pausing right after a speed change: see AuctionReplay.timers.test.tsx.
 
   it('does not go faster than the 120ms floor even at 4x', () => {
     render(<AuctionReplay listingId="l-1" />);

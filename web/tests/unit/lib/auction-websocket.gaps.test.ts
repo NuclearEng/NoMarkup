@@ -77,10 +77,7 @@ describe('reconnect', () => {
     expect(auctionWsManager.getStatus()).toBe('disconnected');
   });
 
-  // Source bug (auction-websocket.ts:182-190): the re-dial is chained with
-  // `void refresh.finally(...)`, so a tokenRefresher that rejects re-dials
-  // correctly but leaves an unhandled promise rejection behind.
-  it.todo('re-dials after a rejecting token refresher without an unhandled rejection');
+  // A rejecting token refresher: see auction-websocket.refresh-rejection.test.ts.
 
   it('does not re-dial after disconnect() cancels a pending reconnect', async () => {
     connectAndDial('job-1', 'tok-1', () => 'tok-1').drop();
@@ -91,23 +88,34 @@ describe('reconnect', () => {
     expect(FakeWebSocket.instances).toHaveLength(1);
   });
 
-  // Source bug (auction-websocket.ts:71 → 136): every re-dial goes through
-  // doConnect(), which calls disconnect(), which zeroes `reconnectAttempts`.
-  // The exponential backoff and the 10-attempt cap therefore never engage.
-  it.todo('doubles the reconnect delay after each failed attempt (1s, 2s, 4s)');
-  it.todo('stops re-dialing after 10 failed attempts');
-
-  it('currently re-dials ~1s after every drop, with no growth', async () => {
+  // The full delay ladder, the 30s ceiling and the resets are covered in
+  // auction-websocket.backoff.test.ts.
+  it('doubles the reconnect delay after each failed attempt (1s, 2s, 4s)', async () => {
     connectAndDial('job-1', 'tok-1', () => 'tok-1').drop();
 
-    for (let attempt = 0; attempt < 12; attempt += 1) {
+    for (const delay of [1_000, 2_000, 4_000]) {
       const before = FakeWebSocket.instances.length;
-      await vi.advanceTimersByTimeAsync(999);
+      await vi.advanceTimersByTimeAsync(delay - 1);
       expect(FakeWebSocket.instances).toHaveLength(before);
       await vi.advanceTimersByTimeAsync(1);
       expect(FakeWebSocket.instances).toHaveLength(before + 1);
       FakeWebSocket.last().drop();
     }
+  });
+
+  it('stops re-dialing after 10 failed attempts', async () => {
+    connectAndDial('job-1', 'tok-1', () => 'tok-1').drop();
+
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const before = FakeWebSocket.instances.length;
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(FakeWebSocket.instances).toHaveLength(before + 1);
+      FakeWebSocket.last().drop();
+    }
+
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    expect(FakeWebSocket.instances).toHaveLength(11);
+    expect(auctionWsManager.getStatus()).toBe('disconnected');
   });
 });
 
