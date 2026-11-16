@@ -56,7 +56,7 @@ export function canOfferDirections(address: string | null | undefined): boolean 
 export function formatLatLng(lat: number | null | undefined, lng: number | null | undefined): string | null {
   if (lat == null || lng == null) return null;
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-  return `${lat},${lng}`;
+  return `${String(lat)},${String(lng)}`;
 }
 
 function prefersAppleMaps(): boolean {

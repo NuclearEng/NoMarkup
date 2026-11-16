@@ -219,7 +219,7 @@ export default function SpectatorPage() {
           marketRange={marketRange}
           mockProviders={providers}
           jobId={jobId}
-          snipeExtensionCount={job.snipe_extension_count ?? 0}
+          snipeExtensionCount={job.snipe_extension_count}
           jobTitle={job.title}
           jobDescription={job.description}
           jobCategory={job.category_name}

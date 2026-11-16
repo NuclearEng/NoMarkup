@@ -80,7 +80,7 @@ function ActiveThread({ channelId }: { channelId: string }) {
   // Propose Terms is provider-only (UI gate). Server still enforces party checks
   // on POST …/proposed-terms; never rely on this alone for authorization.
   const canProposeTerms =
-    !!me?.id && !!data?.channel?.provider_id && me.id === data.channel.provider_id;
+    !!me?.id && !!data?.channel.provider_id && me.id === data.channel.provider_id;
 
   const isBlocked = (() => {
     if (!otherPartyId) return false;

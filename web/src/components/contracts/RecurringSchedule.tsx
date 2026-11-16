@@ -915,7 +915,7 @@ export function RecurringSchedule({
                       ) : null}
 
                       {/* Customer: Pay with existing client_secret from approve/complete */}
-                      {showPendingPay && pendingForInstance ? (
+                      {showPendingPay ? (
                         <div className="space-y-3" data-testid="recurring-pay-form">
                           <p className="text-xs text-zinc-400">
                             {amountLabel} for this visit. This schedule continues at the rate and

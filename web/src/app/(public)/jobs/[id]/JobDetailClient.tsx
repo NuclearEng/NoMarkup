@@ -248,7 +248,7 @@ export function JobDetailClient({ jobId, initialJob }: JobDetailClientProps) {
         job_id: jobId,
         channel_type: existingBid ? 'bid' : 'inquiry',
       });
-      if (!channel?.id) {
+      if (!channel.id) {
         toast.error('Could not open chat — no channel returned.');
         return;
       }
@@ -260,16 +260,15 @@ export function JobDetailClient({ jobId, initialJob }: JobDetailClientProps) {
 
   const canAward =
     isJobOwner &&
-    job !== undefined &&
     (job.status === JOB_STATUS.ACTIVE || job.status === JOB_STATUS.CLOSED);
 
   // Customer owner can re-request instant match on an already-posted open job
   // when an accept-now price is set (POST /jobs/{id}/instant-match requires it).
   const canRequestInstantMatch =
     isJobOwner &&
-    job?.status === JOB_STATUS.ACTIVE &&
-    typeof job?.offer_accepted_cents === 'number' &&
-    (job.offer_accepted_cents ?? 0) > 0;
+    job.status === JOB_STATUS.ACTIVE &&
+    typeof job.offer_accepted_cents === 'number' &&
+    job.offer_accepted_cents > 0;
 
   const createInstantMatch = useCreateInstantMatch(jobId);
   const repostJob = useRepostJob();
@@ -278,7 +277,6 @@ export function JobDetailClient({ jobId, initialJob }: JobDetailClientProps) {
   // Same owner gate as iOS JobDetailView.canRepost: finished without an award.
   const canRepost =
     isJobOwner &&
-    job !== undefined &&
     (job.status === JOB_STATUS.CLOSED ||
       job.status === JOB_STATUS.CLOSED_ZERO_BIDS ||
       job.status === JOB_STATUS.EXPIRED ||
@@ -518,7 +516,7 @@ export function JobDetailClient({ jobId, initialJob }: JobDetailClientProps) {
             snipeExtensionCount={
               Math.max(
                 terminal.snipeExtensionCount,
-                job.snipe_extension_count ?? 0,
+                job.snipe_extension_count,
               )
             }
             jobTitle={job.title}
@@ -548,7 +546,7 @@ export function JobDetailClient({ jobId, initialJob }: JobDetailClientProps) {
           <div className="mx-auto max-w-[1400px] px-4 pb-4 sm:px-6">
             <AwardedProviderBlock
               awardedProviderId={job.awarded_provider_id}
-              selfId={user?.id ?? null}
+              selfId={user.id}
               displayName={awardedProviderName}
             />
           </div>
@@ -1095,7 +1093,7 @@ export function JobDetailClient({ jobId, initialJob }: JobDetailClientProps) {
                 <div className="pt-1">
                   <AwardedProviderBlock
                     awardedProviderId={job.awarded_provider_id}
-                    selfId={user?.id ?? null}
+                    selfId={user.id}
                     displayName={awardedProviderName}
                   />
                 </div>

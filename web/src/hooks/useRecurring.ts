@@ -60,7 +60,7 @@ export function useRecurringInstances(contractId: string, enabled = true) {
   return useQuery({
     queryKey: recurringInstancesKey(contractId),
     queryFn: async () => {
-      const res = await api.get<{ instances: ContractRecurringInstance[] }>(
+      const res = await api.get<{ instances?: ContractRecurringInstance[] | null }>(
         `/api/v1/contracts/${contractId}/recurring/instances?page=1&page_size=20`,
       );
       return res.instances ?? [];

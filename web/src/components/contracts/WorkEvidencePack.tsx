@@ -82,10 +82,10 @@ function PhotoThumb({ photo }: { photo: WorkEvidencePhoto }) {
   return (
     <li className="min-w-0">
       {allowed ? (
-        // eslint-disable-next-line @next/next/no-img-element -- allowlisted object-storage / fixture hosts only
+        // Raw <img> is intentional: allowlisted object-storage / fixture hosts only.
         <img
           src={photo.url.trim()}
-          alt={`${phaseLabel} completion photo`}
+          alt={`${phaseLabel} shot of the completed work`}
           className="h-28 w-full rounded-lg border border-[var(--brand-gold)]/10 object-cover"
         />
       ) : (

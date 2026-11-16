@@ -120,7 +120,7 @@ export default function RequestLogPage() {
     retry: false,
   });
 
-  const serverRows = serverQuery.data ?? [];
+  const serverRows = useMemo(() => serverQuery.data ?? [], [serverQuery.data]);
   const rows = useMemo(
     () => mergeActivity(localEvents, serverRows),
     [localEvents, serverRows],

@@ -53,10 +53,10 @@ export function PropertySpendLabel({
     );
   }
 
-  const total = data.total_spent_cents ?? 0;
-  const jobs = data.total_jobs ?? 0;
-  const avg = data.average_job_cost_cents ?? 0;
-  const savings = data.total_savings_cents ?? 0;
+  const total = data.total_spent_cents;
+  const jobs = data.total_jobs;
+  const avg = data.average_job_cost_cents;
+  const savings = data.total_savings_cents;
 
   if (!detailed) {
     return (
@@ -72,7 +72,7 @@ export function PropertySpendLabel({
   return (
     <div
       className="grid gap-3 sm:grid-cols-3"
-      aria-label={`Total spend ${formatCents(total)}, ${jobs} jobs at this property`}
+      aria-label={`Total spend ${formatCents(total)}, ${String(jobs)} jobs at this property`}
     >
       <div>
         <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">

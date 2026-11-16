@@ -961,7 +961,7 @@ function DocumentVerificationStep({ onNext, onPrev }: { onNext: () => void; onPr
   }
 
   function hasServerCoverage(docKey: string): boolean {
-    const status = existingByType[docKey]?.status?.toLowerCase() ?? '';
+    const status = existingByType[docKey]?.status.toLowerCase() ?? '';
     return status === 'pending' || status === 'verified';
   }
 
@@ -1221,7 +1221,7 @@ function DocumentUploadField({
   const isPdf = document?.file.type === 'application/pdf';
   const resubmissionCount = existing?.resubmission_count ?? 0;
   const showResubmission =
-    resubmissionCount > 0 || existing?.status?.toLowerCase() === 'rejected';
+    resubmissionCount > 0 || existing?.status.toLowerCase() === 'rejected';
   const remaining = Math.max(0, MAX_DOCUMENT_RESUBMISSIONS - resubmissionCount);
 
   return (
@@ -1278,7 +1278,7 @@ function DocumentUploadField({
             </p>
           ) : null}
         </div>
-        {document || (existing && !locked && existing.status?.toLowerCase() === 'verified') ? (
+        {document || (existing && !locked && existing.status.toLowerCase() === 'verified') ? (
           <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-400" aria-label="Uploaded" />
         ) : null}
       </div>

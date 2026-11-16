@@ -17,16 +17,18 @@ export interface WorkEvidenceSession {
 }
 
 export interface WorkEvidencePhoto {
-  phase: 'before' | 'after' | string;
+  /** Normally `'before'` or `'after'`; other phases are rendered generically. */
+  phase: string;
   url: string;
   uploaded_at: string;
 }
 
 export interface WorkEvidence {
   ready_for_release: boolean;
-  missing: string[];
-  sessions: WorkEvidenceSession[];
-  photos: WorkEvidencePhoto[];
+  // The gateway serializes empty Go slices as `null`, so these can be absent.
+  missing?: string[] | null;
+  sessions?: WorkEvidenceSession[] | null;
+  photos?: WorkEvidencePhoto[] | null;
 }
 
 export function workEvidenceQueryKey(contractId: string): readonly ['work-evidence', string] {

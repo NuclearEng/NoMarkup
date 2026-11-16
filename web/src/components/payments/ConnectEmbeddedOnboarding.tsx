@@ -47,7 +47,6 @@ export function ConnectEmbeddedOnboarding({
       return;
     }
     const pk = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? '';
-    let cancelled = false;
     try {
       const instance = loadConnectAndInitialize({
         publishableKey: pk,
@@ -59,17 +58,10 @@ export function ConnectEmbeddedOnboarding({
           },
         },
       });
-      if (!cancelled) {
-        setConnectInstance(instance);
-      }
+      setConnectInstance(instance);
     } catch {
-      if (!cancelled) {
-        setInitError('Could not start embedded Stripe onboarding.');
-      }
+      setInitError('Could not start embedded Stripe onboarding.');
     }
-    return () => {
-      cancelled = true;
-    };
   }, [fetchClientSecret]);
 
   const content = useMemo(() => {

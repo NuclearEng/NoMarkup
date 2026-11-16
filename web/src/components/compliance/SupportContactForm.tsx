@@ -3,7 +3,7 @@
 // Client contact form for /support — opens mailto: with prefilled subject/body.
 // No backend support ticket API is assumed (ASR support surface).
 
-import { useState, type FormEvent } from 'react';
+import { useState, type SubmitEvent } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -18,7 +18,7 @@ export function SupportContactForm() {
   const [subject, setSubject] = useState('');
   const [message, setMessage] = useState('');
 
-  function handleSubmit(e: FormEvent<HTMLFormElement>) {
+  function handleSubmit(e: SubmitEvent<HTMLFormElement>) {
     e.preventDefault();
     const trimmedSubject = subject.trim() || 'NoMarkup support request';
     const bodyLines = [

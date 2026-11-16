@@ -69,7 +69,7 @@ export function usePlaceBid() {
     mutationFn: ({ jobId, input }: { jobId: string; input: PlaceBidInput }) => {
       // Stable key per job+amount so double-tap / network retry cannot double-bid.
       // Gateway RequireIdempotencyKey on POST /jobs/{id}/bids (MON-06/22).
-      const opKey = `job-bid:${jobId}:${input.amount_cents}`;
+      const opKey = `job-bid:${jobId}:${String(input.amount_cents)}`;
       return bidMutation(
         'POST',
         `/api/v1/jobs/${jobId}/bids`,
@@ -78,7 +78,7 @@ export function usePlaceBid() {
       );
     },
     onSuccess: (_data, variables) => {
-      clearIdempotencyKey(`job-bid:${variables.jobId}:${variables.input.amount_cents}`);
+      clearIdempotencyKey(`job-bid:${variables.jobId}:${String(variables.input.amount_cents)}`);
       toast.success('Bid placed successfully');
       void queryClient.invalidateQueries({ queryKey: ['jobs', variables.jobId] });
       void queryClient.invalidateQueries({ queryKey: ['bidCount', variables.jobId] });

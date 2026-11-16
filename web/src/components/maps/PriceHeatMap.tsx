@@ -65,7 +65,7 @@ export function PriceHeatMap({ categorySlug, className }: PriceHeatMapProps) {
 
   const mapboxToken = getMapboxToken();
   const { data, isLoading } = usePricingHeatmap(categorySlug);
-  const points = data?.points ?? [];
+  const points = useMemo(() => data?.points ?? [], [data?.points]);
 
   const firstPoint = points[0];
   const mapCenter = useMemo<[number, number] | null>(

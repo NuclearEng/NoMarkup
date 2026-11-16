@@ -340,7 +340,6 @@ interface PromoteConfirmProps {
 }
 
 function PromoteConfirm({
-  listingId,
   chargeId,
   amountCents,
   confirmMutation,

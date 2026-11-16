@@ -9,6 +9,11 @@ import type {
   ListingOrderReviewsResponse,
 } from '@/types';
 
+/** Wire shape: the gateway serializes an empty Go slice as `null`. */
+type NullableReviews = Partial<{
+  [K in keyof ListingOrderReviewsResponse]: ListingOrderReviewsResponse[K] | null;
+}>;
+
 export function useListingOrderReviewEligibility(orderId: string, enabled = true) {
   return useQuery({
     queryKey: ['listingOrderReviewEligibility', orderId],
@@ -25,7 +30,7 @@ export function useListingOrderReviews(orderId: string, enabled = true) {
     queryKey: ['listingOrderReviews', orderId],
     queryFn: () =>
       api
-        .get<ListingOrderReviewsResponse>(`/api/v1/orders/${orderId}/reviews`)
+        .get<NullableReviews>(`/api/v1/orders/${orderId}/reviews`)
         .then((res) => res.reviews ?? []),
     enabled: !!orderId && enabled,
   });

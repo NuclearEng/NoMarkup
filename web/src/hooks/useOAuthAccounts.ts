@@ -11,7 +11,11 @@ import { api, getApiErrorMessage } from '@/lib/api';
 export type OAuthProvider = 'google' | 'apple' | 'facebook';
 
 export interface OAuthAccount {
-  provider: OAuthProvider | string;
+  /**
+   * Normally one of {@link OAuthProvider}; kept as `string` so a provider the
+   * gateway adds later still renders instead of failing to typecheck.
+   */
+  provider: string;
   email?: string | null;
   linked_at: string;
 }

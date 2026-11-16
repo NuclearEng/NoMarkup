@@ -112,14 +112,14 @@ export function InstantAvailabilityCard({ className }: { className?: string }) {
         void queryClient.invalidateQueries({ queryKey: ['providerProfile'] });
       }
       // Still sync available-now; leave day drafts alone until schedule arrives.
-      setAvailableNow(Boolean(profile.instant_available));
+      setAvailableNow(profile.instant_available);
       return;
     }
 
     scheduleRefetchRequested.current = false;
     const key = `${profile.id}|${String(profile.instant_available)}|${JSON.stringify(profile.schedule)}`;
     if (key === hydratedKey) return;
-    setAvailableNow(Boolean(profile.instant_available));
+    setAvailableNow(profile.instant_available);
     setDays(hydrateFromSchedule(profile.schedule));
     setHydratedKey(key);
   }, [profile, hydratedKey, queryClient]);
@@ -168,7 +168,7 @@ export function InstantAvailabilityCard({ className }: { className?: string }) {
     await persist(availableNow, days);
   }
 
-  if (isLoading && !profile) {
+  if (isLoading) {
     return (
       <Card
         className={cn('glass glass-highlight border border-[var(--brand-gold)]/10', className)}

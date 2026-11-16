@@ -348,7 +348,7 @@ export function usePlaceListingBid() {
     mutationFn: ({ listingId, input }: { listingId: string; input: PlaceListingBidInput }) => {
       // Stable key per listing+amount so double-tap / network retry cannot double-bid.
       // Gateway RequireIdempotencyKey on POST /listings/{id}/bids (MON-06/22).
-      const opKey = `listing-bid:${listingId}:${input.amount_cents}`;
+      const opKey = `listing-bid:${listingId}:${String(input.amount_cents)}`;
       return api.post<PlaceListingBidResponse>(
         `/api/v1/listings/${listingId}/bids`,
         input,
@@ -379,7 +379,7 @@ export function usePlaceListingBid() {
       explainListingFailure('Failed to place bid')(err);
     },
     onSuccess: (data, variables) => {
-      clearIdempotencyKey(`listing-bid:${variables.listingId}:${variables.input.amount_cents}`);
+      clearIdempotencyKey(`listing-bid:${variables.listingId}:${String(variables.input.amount_cents)}`);
       if (data.snipe_extension_applied) {
         toast.success('Bid placed — auction extended due to last-minute bid');
       } else {

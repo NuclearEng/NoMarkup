@@ -211,7 +211,7 @@ export function useCreateBidBond() {
   return useMutation({
     mutationFn: ({ listingId, input }: { listingId: string; input: CreateBidBondInput }) => {
       // Gateway RequireIdempotencyKey on POST /listings/{id}/bid-bond (MON-06/22).
-      const opKey = `bid-bond:${listingId}:${input.intended_bid_cents}`;
+      const opKey = `bid-bond:${listingId}:${String(input.intended_bid_cents)}`;
       return api.post<CreateBidBondResponse>(
         `/api/v1/listings/${listingId}/bid-bond`,
         input,
@@ -219,7 +219,7 @@ export function useCreateBidBond() {
       );
     },
     onSuccess: (_data, variables) => {
-      clearIdempotencyKey(`bid-bond:${variables.listingId}:${variables.input.intended_bid_cents}`);
+      clearIdempotencyKey(`bid-bond:${variables.listingId}:${String(variables.input.intended_bid_cents)}`);
     },
     onError: (err: unknown) => {
       toast.error(getApiErrorMessage(err, 'Failed to create bid bond'));

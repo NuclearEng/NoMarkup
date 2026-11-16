@@ -16,7 +16,7 @@ function labelFor(el: Element): string {
   if (href && href.trim() !== '') return href.trim();
   const name = el.getAttribute('name');
   if (name && name.trim() !== '') return name.trim();
-  const text = (el.textContent ?? '').replace(/\s+/g, ' ').trim();
+  const text = el.textContent.replace(/\s+/g, ' ').trim();
   if (text !== '') return text;
   return el.tagName.toLowerCase();
 }
@@ -72,9 +72,7 @@ export function ActionCapture() {
         form.getAttribute('data-workflow') ??
         form.getAttribute('aria-label') ??
         form.getAttribute('name') ??
-        form.id ??
-        form.action ??
-        'form';
+        form.id;
       recordClientAction({
         kind: 'ui',
         method: 'SUBMIT',

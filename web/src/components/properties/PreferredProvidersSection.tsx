@@ -126,7 +126,7 @@ export function PreferredProvidersSection({
         <p className="text-xs text-zinc-400">{footer}</p>
       </CardHeader>
       <CardContent>
-        <ul className="divide-y divide-white/5" role="list">
+        <ul className="divide-y divide-white/5">
           {list.map((provider) => {
             const isPreferred =
               provider.is_preferred ||

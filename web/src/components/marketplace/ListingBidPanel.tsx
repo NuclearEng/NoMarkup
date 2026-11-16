@@ -336,7 +336,7 @@ export function ListingBidPanel({
           className="min-h-[44px] w-full gap-1.5 border-destructive/40 text-destructive hover:bg-destructive/10"
           disabled={isRetracting || isSubmitting}
           onClick={() => {
-            onRetractBid?.();
+            onRetractBid();
           }}
           aria-label={`Retract bid (${String(retractRemainingSec)} seconds remaining)`}
           data-testid="listing-retract-bid"

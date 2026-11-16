@@ -314,7 +314,7 @@ export function MessageInput({
         setShowProposeTerms(false);
         toast.success('Proposed terms sent. Waiting for customer Accept or Reject.');
       })
-      .catch((err) => {
+      .catch((err: unknown) => {
         toast.error(getApiErrorMessage(err, 'Failed to send proposed terms.'));
       });
   }
