@@ -7,7 +7,6 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { Briefcase, Wrench } from 'lucide-react';
-import type { z } from 'zod';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -35,7 +34,8 @@ import { BUYER_PAYS_AGREED_PRICE } from '@/lib/constants';
 import { messageForOAuthError } from '@/lib/oauth-errors';
 import { passkeysSupported, registerPasskey } from '@/lib/passkeys';
 import { cn } from '@/lib/utils';
-import { registerSchema } from '@/lib/validations';
+import { registerSchema } from '@/lib/schemas/auth';
+import type * as z from '@/lib/zod-mini';
 import { useAuthStore } from '@/stores/auth-store';
 import { USER_ROLE } from '@/types';
 

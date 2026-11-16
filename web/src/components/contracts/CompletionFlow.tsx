@@ -10,7 +10,7 @@ import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
 import { useApproveCompletion, useMarkComplete, useRequestRevision } from '@/hooks/useContracts';
 import { formatCents } from '@/lib/utils';
-import { revisionNotesSchema } from '@/lib/validations';
+import { REVISION_NOTES_RULE, textRuleError } from '@/lib/text-rules';
 import { useAuthStore } from '@/stores/auth-store';
 import type { Contract } from '@/types';
 import { MILESTONE_STATUS } from '@/types';
@@ -60,9 +60,9 @@ export function CompletionFlow({ contract }: CompletionFlowProps) {
   }
 
   function handleRequestRevision() {
-    const result = revisionNotesSchema.safeParse(revisionNotes);
-    if (!result.success) {
-      setValidationError(result.error.issues[0]?.message ?? 'Invalid revision notes');
+    const error = textRuleError(REVISION_NOTES_RULE, revisionNotes);
+    if (error !== null) {
+      setValidationError(error);
       return;
     }
     if (!lastMilestone) return;

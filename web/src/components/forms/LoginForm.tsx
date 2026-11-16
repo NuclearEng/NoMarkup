@@ -6,7 +6,6 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import type { Route } from 'next';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
-import type { z } from 'zod';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -32,7 +31,8 @@ import { getApiErrorMessage } from '@/lib/api';
 import { BUYER_PAYS_AGREED_PRICE } from '@/lib/constants';
 import { messageForOAuthError } from '@/lib/oauth-errors';
 import { safeInternalPath } from '@/lib/safe-internal-path';
-import { loginSchema } from '@/lib/validations';
+import { loginSchema } from '@/lib/schemas/auth';
+import type * as z from '@/lib/zod-mini';
 import { useAuthStore, MFARequiredError } from '@/stores/auth-store';
 
 type LoginFormValues = z.infer<typeof loginSchema>;

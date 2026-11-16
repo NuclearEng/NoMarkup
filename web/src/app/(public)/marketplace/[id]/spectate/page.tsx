@@ -4,10 +4,10 @@ import { ArrowLeft, MapPin, Radio, RefreshCw, Wifi, WifiOff } from 'lucide-react
 import type { Route } from 'next';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 
 import { GradientMesh } from '@/components/landing/GradientMesh';
-import { TerminalGrid } from '@/components/terminal/terminal-grid';
+import { LazyTerminalGrid, preloadTerminalGrid } from '@/components/terminal/terminal-grid-lazy';
 import { TerminalToolbar } from '@/components/terminal/terminal-toolbar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -32,6 +32,9 @@ export default function ListingSpectatePage() {
   const listingId = params.id;
 
   const terminal = useMarketplaceSpectatorTerminal(listingId);
+
+  // Fetch the grid's code while the auction data loads (see terminal-grid-lazy).
+  useEffect(preloadTerminalGrid, []);
 
   const auctionEndsAt = useMemo(
     () =>
@@ -158,7 +161,7 @@ export default function ListingSpectatePage() {
       </div>
 
       <div className="relative z-[2] mx-auto max-w-[1400px] px-4 py-4 sm:px-6">
-        <TerminalGrid
+        <LazyTerminalGrid
           sim={terminal.sim}
           auctionEndsAt={auctionEndsAt}
           startingPriceCents={terminal.startingPriceCents}

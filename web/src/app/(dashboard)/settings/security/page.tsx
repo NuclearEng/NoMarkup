@@ -19,8 +19,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { api, getApiErrorMessage } from '@/lib/api';
-import { changePasswordSchema } from '@/lib/validations';
-import type { ChangePasswordFormValues } from '@/lib/validations';
+import { changePasswordSchema, type ChangePasswordFormValues } from '@/lib/schemas/auth';
 import { ConnectedAccounts } from '@/components/settings/ConnectedAccounts';
 import { PasskeyEnrollment } from '@/components/settings/PasskeyEnrollment';
 import { useProfile } from '@/hooks/useProfile';

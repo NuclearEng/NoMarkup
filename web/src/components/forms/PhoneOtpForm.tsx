@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useSendPhoneOtp, useVerifyPhone } from '@/hooks/useProfile';
-import { phoneSchema } from '@/lib/validations';
+import { PHONE_RULE, textRuleError } from '@/lib/text-rules';
 
 export interface PhoneOtpFormProps {
   /** Prefill from GET /users/me when the caller already saved a number. */
@@ -31,13 +31,13 @@ export function PhoneOtpForm({ initialPhone, phoneVerified = false }: PhoneOtpFo
 
   async function handleSend() {
     setPhoneError(null);
-    const parsed = phoneSchema.safeParse(phoneTrim);
-    if (!parsed.success) {
-      setPhoneError(parsed.error.issues[0]?.message ?? 'Invalid phone number');
+    const error = textRuleError(PHONE_RULE, phoneTrim);
+    if (error !== null) {
+      setPhoneError(error);
       return;
     }
     try {
-      await sendOtp.mutateAsync(parsed.data);
+      await sendOtp.mutateAsync(phoneTrim);
       setCodeSent(true);
     } catch {
       // Toast comes from the hook.

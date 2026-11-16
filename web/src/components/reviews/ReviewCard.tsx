@@ -20,7 +20,7 @@ import {
   type ReviewDimensionKey,
 } from '@/lib/review-dimensions';
 import { formatRelativeTime } from '@/lib/utils';
-import { reviewResponseSchema } from '@/lib/validations';
+import { REVIEW_RESPONSE_RULE, textRuleError } from '@/lib/text-rules';
 import { useAuthStore } from '@/stores/auth-store';
 import type { Review } from '@/types';
 import { FLAG_REASON, REVIEW_DIRECTION } from '@/types';
@@ -88,9 +88,9 @@ export function ReviewCard({ review }: ReviewCardProps) {
     .filter((row): row is { label: string; rating: number } => row !== null);
 
   function handleSubmitResponse() {
-    const result = reviewResponseSchema.safeParse(responseText);
-    if (!result.success) {
-      setResponseError(result.error.issues[0]?.message ?? 'Invalid response');
+    const error = textRuleError(REVIEW_RESPONSE_RULE, responseText);
+    if (error !== null) {
+      setResponseError(error);
       return;
     }
     setResponseError(null);

@@ -44,7 +44,7 @@ import { useCreateJob } from '@/hooks/useJobs';
 import { useProperties, type Property } from '@/hooks/useProperties';
 import { ENABLE_LIVE_AUCTION } from '@/lib/constants';
 import { api } from '@/lib/api';
-import { jobPostingSchema, type JobPostingFormValues } from '@/lib/validations';
+import { jobPostingSchema, type JobPostingFormValues } from '@/lib/schemas/jobs';
 import {
   AUCTION_TYPE,
   UPLOAD_CONTEXT,

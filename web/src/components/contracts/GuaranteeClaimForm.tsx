@@ -3,7 +3,6 @@
 import { ImagePlus, Loader2, X } from 'lucide-react';
 import Image from 'next/image';
 import { useCallback, useRef, useState } from 'react';
-import { z } from 'zod';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -18,6 +17,7 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { useImageUpload } from '@/hooks/useImageUpload';
 import { useSubmitGuaranteeClaim } from '@/hooks/useGuarantee';
+import * as z from '@/lib/zod-mini';
 
 const CLAIM_REASONS = {
   QUALITY: 'quality',
@@ -34,9 +34,11 @@ const CLAIM_REASON_LABELS: Record<string, string> = {
 };
 
 const claimSchema = z.object({
-  reason: z.string().min(1, 'Claim type is required'),
-  description: z.string().min(50, 'Description must be at least 50 characters').max(5000),
-  evidence_urls: z.array(z.url()).min(1, 'At least 1 photo is required'),
+  reason: z.string().check(z.minLength(1, 'Claim type is required')),
+  description: z
+    .string()
+    .check(z.minLength(50, 'Description must be at least 50 characters'), z.maxLength(5000)),
+  evidence_urls: z.array(z.url()).check(z.minLength(1, 'At least 1 photo is required')),
 });
 
 interface GuaranteeClaimFormProps {

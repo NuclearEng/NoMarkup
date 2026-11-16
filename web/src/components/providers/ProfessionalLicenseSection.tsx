@@ -3,7 +3,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { CheckCircle2, Clock, Scale, XCircle } from 'lucide-react';
 import { useForm } from 'react-hook-form';
-import { z } from 'zod';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -34,6 +33,7 @@ import {
   type ProviderLicense,
 } from '@/hooks/useProviderLicenses';
 import { cn } from '@/lib/utils';
+import * as z from '@/lib/zod-mini';
 
 // US states + DC a bar membership can be issued by. The gateway requires the
 // 2-letter USPS code (`len(jurisdiction) == 2`), so we submit `value` and show
@@ -95,10 +95,12 @@ const JURISDICTIONS = [
 const licenseFormSchema = z.object({
   licenseNumber: z
     .string()
-    .trim()
-    .min(3, 'Enter your bar license number')
-    .max(64, 'License number is too long'),
-  jurisdiction: z.string().min(1, 'Select the issuing jurisdiction'),
+    .check(
+      z.trim(),
+      z.minLength(3, 'Enter your bar license number'),
+      z.maxLength(64, 'License number is too long'),
+    ),
+  jurisdiction: z.string().check(z.minLength(1, 'Select the issuing jurisdiction')),
 });
 
 type LicenseFormValues = z.infer<typeof licenseFormSchema>;

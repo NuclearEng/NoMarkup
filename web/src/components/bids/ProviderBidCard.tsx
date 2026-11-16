@@ -22,7 +22,7 @@ import { Input } from '@/components/ui/input';
 import { MonoPrice } from '@/components/ui/mono-price';
 import { useUpdateBid, useWithdrawBid } from '@/hooks/useBids';
 import { formatCents, formatRelativeTime } from '@/lib/utils';
-import { bidSchema, type BidFormValues } from '@/lib/validations';
+import { bidSchema, type BidFormValues } from '@/lib/schemas/bids';
 import type { Bid } from '@/types';
 import { BID_STATUS } from '@/types';
 
