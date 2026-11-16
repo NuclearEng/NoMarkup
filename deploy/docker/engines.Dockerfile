@@ -20,6 +20,8 @@ COPY proto/ proto/
 # Copy workspace manifests, lockfile, and build.rs files for dep-layer caching.
 # Changes to source code alone won't invalidate this layer.
 COPY engines/Cargo.toml engines/Cargo.lock engines/
+# telemetry is a library crate shared by every engine: no build.rs, one bench.
+COPY engines/telemetry/Cargo.toml engines/telemetry/
 COPY engines/bidding/Cargo.toml engines/bidding/build.rs engines/bidding/
 COPY engines/fraud/Cargo.toml engines/fraud/build.rs engines/fraud/
 COPY engines/trust/Cargo.toml engines/trust/build.rs engines/trust/
@@ -35,6 +37,9 @@ RUN for eng in bidding fraud trust imaging pricing underwriting; do \
         echo "fn main() {}" > engines/$eng/src/main.rs && \
         touch engines/$eng/src/lib.rs; \
     done && \
+    mkdir -p engines/telemetry/src engines/telemetry/benches && \
+    touch engines/telemetry/src/lib.rs && \
+    echo "fn main() {}" > engines/telemetry/benches/span_overhead.rs && \
     for b in bidding/benches/bidding_bench fraud/benches/fraud_bench \
              trust/benches/trust_bench imaging/benches/imaging_bench \
              pricing/benches/fair_price underwriting/benches/underwrite; do \
