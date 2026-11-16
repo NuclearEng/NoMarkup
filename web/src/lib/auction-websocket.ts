@@ -65,10 +65,18 @@ class AuctionWebSocketManager {
     token: string,
     tokenGetter?: () => string | null,
     tokenRefresher?: TokenRefresher,
+    isRedial = false,
   ): void {
     if (this.ws && this.jobId === jobId) return;
 
+    // disconnect() zeroes the attempt counter, which is right for a fresh
+    // connect but not for an automatic re-dial: resetting there pinned every
+    // retry at the first backoff step and the attempt cap never engaged.
+    const attemptsSoFar = this.reconnectAttempts;
     this.disconnect();
+    if (isRedial) {
+      this.reconnectAttempts = attemptsSoFar;
+    }
     this.jobId = jobId;
     this.auctionEnded = false;
     if (tokenGetter) {
@@ -185,7 +193,7 @@ class AuctionWebSocketManager {
         const jobId = this.jobId;
         const token = tokenGetter ? tokenGetter() : null;
         if (jobId && token) {
-          this.doConnect(jobId, token, tokenGetter ?? undefined, tokenRefresher ?? undefined);
+          this.doConnect(jobId, token, tokenGetter ?? undefined, tokenRefresher ?? undefined, true);
         }
       });
     }, delay);
