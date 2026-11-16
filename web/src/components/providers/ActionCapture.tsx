@@ -5,6 +5,11 @@ import { usePathname } from 'next/navigation';
 
 import { recordClientAction } from '@/lib/client-action-log';
 
+/** <input type="submit"> / <input type="button">: a button, not a text field. */
+function isInputButton(el: Element): el is HTMLInputElement {
+  return el instanceof HTMLInputElement && (el.type === 'submit' || el.type === 'button');
+}
+
 function labelFor(el: Element): string {
   const workflow = el.getAttribute('data-workflow');
   if (workflow && workflow.trim() !== '') return workflow.trim();
@@ -16,6 +21,8 @@ function labelFor(el: Element): string {
   if (href && href.trim() !== '') return href.trim();
   const name = el.getAttribute('name');
   if (name && name.trim() !== '') return name.trim();
+  // An input button's label is its value; it has no text content.
+  if (isInputButton(el) && el.value.trim() !== '') return el.value.trim();
   const text = el.textContent.replace(/\s+/g, ' ').trim();
   if (text !== '') return text;
   return el.tagName.toLowerCase();
@@ -24,6 +31,9 @@ function labelFor(el: Element): string {
 function isTypingTarget(el: EventTarget | null): boolean {
   if (!(el instanceof HTMLElement)) return false;
   const tag = el.tagName;
+  // Treating every INPUT as a typing target dropped the taps on input buttons
+  // before the selector below could match them.
+  if (isInputButton(el)) return false;
   if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
   return el.isContentEditable;
 }
