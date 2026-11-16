@@ -62,7 +62,7 @@ export async function loginAs(page: Page, persona: Persona) {
       await page.waitForLoadState('domcontentloaded');
       return;
     } catch {
-      const body = (await page.locator('body').innerText().catch(() => '')) ?? '';
+      const body = await page.locator('body').innerText().catch(() => '');
       if (/rate limit/i.test(body) && attempt < 5) {
         // Gateway Retry-After is often ~2 min; sleep with progressive backoff.
         const waitMs = Math.min(30_000 + attempt * 20_000, 150_000);

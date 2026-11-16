@@ -273,7 +273,7 @@ describe('MessageThread', () => {
       has_more: false,
     });
     render(<MessageThread channelId="chan-1" />);
-    const img = screen.getByAltText('Shared image');
+    const img = screen.getByAltText('Shared attachment');
     expect(img.getAttribute('src')).toBe('http://localhost:9000/nomarkup-dev/chat/obj.jpg');
   });
 
@@ -289,7 +289,7 @@ describe('MessageThread', () => {
       has_more: false,
     });
     render(<MessageThread channelId="chan-1" />);
-    expect(screen.queryByAltText('Shared image')).toBeNull();
+    expect(screen.queryByAltText('Shared attachment')).toBeNull();
     expect(screen.getByText('https://evil.example.com/tracker.png')).toBeDefined();
   });
 

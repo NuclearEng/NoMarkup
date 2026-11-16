@@ -39,7 +39,7 @@ describe('/unsubscribe', () => {
     search.current = new URLSearchParams('token=tok-test');
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ success: true }),
+      json: () => Promise.resolve({ success: true }),
     });
     vi.stubGlobal('fetch', fetchMock);
 

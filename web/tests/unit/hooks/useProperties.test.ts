@@ -201,7 +201,7 @@ describe('usePreferredProviders', () => {
     );
   });
 
-  it('does not fetch when property path is requested without an id', async () => {
+  it('does not fetch when property path is requested without an id', () => {
     const { result } = renderHook(
       () => usePreferredProviders({ usePropertyPath: true }),
       { wrapper: wrap(client) },

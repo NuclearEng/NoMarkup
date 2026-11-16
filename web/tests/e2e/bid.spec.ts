@@ -114,7 +114,7 @@ test.describe('Bidding flows', () => {
       // getByLabel already requires an accessible name; pin the association.
       const inputId = await bidInput.getAttribute('id');
       expect(inputId, 'bid amount input must have an id for label association').toBeTruthy();
-      await expect(page.locator(`label[for="${inputId!}"]`)).toHaveCount(1);
+      await expect(page.locator(`label[for="${inputId ?? ''}"]`)).toHaveCount(1);
     });
   });
 });

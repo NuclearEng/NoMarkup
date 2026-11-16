@@ -85,7 +85,7 @@ describe('ReportJobButton', () => {
           reason: 'prohibited',
           description: 'Asking for cannabis delivery',
         },
-        expect.objectContaining({ onSuccess: expect.any(Function) }),
+        expect.objectContaining({ onSuccess: expect.any(Function) as unknown }),
       );
     });
     expect(toast.success).toHaveBeenCalled();

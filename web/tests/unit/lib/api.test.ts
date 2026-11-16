@@ -572,7 +572,8 @@ describe('fetchMeActivity', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]?.requestId).toBe('rid-1');
     const call = vi.mocked(fetch).mock.calls[0];
-    expect(String(call?.[0])).toBe('/api/v1/me/activity');
+    const target = call?.[0];
+    expect(target instanceof Request ? target.url : String(target)).toBe('/api/v1/me/activity');
   });
 
   it('treats 404 as empty (endpoint may not exist yet)', async () => {

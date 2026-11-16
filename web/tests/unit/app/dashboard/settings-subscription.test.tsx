@@ -366,6 +366,10 @@ describe('SubscriptionPage', () => {
     subState.data = { subscription: baseSubscription };
     tiersState.data = { tiers: [{ id: 'tier_basic', name: 'Basic', sort_order: 1 }] };
     changeTierState.isSuccess = true;
+    // A successful mutation always carries its response. `tier_applied` is
+    // optional on the wire (absent = applied), so an empty result is the
+    // "plan changed" case.
+    changeTierState.data = {};
     render(withQueryClient(createElement(SubscriptionPage)));
     expect(screen.getByText(/Plan changed successfully/i)).toBeDefined();
   });

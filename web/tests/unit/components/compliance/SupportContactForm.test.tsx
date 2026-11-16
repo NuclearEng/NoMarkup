@@ -10,7 +10,7 @@ describe('SupportContactForm', () => {
   beforeEach(() => {
     Object.defineProperty(window, 'location', {
       configurable: true,
-      value: { ...originalLocation, href: '' },
+      value: { href: '' },
       writable: true,
     });
   });

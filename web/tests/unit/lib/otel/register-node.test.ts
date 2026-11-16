@@ -73,22 +73,17 @@ describe('registerNodeOtel', () => {
 
     vi.doMock('@opentelemetry/sdk-trace-node', () => ({
       NodeTracerProvider: class {
-        constructor(_opts: unknown) {
-          /* noop */
-        }
         register = register;
       },
       BatchSpanProcessor: class {
-        constructor(_exporter: unknown) {
-          /* noop */
-        }
+        forceFlush = vi.fn();
+        shutdown = vi.fn();
       },
     }));
     vi.doMock('@opentelemetry/exporter-trace-otlp-http', () => ({
       OTLPTraceExporter: class {
-        constructor(_opts: unknown) {
-          /* noop */
-        }
+        export = vi.fn();
+        shutdown = vi.fn();
       },
     }));
     vi.doMock('@opentelemetry/resources', () => ({
@@ -102,7 +97,11 @@ describe('registerNodeOtel', () => {
       propagation: { setGlobalPropagator },
     }));
     vi.doMock('@opentelemetry/core', () => ({
-      W3CTraceContextPropagator: class {},
+      W3CTraceContextPropagator: class {
+        inject = vi.fn();
+        extract = vi.fn();
+        fields = (): string[] => [];
+      },
     }));
 
     const { registerNodeOtel, __resetNodeOtelRegistrationForTests: reset } =

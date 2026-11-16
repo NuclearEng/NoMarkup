@@ -86,7 +86,7 @@ describe('ReportListingButton', () => {
           reason: 'stolen',
           description: 'Serial matches mine',
         },
-        expect.objectContaining({ onSuccess: expect.any(Function) }),
+        expect.objectContaining({ onSuccess: expect.any(Function) as unknown }),
       );
     });
     expect(toast.success).toHaveBeenCalled();

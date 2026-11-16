@@ -36,7 +36,9 @@ describe('OrderReviewForm (FE-14 goods MVP)', () => {
     // StarRatingInput exposes five role=radio star controls.
     const stars = screen.getAllByRole('radio', { name: /star/i });
     expect(stars.length).toBeGreaterThanOrEqual(4);
-    await user.click(stars[3]!);
+    const fourthStar = stars[3];
+    if (!fourthStar) throw new Error('expected a fourth star radio');
+    await user.click(fourthStar);
     const submit = screen.getByRole('button', { name: /submit review/i });
     expect(submit).not.toBeDisabled();
   });

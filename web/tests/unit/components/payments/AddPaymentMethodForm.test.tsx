@@ -732,8 +732,9 @@ describe('AddPaymentMethodForm', () => {
     });
 
     const complete = vi.fn();
-    await act(async () => {
+    await act(() => {
       paymentMethodHandler?.({ paymentMethod: { id: 'pm_wallet_1' }, complete });
+      return Promise.resolve();
     });
 
     await waitFor(() => {
@@ -742,7 +743,7 @@ describe('AddPaymentMethodForm', () => {
           clientSecret: 'seti_real_secret',
           confirmParams: expect.objectContaining({
             payment_method: 'pm_wallet_1',
-          }),
+          }) as unknown,
         }),
       );
     });
@@ -781,8 +782,9 @@ describe('AddPaymentMethodForm', () => {
     });
 
     const complete = vi.fn();
-    await act(async () => {
+    await act(() => {
       paymentMethodHandler?.({ paymentMethod: { id: 'pm_wallet_2' }, complete });
+      return Promise.resolve();
     });
 
     await waitFor(() => {

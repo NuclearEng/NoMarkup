@@ -17,8 +17,8 @@ describe('sendQuoteOpeningMessage', () => {
   });
 
   it('clips the note to 2000 characters and sends it on the bid channel', async () => {
-    const createChannel = vi.fn(async () => ({ id: 'ch-1' }));
-    const sendMessage = vi.fn(async () => ({}));
+    const createChannel = vi.fn(() => Promise.resolve({ id: 'ch-1' }));
+    const sendMessage = vi.fn(() => Promise.resolve({}));
     const body = 'a'.repeat(2005);
     const result = await sendQuoteOpeningMessage({
       jobId: 'job-1',
@@ -38,9 +38,7 @@ describe('sendQuoteOpeningMessage', () => {
     const result = await sendQuoteOpeningMessage({
       jobId: 'job-1',
       body: 'Parts included',
-      createChannel: vi.fn(async () => {
-        throw new Error('down');
-      }),
+      createChannel: vi.fn(() => Promise.reject(new Error('down'))),
       sendMessage: vi.fn(),
     });
     expect(result).toBe('failed');

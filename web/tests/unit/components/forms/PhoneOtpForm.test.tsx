@@ -59,6 +59,6 @@ describe('PhoneOtpForm', () => {
   it('shows verified status when the profile is already verified', () => {
     render(createElement(PhoneOtpForm, { initialPhone: '+15550001111', phoneVerified: true }));
     expect(screen.getByText(/Phone verified/i)).toBeDefined();
-    expect((screen.getByLabelText(/Phone/i) as HTMLInputElement).value).toBe('+15550001111');
+    expect(screen.getByLabelText<HTMLInputElement>(/Phone/i).value).toBe('+15550001111');
   });
 });

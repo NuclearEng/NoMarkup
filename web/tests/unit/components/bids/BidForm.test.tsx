@@ -57,8 +57,8 @@ const quoteBox = vi.hoisted(() => ({
     created_at: string;
   }>,
   increment: vi.fn(),
-  createChannel: vi.fn(async () => ({ id: 'channel-1' })),
-  sendMessage: vi.fn(async () => ({})),
+  createChannel: vi.fn(() => Promise.resolve({ id: 'channel-1' })),
+  sendMessage: vi.fn(() => Promise.resolve({})),
 }));
 
 vi.mock('@/hooks/useQuoteTemplates', () => ({

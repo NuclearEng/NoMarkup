@@ -260,7 +260,7 @@ describe('PriceHeatMap — token-set / real points', () => {
     expect(skeleton).not.toBeNull();
   });
 
-  it('does not render a Live badge next to the map', async () => {
+  it('does not render a Live badge next to the map', () => {
     const { container } = render(<PriceHeatMap />);
     expect(container.textContent).not.toMatch(/\bLive\b/);
   });

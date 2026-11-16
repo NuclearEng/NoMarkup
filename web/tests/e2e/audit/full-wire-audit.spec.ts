@@ -224,7 +224,7 @@ function attachCollectors(page: Page): Collectors {
     const status = res.status();
     // Flag 5xx API failures only (401/403 are authz, not wire breaks)
     if (status >= 500) {
-      failedApis.push(`${status} ${url.slice(0, 200)}`);
+      failedApis.push(`${String(status)} ${url.slice(0, 200)}`);
     }
   };
 
@@ -270,7 +270,11 @@ async function probePage(
       await page.waitForTimeout(500 * (attempt + 1));
     }
   }
-  if (lastNavErr) throw lastNavErr;
+  if (lastNavErr) {
+    throw lastNavErr instanceof Error
+      ? lastNavErr
+      : new Error('navigation failed with a non-Error value', { cause: lastNavErr });
+  }
   // Allow client data fetch + AuthRestorer
   await page.waitForTimeout(1_800);
   const loadMs = Date.now() - t0;
@@ -326,7 +330,7 @@ async function probePage(
       route,
       severity: 'P2',
       kind: 'slow',
-      message: `Slow load ${loadMs}ms (>5s soft budget)`,
+      message: `Slow load ${String(loadMs)}ms (>5s soft budget)`,
     });
   } else if (loadMs > 2500) {
     findings.push({
@@ -334,7 +338,7 @@ async function probePage(
       route,
       severity: 'P3',
       kind: 'perf',
-      message: `Load ${loadMs}ms (target LCP-like <2.5s felt)`,
+      message: `Load ${String(loadMs)}ms (target LCP-like <2.5s felt)`,
     });
   }
 
@@ -443,7 +447,7 @@ async function probePage(
       route,
       severity: 'info',
       kind: 'ok',
-      message: `OK load ${loadMs}ms · ${buttonCount} buttons · ${linkCount} links · h1="${h1.slice(0, 80)}"`,
+      message: `OK load ${String(loadMs)}ms · ${String(buttonCount)} buttons · ${String(linkCount)} links · h1="${h1.slice(0, 80)}"`,
     });
   }
 
@@ -530,7 +534,7 @@ function writeReport() {
     '',
     `Generated: ${summary.generatedAt}`,
     '',
-    `Routes: ${summary.totals.routes} · Pass: ${summary.totals.pass} · Partial: ${summary.totals.partial} · Fail: ${summary.totals.fail}`,
+    `Routes: ${String(summary.totals.routes)} · Pass: ${String(summary.totals.pass)} · Partial: ${String(summary.totals.partial)} · Fail: ${String(summary.totals.fail)}`,
     '',
     '## P0 findings',
     '',
@@ -557,7 +561,7 @@ function writeReport() {
   );
   for (const r of merged) {
     lines.push(
-      `| ${r.persona} | \`${r.route}\` | ${r.status} | ${r.loadMs} | ${r.buttonCount} | ${r.h1.replace(/\|/g, '/').slice(0, 40)} |`,
+      `| ${r.persona} | \`${r.route}\` | ${r.status} | ${String(r.loadMs)} | ${String(r.buttonCount)} | ${r.h1.replace(/\|/g, '/').slice(0, 40)} |`,
     );
   }
   fs.writeFileSync(path.join(REPORT_DIR, 'wire-audit.md'), lines.join('\n'));
@@ -566,7 +570,7 @@ function writeReport() {
 // Independent describes so one persona failure does not skip the others
 test.describe('Wire audit — public', () => {
   test.describe.configure({ mode: 'serial', timeout: 15 * 60_000 });
-  test.afterAll(() => writeReport());
+  test.afterAll(() => { writeReport(); });
   test('public routes', async ({ page }) => {
     ensureDirs();
     await runRouteList(page, 'public', PUBLIC_ROUTES);
@@ -575,7 +579,7 @@ test.describe('Wire audit — public', () => {
 
 test.describe('Wire audit — customer', () => {
   test.describe.configure({ mode: 'serial', timeout: 20 * 60_000 });
-  test.afterAll(() => writeReport());
+  test.afterAll(() => { writeReport(); });
   test('customer routes', async ({ page }) => {
     ensureDirs();
     await loginAs(page, 'customer');
@@ -585,7 +589,7 @@ test.describe('Wire audit — customer', () => {
 
 test.describe('Wire audit — provider', () => {
   test.describe.configure({ mode: 'serial', timeout: 20 * 60_000 });
-  test.afterAll(() => writeReport());
+  test.afterAll(() => { writeReport(); });
   test('provider routes', async ({ page }) => {
     ensureDirs();
     await loginAs(page, 'provider');
@@ -595,7 +599,7 @@ test.describe('Wire audit — provider', () => {
 
 test.describe('Wire audit — admin', () => {
   test.describe.configure({ mode: 'serial', timeout: 20 * 60_000 });
-  test.afterAll(() => writeReport());
+  test.afterAll(() => { writeReport(); });
   test('admin routes', async ({ page }) => {
     ensureDirs();
     await loginAs(page, 'admin');

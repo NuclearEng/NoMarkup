@@ -149,7 +149,8 @@ describe('useCreateInstantMatch', () => {
     expect(vi.mocked(api.post)).toHaveBeenCalledWith('/api/v1/jobs/j-1/instant-match');
     expect(result.current.data?.status).toBe('offer_sent');
     expect(vi.mocked(toast.success)).toHaveBeenCalled();
-    const successMsg = String(vi.mocked(toast.success).mock.calls[0]?.[0] ?? '');
+    const firstToastArg = vi.mocked(toast.success).mock.calls[0]?.[0];
+    const successMsg = typeof firstToastArg === 'string' ? firstToastArg : '';
     expect(successMsg).toMatch(/Instant match sent/i);
   });
 

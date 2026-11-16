@@ -109,15 +109,15 @@ function wrapper({ children }: { children: ReactNode }) {
 }
 
 function mockHappyPath(instances = [INSTANCE_SCHEDULED, INSTANCE_COMPLETED, INSTANCE_AUTO]) {
-  get.mockImplementation(async (path: unknown) => {
+  get.mockImplementation((path: unknown) => {
     const p = String(path);
     if (p.includes('/recurring/instances')) {
-      return { instances };
+      return Promise.resolve({ instances });
     }
     if (p.includes('/recurring')) {
-      return { config: CONFIG };
+      return Promise.resolve({ config: CONFIG });
     }
-    return {};
+    return Promise.resolve({});
   });
 }
 
@@ -359,15 +359,15 @@ describe('RecurringSchedule', () => {
     expect(screen.queryByRole('button', { name: /Pay visit/i })).toBeNull();
   });
   it('shows FR-18.7 repost CTA for customer when schedule is cancelled', async () => {
-    get.mockImplementation(async (path: unknown) => {
+    get.mockImplementation((path: unknown) => {
       const p = String(path);
       if (p.includes('/recurring/instances')) {
-        return { instances: [INSTANCE_COMPLETED] };
+        return Promise.resolve({ instances: [INSTANCE_COMPLETED] });
       }
       if (p.includes('/recurring')) {
-        return { config: { ...CONFIG, status: 'cancelled' } };
+        return Promise.resolve({ config: { ...CONFIG, status: 'cancelled' } });
       }
-      return {};
+      return Promise.resolve({});
     });
     render(
       createElement(RecurringSchedule, {
@@ -391,15 +391,15 @@ describe('RecurringSchedule', () => {
   });
 
   it('hides FR-18.7 repost CTA from provider when cancelled', async () => {
-    get.mockImplementation(async (path: unknown) => {
+    get.mockImplementation((path: unknown) => {
       const p = String(path);
       if (p.includes('/recurring/instances')) {
-        return { instances: [] };
+        return Promise.resolve({ instances: [] });
       }
       if (p.includes('/recurring')) {
-        return { config: { ...CONFIG, status: 'cancelled' } };
+        return Promise.resolve({ config: { ...CONFIG, status: 'cancelled' } });
       }
-      return {};
+      return Promise.resolve({});
     });
     render(
       createElement(RecurringSchedule, {

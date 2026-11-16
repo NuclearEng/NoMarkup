@@ -81,7 +81,7 @@ function formatViolations(violations: Result[]): string {
         .slice(0, 5)
         .map((n) => `    - ${n.target.join(' ')}: ${n.failureSummary ?? n.html}`)
         .join('\n');
-      return `[${v.impact ?? 'unknown'}] ${v.id}: ${v.help} (${v.nodes.length} node(s))\n${nodes}`;
+      return `[${v.impact ?? 'unknown'}] ${v.id}: ${v.help} (${String(v.nodes.length)} node(s))\n${nodes}`;
     })
     .join('\n\n');
 }
