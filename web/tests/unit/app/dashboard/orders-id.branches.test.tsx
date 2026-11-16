@@ -286,7 +286,8 @@ describe('OrderDetailPage — handshake by role', () => {
 
   it('a disputed order cannot be confirmed, disputed again, or reported', () => {
     show(makeOrder({ status: LISTING_ORDER_STATUS.DISPUTED }));
-    expect(screen.getByText('disputed').className).toMatch(/red/);
+    // Its own token: a dispute must not look like a cancelled (red) order.
+    expect(screen.getByText('disputed').className).toMatch(/text-status-disputed/);
     expect(button(/Confirm pickup/)).toBeDisabled();
     expect(button('Open dispute')).toBeDisabled();
     expect(button('Report no-show')).toBeDisabled();
