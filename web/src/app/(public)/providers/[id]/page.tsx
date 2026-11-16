@@ -6,6 +6,7 @@ import { sanitizeJsonLd } from '@/lib/json-ld';
 
 import { ProviderProfileClient } from './ProviderProfileClient';
 import { serverFetch } from '@/lib/server-fetch';
+import { siteUrl } from '@/lib/site-url';
 
 // Server-side API origin. Mirror marketplace/[id] + jobs/[id]: prefer the
 // server-only API_URL, fall back to the public var, then localhost for dev.
@@ -15,7 +16,7 @@ const API_URL =
 
 // Public site origin — drives canonical + absolute openGraph URLs. Same
 // resolution as layout.tsx / sitemap.ts / robots.ts.
-const SITE_URL = process.env['NEXT_PUBLIC_SITE_URL'] ?? 'https://no-markup.com';
+const SITE_URL = siteUrl();
 
 /**
  * Server-fetch a provider profile for the detail page.

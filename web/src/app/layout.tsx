@@ -16,6 +16,7 @@ import { InstallPrompt } from '@/components/pwa/InstallPrompt';
 import { ServiceWorkerRegistrar } from '@/components/pwa/ServiceWorkerRegistrar';
 import { BUYER_PAYS_AGREED_PRICE } from '@/lib/constants';
 import { Toaster } from 'sonner';
+import { siteUrl } from '@/lib/site-url';
 
 // Showcase type stack — docs/brand/showcase-ssot.md (qa/showcase/index.html)
 //
@@ -105,7 +106,7 @@ const jetbrains = localFont({
 
 // Public site origin — drives canonical URLs and absolute OG/Twitter image URLs.
 // no-markup.com is the owned, hyphenated production zone (CLAUDE.md §2).
-const SITE_URL = process.env['NEXT_PUBLIC_SITE_URL'] ?? 'https://no-markup.com';
+const SITE_URL = siteUrl();
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),

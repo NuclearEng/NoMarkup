@@ -5,6 +5,7 @@ import { ListingDetailClient } from '@/components/marketplace/ListingDetailClien
 import { sanitizeJsonLd } from '@/lib/json-ld';
 import type { ListingDetail, ListingPhoto } from '@/types';
 import { serverFetch } from '@/lib/server-fetch';
+import { siteUrl } from '@/lib/site-url';
 
 // Server-side API origin. Mirror next.config.ts: prefer the server-only
 // API_URL, fall back to the public var, then localhost for dev. Public read
@@ -14,7 +15,7 @@ const API_URL =
 
 // Public site origin — drives canonical + absolute openGraph/JSON-LD URLs.
 // Same resolution as layout.tsx / sitemap.ts / robots.ts.
-const SITE_URL = process.env['NEXT_PUBLIC_SITE_URL'] ?? 'https://no-markup.com';
+const SITE_URL = siteUrl();
 
 /**
  * Server-fetch a listing for the detail page.

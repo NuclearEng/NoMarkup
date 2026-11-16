@@ -1,6 +1,7 @@
 import type { MetadataRoute } from 'next';
+import { siteUrl } from '@/lib/site-url';
 
-const SITE_URL = process.env['NEXT_PUBLIC_SITE_URL'] ?? 'https://no-markup.com';
+const SITE_URL = siteUrl();
 
 /**
  * robots.txt — allow crawling of public surfaces, disallow authenticated app
