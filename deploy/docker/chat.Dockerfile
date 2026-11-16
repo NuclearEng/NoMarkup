@@ -13,6 +13,12 @@ RUN echo "═══════════════════════�
 #   replace github.com/nomarkup/nomarkup/proto => ../../proto/gen/go
 COPY proto/gen/go/ proto/gen/go/
 
+# Copy the shared gRPC mTLS module — the go.mod also has:
+#   replace github.com/nomarkup/nomarkup/pkg/grpmtls => ../../pkg/grpmtls
+# Without it `go mod download` fails: "reading /app/pkg/grpmtls/go.mod: no such
+# file or directory".
+COPY pkg/grpmtls/ pkg/grpmtls/
+
 # Copy service module files and download dependencies.
 COPY services/chat/go.mod services/chat/go.sum services/chat/
 WORKDIR /app/services/chat
