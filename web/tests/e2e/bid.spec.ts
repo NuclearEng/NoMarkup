@@ -17,7 +17,16 @@ test.describe('Bidding flows', () => {
       const bidAction = page.getByRole('button', { name: /place bid|submit bid|^bid$/i });
       const jobNotFound = page.getByText('Job not found');
       const loginForm = page.getByRole('heading', { name: /welcome back/i });
-      await expect(bidAction.or(jobNotFound).or(loginForm).first()).toBeVisible({
+      // Backendless CI: the server component can no longer reach the catalog,
+      // and since 0c3654a5 that is "unavailable" (thrown to the scoped
+      // (public)/error.tsx boundary), deliberately distinct from a 404
+      // "Job not found". Assert that boundary by its own heading.
+      const catalogUnavailable = page.getByRole('heading', {
+        name: /we couldn.t load this page/i,
+      });
+      await expect(
+        bidAction.or(jobNotFound).or(loginForm).or(catalogUnavailable).first(),
+      ).toBeVisible({
         timeout: 15_000,
       });
     });

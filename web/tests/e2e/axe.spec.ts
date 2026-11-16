@@ -62,6 +62,23 @@ async function runAxeSeriousCritical(page: Page): Promise<Result[]> {
       }
     ).axe;
 
+    // Measure the settled paint, not a frame of an entry animation. While
+    // e.g. EmptyState's `animate-fade-in` runs, text is blended toward the
+    // background and axe reports a contrast the user never rests on (CI saw
+    // the /jobs error state at 2.78:1 on one attempt in three). Wait for the
+    // finite animations in flight; endless ones (skeleton pulse) are skipped
+    // and the wait is capped so a stuck animation cannot hang the scan.
+    const inFlight = document.getAnimations().filter((animation) => {
+      const endTime = Number(animation.effect?.getComputedTiming().endTime);
+      return animation.playState === 'running' && Number.isFinite(endTime);
+    });
+    await Promise.race([
+      Promise.allSettled(inFlight.map((animation) => animation.finished)),
+      new Promise((resolve) => {
+        setTimeout(resolve, 3_000);
+      }),
+    ]);
+
     const results = await axeWin.run(document, {
       // Default rule set includes color-contrast; do not disable it here.
       resultTypes: ['violations'],
