@@ -186,10 +186,12 @@ class AuctionWebSocketManager {
       // uses a fresh token instead of looping on 401 (BUG 2). Reconnect even
       // if the refresh fails — tokenGetter may still yield a usable token, and
       // a hard auth failure should surface through the normal close/retry path.
+      // A refresher that rejects counts as a failed refresh, same as one that
+      // resolves false; chaining with finally() left the rejection unhandled.
       const refresh = tokenRefresher
-        ? tokenRefresher()
+        ? tokenRefresher().catch(() => false)
         : Promise.resolve(false);
-      void refresh.finally(() => {
+      void refresh.then(() => {
         const jobId = this.jobId;
         const token = tokenGetter ? tokenGetter() : null;
         if (jobId && token) {
