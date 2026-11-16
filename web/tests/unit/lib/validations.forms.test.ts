@@ -4,7 +4,6 @@
 // "required" messages (custom text only when the field is missing, zod's own
 // text when a wrong value is supplied) and the 0 -> undefined money transforms.
 import { describe, expect, it } from 'vitest';
-import type { z } from 'zod';
 
 import {
   LEGAL_CONTACT_PREFERENCE,
@@ -24,6 +23,7 @@ import {
   propertySchema,
   resetPasswordSchema,
 } from '@/lib/validations';
+import type * as z from '@/lib/zod-mini';
 
 interface IssueLike {
   path: PropertyKey[];
@@ -32,7 +32,7 @@ interface IssueLike {
 }
 
 /** Every message reported at `field`, including ones nested inside a union. */
-function messagesAt(schema: z.ZodType, input: unknown, field: string): string[] {
+function messagesAt(schema: z.ZodMiniType, input: unknown, field: string): string[] {
   const result = schema.safeParse(input);
   if (result.success) return [];
   const out: string[] = [];
@@ -47,7 +47,7 @@ function messagesAt(schema: z.ZodType, input: unknown, field: string): string[] 
   return out;
 }
 
-function failingFields(schema: z.ZodType, input: unknown): string[] {
+function failingFields(schema: z.ZodMiniType, input: unknown): string[] {
   const result = schema.safeParse(input);
   if (result.success) return [];
   return [...new Set(result.error.issues.map((issue) => String(issue.path[0])))].sort();
@@ -135,7 +135,7 @@ describe('legalIntakeSchema', () => {
 });
 
 describe('listing field schemas', () => {
-  it.each<[string, z.ZodType, string, string]>([
+  it.each<[string, z.ZodMiniType, string, string]>([
     ['a 4-char title', listingTitleSchema, 'Bike', 'Title must be at least 5 characters'],
     ['a 121-char title', listingTitleSchema, 'x'.repeat(121), 'Title must be at most 120 characters'],
     [
