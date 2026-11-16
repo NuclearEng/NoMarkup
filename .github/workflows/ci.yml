@@ -52,7 +52,9 @@ jobs:
       - run: cd web && npm run check:hex
       - run: cd web && npm run typecheck
       # catalog.yaml is SSOT; catalog.json must be generated (no drift).
-      - name: Check catalog.json is generated from catalog.yaml
+      # pages.json is generated from the App Router page files by the same
+      # command; a page added or removed without regenerating fails here.
+      - name: Check catalog.json and pages.json are generated (no drift)
         run: make check-catalog
 
   web-test:

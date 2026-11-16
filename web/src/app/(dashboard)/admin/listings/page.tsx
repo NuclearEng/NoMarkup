@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { toast } from 'sonner';
 
 import { ActionConfirmDialog } from '@/components/admin/ActionConfirmDialog';
 import type { Column } from '@/components/admin/DataTable';
@@ -26,6 +27,7 @@ import {
   useReactivateListing,
   useSuspendListing,
 } from '@/hooks/useAdmin';
+import { getApiErrorMessage } from '@/lib/api';
 import { formatCents } from '@/lib/utils';
 
 const ALL_FILTER = '__all__';
@@ -66,12 +68,18 @@ export default function AdminListingsPage() {
 
   async function handleConfirm() {
     if (!actionTarget) return;
-    if (actionTarget.action === 'suspend') {
-      await suspendMutation.mutateAsync({ listingId: actionTarget.listing.id, reason });
-    } else if (actionTarget.action === 'reactivate') {
-      await reactivateMutation.mutateAsync({ listingId: actionTarget.listing.id });
-    } else {
-      await cancelMutation.mutateAsync({ listingId: actionTarget.listing.id, reason });
+    try {
+      if (actionTarget.action === 'suspend') {
+        await suspendMutation.mutateAsync({ listingId: actionTarget.listing.id, reason });
+      } else if (actionTarget.action === 'reactivate') {
+        await reactivateMutation.mutateAsync({ listingId: actionTarget.listing.id });
+      } else {
+        await cancelMutation.mutateAsync({ listingId: actionTarget.listing.id, reason });
+      }
+    } catch (err) {
+      // Keep the dialog and the typed reason so the admin can retry.
+      toast.error(getApiErrorMessage(err, `Failed to ${actionTarget.action} listing`));
+      return;
     }
     setActionTarget(null);
     setReason('');

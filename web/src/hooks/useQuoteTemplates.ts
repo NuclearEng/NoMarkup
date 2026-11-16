@@ -28,7 +28,10 @@ export function useQuoteTemplates(options?: { enabled?: boolean; retry?: boolean
     },
     enabled: options?.enabled ?? true,
     staleTime: 60 * 1000,
-    retry: options?.retry,
+    // Only set `retry` when the caller asked: an explicit `undefined` here
+    // overrides the query client default (no retry on 4xx/5xx) with the
+    // library default of three retries.
+    ...(options?.retry !== undefined ? { retry: options.retry } : {}),
   });
 }
 

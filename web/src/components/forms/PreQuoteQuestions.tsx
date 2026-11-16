@@ -10,17 +10,11 @@
 // validate / submit answers atomically alongside the rest of the
 // CreateJobInput payload.
 
-import { useMemo } from 'react';
+import { useId, useMemo } from 'react';
 
 import { Checkbox } from '@/components/ui/checkbox';
-import {
-  FormControl,
-  FormDescription,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   Select,
   SelectContent,
@@ -129,29 +123,33 @@ interface QuestionFieldProps {
   onJSON: (json: unknown) => void;
 }
 
+// These answers live in the parent's state, not in the react-hook-form field
+// registry, so the ui/form primitives (FormLabel, FormControl, ...) cannot be
+// used here: they read a <FormField> context and throw without one, which
+// crashed the job form for every category that has questions. Plain labels
+// tied to their control by id give the same markup without that dependency.
 function QuestionField({ question: q, answer, onText, onJSON }: QuestionFieldProps) {
+  const fieldId = useId();
   const labelSuffix = q.required ? <span className="text-destructive ml-0.5">*</span> : null;
 
   if (q.question_type === 'text') {
     return (
-      <FormItem>
-        <FormLabel>
+      <div className="space-y-2">
+        <Label htmlFor={fieldId}>
           {q.question}
           {labelSuffix}
-        </FormLabel>
-        <FormControl>
-          <Textarea
-            rows={3}
-            value={answer?.answer_text ?? ''}
-            onChange={(e) => {
-              onText(e.target.value);
-            }}
-            className="resize-none"
-            aria-required={q.required}
-          />
-        </FormControl>
-        <FormMessage />
-      </FormItem>
+        </Label>
+        <Textarea
+          id={fieldId}
+          rows={3}
+          value={answer?.answer_text ?? ''}
+          onChange={(e) => {
+            onText(e.target.value);
+          }}
+          className="resize-none"
+          aria-required={q.required}
+        />
+      </div>
     );
   }
 
@@ -161,55 +159,51 @@ function QuestionField({ question: q, answer, onText, onJSON }: QuestionFieldPro
         ? String(answer.answer_json)
         : (answer?.answer_text ?? '');
     return (
-      <FormItem>
-        <FormLabel>
+      <div className="space-y-2">
+        <Label htmlFor={fieldId}>
           {q.question}
           {labelSuffix}
-        </FormLabel>
-        <FormControl>
-          <Input
-            type="number"
-            inputMode="numeric"
-            value={num}
-            min={0}
-            className="min-h-[44px]"
-            aria-required={q.required}
-            onChange={(e) => {
-              const v = e.target.value;
-              if (v === '') {
-                onJSON(null);
-                return;
-              }
-              const parsed = Number(v);
-              if (Number.isFinite(parsed)) onJSON(parsed);
-            }}
-          />
-        </FormControl>
-        <FormMessage />
-      </FormItem>
+        </Label>
+        <Input
+          id={fieldId}
+          type="number"
+          inputMode="numeric"
+          value={num}
+          min={0}
+          className="min-h-[44px]"
+          aria-required={q.required}
+          onChange={(e) => {
+            const v = e.target.value;
+            if (v === '') {
+              onJSON(null);
+              return;
+            }
+            const parsed = Number(v);
+            if (Number.isFinite(parsed)) onJSON(parsed);
+          }}
+        />
+      </div>
     );
   }
 
   if (q.question_type === 'date') {
     return (
-      <FormItem>
-        <FormLabel>
+      <div className="space-y-2">
+        <Label htmlFor={fieldId}>
           {q.question}
           {labelSuffix}
-        </FormLabel>
-        <FormControl>
-          <Input
-            type="date"
-            value={answer?.answer_text ?? ''}
-            className="min-h-[44px]"
-            aria-required={q.required}
-            onChange={(e) => {
-              onText(e.target.value);
-            }}
-          />
-        </FormControl>
-        <FormMessage />
-      </FormItem>
+        </Label>
+        <Input
+          id={fieldId}
+          type="date"
+          value={answer?.answer_text ?? ''}
+          className="min-h-[44px]"
+          aria-required={q.required}
+          onChange={(e) => {
+            onText(e.target.value);
+          }}
+        />
+      </div>
     );
   }
 
@@ -219,43 +213,40 @@ function QuestionField({ question: q, answer, onText, onJSON }: QuestionFieldPro
         ? answer.answer_json
         : answer?.answer_text === 'true';
     return (
-      <FormItem className="flex min-h-[44px] items-center gap-3">
-        <FormControl>
-          <Checkbox
-            checked={checked}
-            onCheckedChange={(c) => {
-              onJSON(c === true);
-            }}
-            aria-required={q.required}
-          />
-        </FormControl>
-        <FormLabel className="cursor-pointer">
+      <div className="flex min-h-[44px] items-center gap-3">
+        <Checkbox
+          id={fieldId}
+          checked={checked}
+          onCheckedChange={(c) => {
+            onJSON(c === true);
+          }}
+          aria-required={q.required}
+        />
+        <Label htmlFor={fieldId} className="cursor-pointer">
           {q.question}
           {labelSuffix}
-        </FormLabel>
-      </FormItem>
+        </Label>
+      </div>
     );
   }
 
   if (q.question_type === 'select') {
     const opts = Array.isArray(q.options) ? q.options : [];
     return (
-      <FormItem>
-        <FormLabel>
+      <div className="space-y-2">
+        <Label htmlFor={fieldId}>
           {q.question}
           {labelSuffix}
-        </FormLabel>
+        </Label>
         <Select
           value={answer?.answer_text ?? ''}
           onValueChange={(v) => {
             onText(v);
           }}
         >
-          <FormControl>
-            <SelectTrigger className="min-h-[44px]" aria-required={q.required}>
-              <SelectValue placeholder="Select an option" />
-            </SelectTrigger>
-          </FormControl>
+          <SelectTrigger id={fieldId} className="min-h-[44px]" aria-required={q.required}>
+            <SelectValue placeholder="Select an option" />
+          </SelectTrigger>
           <SelectContent>
             {opts.map((o) => (
               <SelectItem key={o} value={o}>
@@ -264,8 +255,7 @@ function QuestionField({ question: q, answer, onText, onJSON }: QuestionFieldPro
             ))}
           </SelectContent>
         </Select>
-        <FormMessage />
-      </FormItem>
+      </div>
     );
   }
 
@@ -275,20 +265,18 @@ function QuestionField({ question: q, answer, onText, onJSON }: QuestionFieldPro
     const selected = Array.isArray(answer?.answer_json) ? (answer.answer_json as string[]) : [];
 
     function toggle(opt: string) {
-      const next = selected.includes(opt)
-        ? selected.filter((s) => s !== opt)
-        : [...selected, opt];
+      const next = selected.includes(opt) ? selected.filter((s) => s !== opt) : [...selected, opt];
       onJSON(next);
     }
 
     return (
-      <FormItem>
-        <FormLabel>
+      <div className="space-y-2">
+        <p id={fieldId} className="text-sm leading-none font-medium">
           {q.question}
           {labelSuffix}
-        </FormLabel>
-        <FormDescription>Choose all that apply.</FormDescription>
-        <div className="flex flex-wrap gap-2">
+        </p>
+        <p className="text-muted-foreground text-sm">Choose all that apply.</p>
+        <div role="group" aria-labelledby={fieldId} className="flex flex-wrap gap-2">
           {opts.map((o) => {
             const isOn = selected.includes(o);
             return (
@@ -310,25 +298,23 @@ function QuestionField({ question: q, answer, onText, onJSON }: QuestionFieldPro
             );
           })}
         </div>
-        <FormMessage />
-      </FormItem>
+      </div>
     );
   }
 
   // Unknown question_type — fall back to text so the question still
   // collects something rather than crashing the form.
   return (
-    <FormItem>
-      <FormLabel>{q.question}</FormLabel>
-      <FormControl>
-        <Input
-          value={answer?.answer_text ?? ''}
-          onChange={(e) => {
-            onText(e.target.value);
-          }}
-          className="min-h-[44px]"
-        />
-      </FormControl>
-    </FormItem>
+    <div className="space-y-2">
+      <Label htmlFor={fieldId}>{q.question}</Label>
+      <Input
+        id={fieldId}
+        value={answer?.answer_text ?? ''}
+        onChange={(e) => {
+          onText(e.target.value);
+        }}
+        className="min-h-[44px]"
+      />
+    </div>
   );
 }

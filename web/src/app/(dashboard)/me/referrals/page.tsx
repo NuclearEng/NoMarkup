@@ -50,7 +50,13 @@ export default function ReferralsPage() {
   async function handleRedeem(e: React.SyntheticEvent) {
     e.preventDefault();
     if (!redeemCode.trim()) return;
-    await redeem.mutateAsync(redeemCode.trim().toUpperCase());
+    try {
+      await redeem.mutateAsync(redeemCode.trim().toUpperCase());
+    } catch {
+      // useRedeemReferral already shows the error toast. Keep the code in the
+      // field so it can be corrected.
+      return;
+    }
     setRedeemCode('');
   }
 

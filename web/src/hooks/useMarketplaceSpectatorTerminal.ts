@@ -46,6 +46,8 @@ export interface MarketplaceSpectatorTerminalResult {
   sim: SimulationData;
   providers: typeof ANONYMOUS_PROVIDERS;
   spectatorCount: number;
+  /** Distinct bidders on the listing, from the listing API (`bidder_count`). */
+  bidderCount: number;
   isConnected: boolean;
   auctionEndsAt: string | null;
   startingPriceCents: number;
@@ -278,6 +280,7 @@ export function useMarketplaceSpectatorTerminal(
     sim,
     providers: ANONYMOUS_PROVIDERS,
     spectatorCount: watcherCount,
+    bidderCount: listing?.bidder_count ?? 0,
     isConnected,
     auctionEndsAt: liveEnds,
     startingPriceCents: listing?.starting_price_cents ?? 0,

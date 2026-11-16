@@ -212,11 +212,17 @@ function BankAccountForm() {
         return;
       }
 
-      await setAccount.mutateAsync({
-        bank_account_token: result.token.id,
-        account_holder_name: parsed.data.accountHolderName,
-        account_holder_type: accountHolderType,
-      });
+      try {
+        await setAccount.mutateAsync({
+          bank_account_token: result.token.id,
+          account_holder_name: parsed.data.accountHolderName,
+          account_holder_type: accountHolderType,
+        });
+      } catch {
+        // useSetPlatformBankAccount already shows the error toast. Keep the
+        // form filled in so the admin can retry.
+        return;
+      }
 
       // Clear sensitive fields after a successful save.
       setAccountHolderName('');

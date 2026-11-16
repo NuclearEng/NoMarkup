@@ -1,6 +1,6 @@
 'use client';
 
-import { ChevronRight, Search } from 'lucide-react';
+import { ChevronRight, RefreshCw, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -49,7 +49,7 @@ export function GoodsCategorySelector({
   className,
   id,
 }: GoodsCategorySelectorProps) {
-  const { data: tree, isLoading } = useGoodsCategoryTree();
+  const { data: tree, isLoading, isError, isFetching, refetch } = useGoodsCategoryTree();
   const [activePath, setActivePath] = useState<ServiceCategory[]>([]);
   const [search, setSearch] = useState('');
 
@@ -81,6 +81,29 @@ export function GoodsCategorySelector({
 
   if (isLoading) {
     return <p className="text-sm text-muted-foreground">Loading categories…</p>;
+  }
+  // A failed load is not "no categories": say so and offer a retry. A failed
+  // background refresh keeps showing the categories already loaded.
+  if (isError && (!tree || tree.length === 0)) {
+    return (
+      <div role="alert" className={cn('space-y-2', className)}>
+        <p className="text-sm text-destructive">
+          We couldn&apos;t load the categories. Check your connection and try again.
+        </p>
+        <Button
+          type="button"
+          variant="outline"
+          className="min-h-[44px]"
+          disabled={isFetching}
+          onClick={() => {
+            void refetch();
+          }}
+        >
+          <RefreshCw className="mr-2 h-4 w-4" aria-hidden="true" />
+          Retry
+        </Button>
+      </div>
+    );
   }
   if (!tree || tree.length === 0) {
     return <p className="text-sm text-muted-foreground">No categories available.</p>;

@@ -516,7 +516,9 @@ export function JobDetailClient({ jobId, initialJob }: JobDetailClientProps) {
             snipeExtensionCount={
               Math.max(
                 terminal.snipeExtensionCount,
-                job.snipe_extension_count,
+                // The gateway omits the count while it is zero; Math.max with
+                // undefined is NaN.
+                job.snipe_extension_count ?? 0,
               )
             }
             jobTitle={job.title}
@@ -563,7 +565,7 @@ export function JobDetailClient({ jobId, initialJob }: JobDetailClientProps) {
                 jobId={jobId}
                 existingBid={existingBid}
                 startingBidCents={job.starting_bid_cents}
-                offerAcceptedCents={job.offer_accepted_cents}
+                offerAcceptedCents={job.offer_accepted_cents ?? null}
                 marketRange={job.market_range}
                 auctionEndsAt={job.auction_ends_at}
                 categorySlug={job.category_slug}
@@ -981,7 +983,7 @@ export function JobDetailClient({ jobId, initialJob }: JobDetailClientProps) {
                     jobId={jobId}
                     existingBid={existingBid}
                     startingBidCents={job.starting_bid_cents}
-                    offerAcceptedCents={job.offer_accepted_cents}
+                    offerAcceptedCents={job.offer_accepted_cents ?? null}
                     marketRange={job.market_range}
                     auctionEndsAt={job.auction_ends_at}
                     categorySlug={job.category_slug}

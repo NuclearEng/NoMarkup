@@ -2650,7 +2650,6 @@ dependencies = [
 name = "nomarkup-pricing-engine"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "criterion",
  "http 1.4.0",
  "http-body-util",
@@ -2660,7 +2659,6 @@ dependencies = [
  "prometheus",
  "proptest",
  "prost",
- "prost-types",
  "thiserror 2.0.18",
  "tokio",
  "tonic",
@@ -2705,7 +2703,6 @@ dependencies = [
 name = "nomarkup-underwriting-engine"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "criterion",
  "hex",
  "http 1.4.0",
@@ -2717,7 +2714,6 @@ dependencies = [
  "prometheus",
  "proptest",
  "prost",
- "prost-types",
  "sha2 0.10.9",
  "thiserror 2.0.18",
  "tokio",

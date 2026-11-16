@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { toast } from 'sonner';
 
 import { ActionConfirmDialog } from '@/components/admin/ActionConfirmDialog';
 import type { Column } from '@/components/admin/DataTable';
@@ -19,6 +20,7 @@ import {
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { type AdminReport, useAdminReports, useResolveReport } from '@/hooks/useAdmin';
+import { getApiErrorMessage } from '@/lib/api';
 
 const ALL_FILTER = '__all__';
 const REPORT_STATUSES = ['open', 'reviewed', 'actioned', 'dismissed'] as const;
@@ -59,11 +61,17 @@ export default function AdminGoodsReportsPage() {
 
   async function handleConfirm() {
     if (!target) return;
-    await resolveMutation.mutateAsync({
-      reportId: target.report.id,
-      action: target.action,
-      notes,
-    });
+    try {
+      await resolveMutation.mutateAsync({
+        reportId: target.report.id,
+        action: target.action,
+        notes,
+      });
+    } catch (err) {
+      // Keep the dialog and the notes so the admin can retry.
+      toast.error(getApiErrorMessage(err, 'Failed to resolve report'));
+      return;
+    }
     setTarget(null);
     setNotes('');
   }

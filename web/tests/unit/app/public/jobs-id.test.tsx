@@ -66,7 +66,14 @@ vi.mock('@/components/jobs/ViewerCount', () => ({ ViewerCount: stubModule('viewe
 vi.mock('@/components/jobs/JobAnswers', () => ({ JobAnswers: stubModule('job-answers') }));
 vi.mock('@/components/chat/ChatRelayAlias', () => ({ ChatRelayAlias: () => null }));
 vi.mock('@/components/terminal/terminal-toolbar', () => ({ TerminalToolbar: stubModule('terminal-toolbar') }));
-vi.mock('@/components/terminal/terminal-grid', () => ({ TerminalGrid: stubModule('terminal-grid') }));
+// The grid stub publishes the snipe count it was handed so a test can pin it.
+vi.mock('@/components/terminal/terminal-grid', () => ({
+  TerminalGrid: ({ snipeExtensionCount }: { snipeExtensionCount?: number }) =>
+    createElement('div', {
+      'data-testid': 'terminal-grid',
+      'data-snipe-count': String(snipeExtensionCount),
+    }),
+}));
 
 vi.mock('@/lib/constants', () => ({
   ENABLE_LIVE_AUCTION: true,
@@ -410,6 +417,31 @@ describe('(public)/jobs/[id]/page', () => {
     expect(screen.getByTestId('terminal-grid')).toBeDefined();
     // Guest/unauthenticated uses the public spectator feed.
     expect(screen.getByText('LIVE · SPECTATE')).toBeDefined();
+  });
+
+  // The gateway leaves snipe_extension_count out of the job while it is zero
+  // (protoJobToJSON), so the terminal must read a missing count as 0, not NaN.
+  it('passes a snipe count of 0 to the terminal when the job omits the field', () => {
+    setHooks({
+      job: { ...baseJob, auction_type: 'live', auction_ends_at: '2099-01-01T00:00:00Z' },
+      terminal: { isConnected: true },
+    });
+    renderClient();
+    expect(screen.getByTestId('terminal-grid').getAttribute('data-snipe-count')).toBe('0');
+  });
+
+  it('passes the job snipe count to the terminal when the gateway sends one', () => {
+    setHooks({
+      job: {
+        ...baseJob,
+        auction_type: 'live',
+        auction_ends_at: '2099-01-01T00:00:00Z',
+        snipe_extension_count: 2,
+      },
+      terminal: { isConnected: true },
+    });
+    renderClient();
+    expect(screen.getByTestId('terminal-grid').getAttribute('data-snipe-count')).toBe('2');
   });
 
   it('shows LIVE · SPECTATE for a guest when the spectator terminal is connected', () => {

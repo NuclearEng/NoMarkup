@@ -135,10 +135,10 @@ describe('JOB_STATUS_CLASSES — semantic tokens', () => {
     expect(JOB_STATUS_CLASSES['disputed']).toBe(glass('status-disputed'));
   });
 
-  it('cancelled / closed are neutral; expired is bid-expired', () => {
+  it('cancelled / closed / expired are neutral', () => {
     expect(JOB_STATUS_CLASSES['cancelled']).toBe(NEUTRAL);
     expect(JOB_STATUS_CLASSES['closed']).toBe(NEUTRAL);
-    expect(JOB_STATUS_CLASSES['expired']).toBe(glass('bid-expired'));
+    expect(JOB_STATUS_CLASSES['expired']).toBe(NEUTRAL);
   });
 
   it('in_progress and bidding share the in-progress treatment', () => {
@@ -170,9 +170,10 @@ describe('PAYMENT_STATUS_CLASSES — semantic tokens', () => {
     expect(PAYMENT_STATUS_CLASSES['chargeback']).toBe(glass('destructive'));
   });
 
-  it('refunded variants are trust-medium', () => {
-    expect(PAYMENT_STATUS_CLASSES['refunded']).toBe(glass('trust-medium'));
-    expect(PAYMENT_STATUS_CLASSES['partially_refunded']).toBe(glass('trust-medium'));
+  it('refunded variants are neutral, never the pending badge', () => {
+    expect(PAYMENT_STATUS_CLASSES['refunded']).toBe(NEUTRAL);
+    expect(PAYMENT_STATUS_CLASSES['partially_refunded']).toBe(NEUTRAL);
+    expect(PAYMENT_STATUS_CLASSES['refunded']).not.toBe(PAYMENT_STATUS_CLASSES['pending']);
   });
 });
 
@@ -185,8 +186,8 @@ describe('FRAUD_RISK_CLASSES — risk ladder', () => {
     expect(FRAUD_RISK_CLASSES['medium']).toBe(glass('trust-medium'));
   });
 
-  it('high is status-disputed', () => {
-    expect(FRAUD_RISK_CLASSES['high']).toBe(glass('status-disputed'));
+  it('high is trust-low, not the disputed token', () => {
+    expect(FRAUD_RISK_CLASSES['high']).toBe(glass('trust-low'));
   });
 
   it('critical is destructive', () => {

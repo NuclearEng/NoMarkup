@@ -86,8 +86,11 @@ export function daysUntilExpiry(expiresAt: string | undefined | null): number | 
   if (!expiresAt) return null;
   const t = Date.parse(expiresAt);
   if (Number.isNaN(t)) return null;
-  const ms = t - Date.now();
-  return Math.ceil(ms / (1000 * 60 * 60 * 24));
+  const days = (t - Date.now()) / (1000 * 60 * 60 * 24);
+  // Round partial days away from zero: 6 hours left is 1 day, 6 hours past is
+  // -1. Math.ceil alone turned a document expired under a day ago into -0,
+  // which read as "expires today" instead of expired.
+  return days < 0 ? Math.floor(days) : Math.ceil(days);
 }
 
 export function isDocumentExpired(expiresAt: string | undefined | null): boolean {
