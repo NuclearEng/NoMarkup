@@ -6,8 +6,9 @@
 // wrong-party-can-act and broken-transition concerns from the dogfood brief.
 //
 // Run:
-//   DATABASE_URL=postgres://nomarkup@localhost:5433/nomarkup?sslmode=disable \
-//   go test -tags=integration -count=1 -run TestChangeOrderAuthz ./internal/service/...
+//
+//	DATABASE_URL=postgres://nomarkup@localhost:5433/nomarkup?sslmode=disable \
+//	go test -tags=integration -count=1 -run TestChangeOrderAuthz ./internal/service/...
 package service
 
 import (
@@ -25,43 +26,58 @@ import (
 const (
 	coCustomer = "00000000-0000-0000-0000-000000000002"
 	coProvider = "00000000-0000-0000-0000-000000000004"
-	coJob      = "ec6b56bd-4348-446a-875e-21b0359a06cb"
-	coBid      = "fa199d9a-491d-4883-b52b-b992b7ac8355"
 )
 
-// ensureChangeOrderFixtures self-provisions the job + bid rows the contract
-// fixtures hang off. coJob/coBid previously existed only in the original
-// author's dev database, so every contract insert failed with
-// contracts_job_id_fkey on any fresh DB (e.g. CI). The users are the fixed
-// seed accounts (`make seed`); inserts are idempotent so already-provisioned
-// databases are untouched.
-func ensureChangeOrderFixtures(t *testing.T, pool *pgxpool.Pool) {
+// seedChangeOrderJob inserts a fresh job (owned by the seed customer) with one
+// bid from the seed provider, registers cleanup for the job and everything
+// hanging off it, and returns the job and bid IDs.
+//
+// Every contract needs its OWN job: CreateContract is idempotent per job
+// (uq_contracts_live_job, migration 078) and returns the existing live
+// contract instead of creating a second one. These tests used to share one
+// hard-coded job with internal/repository/change_order_test.go, and
+// `go test ./...` runs the two test binaries concurrently against the same
+// database — so a test could be handed the other binary's contract (wrong
+// amount / wrong status) or have its contract deleted mid-test by the other
+// binary's cleanup ("contract not found"). The users are the fixed seed
+// accounts (`make seed`).
+func seedChangeOrderJob(t *testing.T, pool *pgxpool.Pool) (jobID, bidID string) {
 	t.Helper()
 	ctx := context.Background()
 
 	var catID string
 	require.NoError(t,
-		pool.QueryRow(ctx, `SELECT id FROM service_categories LIMIT 1`).Scan(&catID),
+		pool.QueryRow(ctx, `SELECT id::text FROM service_categories ORDER BY id LIMIT 1`).Scan(&catID),
 		"need service_categories taxonomy — run migrations first")
 
-	_, err := pool.Exec(ctx, `
-		INSERT INTO jobs (id, customer_id, title, description, category_id,
+	require.NoError(t, pool.QueryRow(ctx, `
+		INSERT INTO jobs (customer_id, title, description, category_id,
 			service_city, service_state, service_zip,
 			service_location, approximate_location, status)
-		VALUES ($1, $2, 'Change-order authz fixture',
-			'Created by change_order_authz_test (integration).', $3,
+		VALUES ($1::uuid, 'Change-order authz fixture',
+			'Created by change_order_authz_test (integration).', $2::uuid,
 			'Austin', 'TX', '78701',
-			ST_SetSRID(ST_MakePoint(-97.7431, 30.2672), 4326),
-			ST_SetSRID(ST_MakePoint(-97.7431, 30.2672), 4326),
+			ST_SetSRID(ST_MakePoint(-97.74, 30.27), 4326),
+			ST_SetSRID(ST_MakePoint(-97.74, 30.27), 4326),
 			'awarded')
-		ON CONFLICT (id) DO NOTHING`, coJob, coCustomer, catID)
-	require.NoError(t, err, "provision change-order fixture job")
+		RETURNING id::text`, coCustomer, catID).Scan(&jobID),
+		"provision change-order fixture job (seed users required — run `make seed`)")
 
-	_, err = pool.Exec(ctx, `
-		INSERT INTO bids (id, job_id, provider_id, amount_cents, original_amount_cents)
-		VALUES ($1, $2, $3, 100000, 100000)
-		ON CONFLICT (id) DO NOTHING`, coBid, coJob, coProvider)
-	require.NoError(t, err, "provision change-order fixture bid")
+	t.Cleanup(func() {
+		cctx := context.Background()
+		// Children first: contracts hold FKs onto jobs and bids; change_orders
+		// and milestones cascade on contract delete.
+		_, _ = pool.Exec(cctx, `DELETE FROM contracts WHERE job_id = $1::uuid`, jobID)
+		_, _ = pool.Exec(cctx, `DELETE FROM bids WHERE job_id = $1::uuid`, jobID)
+		_, _ = pool.Exec(cctx, `DELETE FROM jobs WHERE id = $1::uuid`, jobID)
+	})
+
+	require.NoError(t, pool.QueryRow(ctx, `
+		INSERT INTO bids (job_id, provider_id, amount_cents, original_amount_cents)
+		VALUES ($1::uuid, $2::uuid, 100000, 100000)
+		RETURNING id::text`, jobID, coProvider).Scan(&bidID),
+		"provision change-order fixture bid")
+	return jobID, bidID
 }
 
 func authzTestSvc(t *testing.T) (*ContractService, *repository.PostgresRepository, *pgxpool.Pool) {
@@ -73,10 +89,9 @@ func authzTestSvc(t *testing.T) (*ContractService, *repository.PostgresRepositor
 	pool, err := pgxpool.New(context.Background(), url)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
-	ensureChangeOrderFixtures(t, pool)
 	// The repository decrypts jobs.service_address (migration 104) on every
 	// read; with no ENCRYPTION_KEY set crypto.FromEnv yields an ephemeral
-	// development key, and the fixture rows above carry no address at all.
+	// development key, and the fixture rows carry no address at all.
 	cipher, err := crypto.FromEnv()
 	require.NoError(t, err, "build PII cipher")
 	repo := repository.NewPostgresRepository(pool, cipher)
@@ -85,15 +100,13 @@ func authzTestSvc(t *testing.T) (*ContractService, *repository.PostgresRepositor
 
 func mkContract(t *testing.T, repo *repository.PostgresRepository, pool *pgxpool.Pool, status string) string {
 	t.Helper()
+	jobID, bidID := seedChangeOrderJob(t, pool)
 	c, err := repo.CreateContract(context.Background(), &domain.Contract{
-		JobID: coJob, CustomerID: coCustomer, ProviderID: coProvider, BidID: coBid,
+		JobID: jobID, CustomerID: coCustomer, ProviderID: coProvider, BidID: bidID,
 		AmountCents: 100_000, PaymentTiming: "completion", Status: status,
 		CustomerAccepted: true, ProviderAccepted: true,
 	}, []domain.MilestoneInput{{Description: "Complete work", AmountCents: 100_000}})
 	require.NoError(t, err)
-	t.Cleanup(func() {
-		_, _ = pool.Exec(context.Background(), `DELETE FROM contracts WHERE id = $1`, c.ID)
-	})
 	return c.ID
 }
 

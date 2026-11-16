@@ -620,6 +620,25 @@ func main() {
 		log.Fatalf("insert completed contract: %v", err)
 	}
 
+	// The contracts above carry hand-written contract numbers, but the job
+	// service mints numbers from contract_number_seq (NM-YYYY-NNNNN,
+	// services/job/internal/repository/contract_repo.go). Left at its initial
+	// value the sequence hands out 1 and 2 again, so the first two awards on
+	// a freshly seeded database fail with a raw 23505 on
+	// contracts_contract_number_key. Advance the sequence past every number
+	// already in the table; GREATEST keeps a re-seed from ever moving it
+	// backwards.
+	_, err = tx.Exec(ctx, `
+		SELECT setval('contract_number_seq', GREATEST(
+			(SELECT last_value FROM contract_number_seq),
+			(SELECT COALESCE(MAX(substring(contract_number FROM '[0-9]+$')::bigint), 1)
+			   FROM contracts
+			  WHERE contract_number ~ '^NM-[0-9]{4}-[0-9]+$')
+		))`)
+	if err != nil {
+		log.Fatalf("advance contract_number_seq past seeded contracts: %v", err)
+	}
+
 	// ── 7a. Chat thread (customer@ ↔ provider@ on the awarded job) ──
 	//
 	// Award + accepted contract do not create a channel in product code
