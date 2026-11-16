@@ -90,7 +90,7 @@ export function ReviewCard({ review }: ReviewCardProps) {
   function handleSubmitResponse() {
     const result = reviewResponseSchema.safeParse(responseText);
     if (!result.success) {
-      setResponseError(result.error.errors[0]?.message ?? 'Invalid response');
+      setResponseError(result.error.issues[0]?.message ?? 'Invalid response');
       return;
     }
     setResponseError(null);

@@ -29,10 +29,10 @@ import { z } from 'zod';
  *   JWT_PUBLIC_KEY_PATH      verifies access JWTs on the paid-LLM API routes
  */
 const productionRequiredSchema = z.object({
-  API_URL: z.string().url(),
-  NEXT_PUBLIC_SITE_URL: z.string().url(),
+  API_URL: z.url(),
+  NEXT_PUBLIC_SITE_URL: z.url(),
   NEXT_PUBLIC_MAPBOX_TOKEN: z.string().min(1),
-  NEXT_PUBLIC_WS_URL: z.string().url(),
+  NEXT_PUBLIC_WS_URL: z.url(),
   JWT_PUBLIC_KEY_PATH: z.string().min(1),
 });
 

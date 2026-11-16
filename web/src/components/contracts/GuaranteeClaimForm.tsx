@@ -36,7 +36,7 @@ const CLAIM_REASON_LABELS: Record<string, string> = {
 const claimSchema = z.object({
   reason: z.string().min(1, 'Claim type is required'),
   description: z.string().min(50, 'Description must be at least 50 characters').max(5000),
-  evidence_urls: z.array(z.string().url()).min(1, 'At least 1 photo is required'),
+  evidence_urls: z.array(z.url()).min(1, 'At least 1 photo is required'),
 });
 
 interface GuaranteeClaimFormProps {

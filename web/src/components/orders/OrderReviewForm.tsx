@@ -56,7 +56,11 @@ export function OrderReviewForm({
     );
   }
 
-  const form = useForm<OrderReviewFormValues>({
+  const form = useForm<
+    z.input<typeof orderReviewSchema>,
+    unknown,
+    OrderReviewFormValues
+  >({
     resolver: zodResolver(orderReviewSchema),
     defaultValues: {
       overallRating: 0,
