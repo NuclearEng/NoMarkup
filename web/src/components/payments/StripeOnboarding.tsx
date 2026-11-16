@@ -1,9 +1,9 @@
 'use client';
 
 import { CheckCircle2, ExternalLink, Loader2, XCircle } from 'lucide-react';
+import dynamic from 'next/dynamic';
 import { useState } from 'react';
 
-import { ConnectEmbeddedOnboarding } from '@/components/payments/ConnectEmbeddedOnboarding';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -14,6 +14,27 @@ import {
 } from '@/hooks/usePayments';
 import { ApiError } from '@/lib/api';
 import { isStripeConfigured } from '@/lib/stripe';
+
+// PERF-08: Connect.js and its React bindings are only needed once the
+// provider presses "Connect with Stripe" / "Continue setup", so they load with
+// the embedded surface instead of with every page that shows payout status.
+// The placeholder is the same line the embedded component shows while Connect
+// initialises, so the user sees one continuous "loading" state.
+function ConnectEmbeddedLoading() {
+  return (
+    <p className="text-sm text-muted-foreground" role="status">
+      Loading secure Stripe setup…
+    </p>
+  );
+}
+
+const ConnectEmbeddedOnboarding = dynamic(
+  () =>
+    import('@/components/payments/ConnectEmbeddedOnboarding').then(
+      (mod) => mod.ConnectEmbeddedOnboarding,
+    ),
+  { ssr: false, loading: ConnectEmbeddedLoading },
+);
 
 function StatusIndicator({ enabled, label }: { enabled: boolean; label: string }) {
   return (
