@@ -39,10 +39,10 @@ vi.mock('next/link', () => ({
     createElement('a', { href }, children),
 }));
 
-vi.mock('next/dynamic', () => ({
-  __esModule: true,
-  default: () => () => createElement('div', { 'data-testid': 'service-area-map' }, 'map'),
-}));
+// `next/dynamic` is not mocked here: the page splits three sections
+// (ServiceAreaMap, ImageUpload, StripeOnboarding), and tests/setup.ts renders
+// each dynamic component as its already-loaded module. The three modules are
+// mocked below, so each split point renders its own stand-in.
 
 vi.mock('@/components/providers/CategorySelector', () => ({
   CategorySelector: () => createElement('div', { 'data-testid': 'category-selector' }, 'cats'),
