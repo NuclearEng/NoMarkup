@@ -126,4 +126,92 @@ describe('useRecentMarkets when storage refuses the write', () => {
     expect(first.result.current[0]).toEqual([market('boise')]);
     expect(second.result.current[0]).toEqual([market('boise')]);
   });
+
+  // The list used to restart from the (empty) stored list on every pick, so it
+  // only ever held the newest market.
+  it('keeps earlier picks when more are added, newest first and deduped', () => {
+    refuseWrites = true;
+    const picker = renderHook(() => useRecentMarkets());
+    const header = renderHook(() => useRecentMarkets());
+
+    act(() => {
+      picker.result.current[1](market('boise'));
+    });
+    act(() => {
+      picker.result.current[1](market('reno'));
+    });
+    act(() => {
+      header.result.current[1](market('boise'));
+    });
+
+    expect(store.size).toBe(0);
+    expect(picker.result.current[0]).toEqual([market('boise'), market('reno')]);
+    expect(header.result.current[0]).toEqual([market('boise'), market('reno')]);
+  });
+
+  it('caps the in-memory list at five', () => {
+    refuseWrites = true;
+    const { result } = renderHook(() => useRecentMarkets());
+
+    for (const slug of ['a', 'b', 'c', 'd', 'e', 'f']) {
+      act(() => {
+        result.current[1](market(slug));
+      });
+    }
+
+    expect(result.current[0].map((m) => m.slug)).toEqual(['f', 'e', 'd', 'c', 'b']);
+  });
+
+  it('goes back to storage as the source once a write succeeds', () => {
+    refuseWrites = true;
+    const { result } = renderHook(() => useRecentMarkets());
+    act(() => {
+      result.current[1](market('boise'));
+    });
+
+    refuseWrites = false;
+    act(() => {
+      result.current[1](market('reno'));
+    });
+
+    expect(JSON.parse(store.get('nm.recentMarkets') ?? '[]')).toEqual([
+      market('reno'),
+      market('boise'),
+    ]);
+    expect(result.current[0]).toEqual([market('reno'), market('boise')]);
+
+    // Another tab rewrites storage; the stale in-memory copy must not win.
+    store.set('nm.recentMarkets', JSON.stringify([market('tahoe')]));
+    act(() => {
+      window.dispatchEvent(new Event('storage'));
+    });
+    expect(result.current[0]).toEqual([market('tahoe')]);
+  });
+
+  // Clearing the selected market succeeds even when storage refuses new
+  // values (removeItem does not throw on a full or private store). That write
+  // must not send the recents list back to the empty stored copy.
+  it('keeps the in-memory list when the selected market is cleared', () => {
+    const selected = renderHook(() => useSelectedMarket());
+    const recents = renderHook(() => useRecentMarkets());
+    const removeItem = storage.removeItem;
+    storage.removeItem = (key: string) => {
+      store.delete(key);
+    };
+    refuseWrites = true;
+
+    act(() => {
+      recents.result.current[1](market('boise'));
+      recents.result.current[1](market('reno'));
+    });
+    act(() => {
+      selected.result.current[1](null);
+    });
+    act(() => {
+      recents.result.current[1](market('tahoe'));
+    });
+    storage.removeItem = removeItem;
+
+    expect(recents.result.current[0].map((m) => m.slug)).toEqual(['tahoe', 'reno', 'boise']);
+  });
 });
