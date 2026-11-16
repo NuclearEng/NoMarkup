@@ -79,8 +79,9 @@ describe('AuctionTimer', () => {
     // animate-urgency-glow absolutely-positioned div
     const glow = container.querySelector('.animate-urgency-glow');
     expect(glow).not.toBeNull();
-    // bg-red-500 blur-xl background ring (lines 372-376)
-    const blur = container.querySelector('.bg-red-500.blur-xl');
+    // Blurred background ring; destructive token since the design-system
+    // token migration (44e22917), previously bg-red-500.
+    const blur = container.querySelector('.bg-destructive.blur-xl');
     expect(blur).not.toBeNull();
   });
 

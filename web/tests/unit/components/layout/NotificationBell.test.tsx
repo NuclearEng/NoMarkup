@@ -125,9 +125,11 @@ describe('NotificationBell', () => {
 
     const { container } = render(<NotificationBell />);
     fireEvent.click(screen.getByLabelText('Notifications'));
-    // Three skeleton stripes inject animate-pulse classes
-    const pulses = container.querySelectorAll('.animate-pulse');
-    expect(pulses.length).toBeGreaterThan(0);
+    // Three skeleton rows: the shared <Skeleton> (shimmer, no animate-pulse)
+    // inside an aria-busy region since b80f1d05.
+    const busy = container.querySelector('[aria-busy="true"]');
+    expect(busy?.getAttribute('aria-label')).toBe('Loading notifications');
+    expect(busy?.querySelectorAll('[role="presentation"]').length).toBeGreaterThan(0);
   });
 
   it('renders notification items when notifications are returned', () => {

@@ -15,13 +15,19 @@ import type { Offer } from '@/types';
 // MOCKED: gateway + payment dialog. PROVEN: the buyer path opens a payment
 // surface; the seller path never does. NOT PROVEN: Stripe behaviour.
 
-const { patch, get } = vi.hoisted(() => ({
+const { patch, get, clearIdempotencyKey } = vi.hoisted(() => ({
   patch: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
   get: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
+  clearIdempotencyKey: vi.fn<(operationKey: string) => void>(),
 }));
 
 vi.mock('@/lib/api', () => ({
   api: { patch, get },
+  // useUpdateOffer sends an Idempotency-Key and releases it on success
+  // (ea57642b). Without these exports the mutation threw before the PATCH,
+  // so no accept ever reached the component's payment handling.
+  idempotencyHeader: () => ({ 'Idempotency-Key': 'test-key' }),
+  clearIdempotencyKey,
   ApiError: class extends Error {
     userMessage(fallback: string) {
       return fallback;

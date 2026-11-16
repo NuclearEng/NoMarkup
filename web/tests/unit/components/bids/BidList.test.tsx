@@ -87,8 +87,11 @@ describe('BidList', () => {
       isError: false,
     } as unknown as ReturnType<typeof useBidsForJob>);
     const { container } = withProvider(<BidList jobId="job-1" canAward={false} />);
-    const pulses = container.querySelectorAll('.animate-pulse');
-    expect(pulses.length).toBeGreaterThan(0);
+    // Loading placeholders are the shared <Skeleton> (shimmer, no
+    // animate-pulse) inside an aria-busy region since b80f1d05.
+    const busy = container.querySelector('[aria-busy="true"]');
+    expect(busy?.getAttribute('aria-label')).toBe('Loading bids');
+    expect(busy?.querySelectorAll('[role="presentation"]').length).toBeGreaterThan(0);
   });
 
   it('renders an error banner when the query errors', () => {

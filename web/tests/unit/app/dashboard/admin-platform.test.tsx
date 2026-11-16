@@ -170,25 +170,29 @@ describe('AdminPlatformPage', () => {
 
   it('renders the growth loading skeleton (lines 156-158)', () => {
     setHooks({ growthLoading: true });
-    const { container } = render(withQueryClient(createElement(AdminPlatformPage)));
+    render(withQueryClient(createElement(AdminPlatformPage)));
     // Growth section enters its loading branch: a 6-tall skeleton inside an h-48 wrapper.
     // Easier to assert: empty data-points / no-growth message is NOT visible while loading.
     expect(screen.queryByText(/No growth data available/)).toBeNull();
     expect(screen.queryByText('GMV by Period')).toBeNull();
-    // The pulse-rounded skeleton bar is present.
-    expect(container.querySelector('.animate-pulse')).toBeTruthy();
+    // The skeleton is announced as a loading status region. (Skeleton moved
+    // from `animate-pulse` to a shimmer class, so assert the accessible
+    // contract instead of the animation class.)
+    const status = screen.getByRole('status', { name: 'Loading growth metrics' });
+    expect(status.children.length).toBeGreaterThan(0);
   });
 
   it('renders the categories loading skeleton (lines 252-261)', () => {
     setHooks({ categoriesLoading: true });
-    const { container } = render(withQueryClient(createElement(AdminPlatformPage)));
+    render(withQueryClient(createElement(AdminPlatformPage)));
     // Categories section enters loading branch — 5 skeleton rows.
     expect(screen.queryByText('No category data available.')).toBeNull();
     // Category Performance heading still rendered, but no table body.
     expect(screen.getByText('Category Performance')).toBeDefined();
-    // Multiple animate-pulse skeletons exist.
-    const pulses = container.querySelectorAll('.animate-pulse');
-    expect(pulses.length).toBeGreaterThan(0);
+    // Five skeleton rows inside the announced loading region.
+    const status = screen.getByRole('status', { name: 'Loading category metrics' });
+    expect(status.children.length).toBe(5);
+    expect(screen.queryByRole('table')).toBeNull();
   });
 
   it('renders both growth and categories loading states together', () => {
@@ -244,9 +248,12 @@ describe('AdminPlatformPage', () => {
     expect(toggle.getAttribute('aria-checked')).toBe('false');
     fireEvent.click(toggle);
     expect(toggle.getAttribute('aria-checked')).toBe('true');
-    expect(localStorage.getItem('nomarkup_analytics_enabled')).toBe('true');
+    // 68a582d5 renamed the key: this is a per-browser preview preference, not
+    // a platform switch, and the old name implied the latter.
+    expect(localStorage.getItem('nomarkup_analytics_preview_this_browser')).toBe('true');
+    expect(localStorage.getItem('nomarkup_analytics_enabled')).toBeNull();
     fireEvent.click(toggle);
     expect(toggle.getAttribute('aria-checked')).toBe('false');
-    expect(localStorage.getItem('nomarkup_analytics_enabled')).toBe('false');
+    expect(localStorage.getItem('nomarkup_analytics_preview_this_browser')).toBe('false');
   });
 });

@@ -77,6 +77,14 @@ vi.mock('@/components/providers/CreditScoreCard', () => ({
   CreditScoreCard: () => createElement('div', { 'data-testid': 'credit-score-card' }),
 }));
 
+// The dashboard gained this card in a5c28d0e (Instant availability UI). It has
+// its own test file and needs the useSetAvailability mutation, so it is stubbed
+// here like its sibling cards.
+vi.mock('@/components/providers/InstantAvailabilityCard', () => ({
+  InstantAvailabilityCard: () =>
+    createElement('div', { 'data-testid': 'instant-availability-card' }),
+}));
+
 vi.mock('@/components/providers/InstantPayoutButton', () => ({
   InstantPayoutButton: ({ availableBalanceCents }: { availableBalanceCents: number }) =>
     createElement('div', { 'data-testid': 'instant-payout' }, String(availableBalanceCents)),
@@ -123,6 +131,7 @@ describe('ProviderDashboardPage', () => {
     const { container } = render(withQueryClient(createElement(ProviderDashboardPage)));
     expect(container).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Provider Dashboard' })).toBeDefined();
+    expect(screen.getByTestId('instant-availability-card')).toBeDefined();
   });
 
   it('renders profile completeness banner when profile is incomplete', () => {

@@ -33,13 +33,16 @@ vi.mock('@/lib/api', () => {
       delete: vi.fn(),
     },
     idempotencyHeader: () => ({ 'Idempotency-Key': 'test-idem-key' }),
+    // useRequestAdvance / useRepayAdvance release their sticky idempotency key
+    // on success (5481834d, "Sticky idempotency keys on money POSTs").
+    clearIdempotencyKey: vi.fn(),
     ApiError,
     getApiErrorMessage: (err: unknown, fallback: string): string =>
       err instanceof Error && err.message ? err.message : fallback,
   };
 });
 
-const { api, ApiError: FakeApiError } = await import('@/lib/api');
+const { api, ApiError: FakeApiError, clearIdempotencyKey } = await import('@/lib/api');
 
 function qc(): QueryClient {
   return new QueryClient({
@@ -127,6 +130,8 @@ describe('useRequestAdvance', () => {
       { 'Idempotency-Key': 'test-idem-key' },
     );
     expect(result.current.data).toEqual(advance);
+    // The sticky key for this exact operation is released once it succeeds.
+    expect(vi.mocked(clearIdempotencyKey)).toHaveBeenCalledWith('advance-request:c-1:50000');
     expect(spy).toHaveBeenCalledWith({ queryKey: ['my-advances'] });
     expect(spy).toHaveBeenCalledWith({ queryKey: ['credit-limit'] });
   });

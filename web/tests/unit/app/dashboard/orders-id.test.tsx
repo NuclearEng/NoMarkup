@@ -18,6 +18,9 @@ const confirmPickup = { mutate: vi.fn(), isPending: false };
 const sellerConfirm = { mutate: vi.fn(), isPending: false };
 const disputeOrder = { mutate: vi.fn(), isPending: false };
 const reportNoShow = { mutate: vi.fn(), isPending: false };
+// OrderPaymentPrompt gained the buyer's "cancel unpaid order" action in
+// 0c3654a5; the unpaid-order tests render the real prompt, so it needs the hook.
+const cancelUnpaid = { mutate: vi.fn(), isPending: false };
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn(), refresh: vi.fn() }),
@@ -39,6 +42,7 @@ vi.mock('@/hooks/useListings', () => ({
   useSellerConfirm: () => sellerConfirm,
   useDisputeOrder: () => disputeOrder,
   useReportOrderNoShow: () => reportNoShow,
+  useCancelUnpaidOrder: () => cancelUnpaid,
 }));
 
 beforeAll(() => {
