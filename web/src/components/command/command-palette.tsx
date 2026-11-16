@@ -489,7 +489,7 @@ export function CommandPaletteTrigger({ className }: { className?: string }) {
     >
       <Search className="h-3.5 w-3.5" aria-hidden="true" />
       <span>Jump</span>
-      <kbd className="rounded border border-white/10 bg-black/30 px-1 font-mono text-[10px] text-zinc-500">
+      <kbd className="rounded border border-white/10 bg-black/30 px-1 font-mono text-[10px] text-zinc-400">
         ⌘K
       </kbd>
     </button>
