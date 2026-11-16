@@ -1,70 +1,106 @@
-import { z } from 'zod';
+// Client bundles ship this module on ~20 routes, so it is written against
+// `zod/mini` (standalone validator functions, tree-shakable) instead of the
+// classic chained API (~25 kB gzip regardless of usage). Semantics, issue
+// order and every error message are identical to the classic definitions:
+// `x.min(n, m)` → `x.check(z.minLength(n, m))`, `x.optional()` →
+// `z.optional(x)`, `a.or(b)` → `z.union([a, b])`, `x.refine(f, p)` →
+// `x.check(z.refine(f, p))`, `x.transform(f)` → `z.pipe(x, z.transform(f))`.
+import * as z from '@/lib/zod-mini';
+
+/** Optional field that also accepts '' (classic: `.optional().or(z.literal(''))`). */
+function optionalOrEmpty<T extends z.ZodMiniType>(schema: T) {
+  return z.union([z.optional(schema), z.literal('')]);
+}
+
+/** Integer 1–5 star rating. */
+function starRating() {
+  return z.number().check(z.int(), z.minimum(1), z.maximum(5));
+}
+
+/** Literal 0 mapped to `undefined` — an empty (0) amount counts as unset. */
+function zeroAsUndefined() {
+  return z.pipe(
+    z.literal(0),
+    z.transform(() => undefined),
+  );
+}
 
 export const emailSchema = z.email('Invalid email address');
 
 export const passwordSchema = z
   .string()
-  .min(8, 'Password must be at least 8 characters')
-  .max(128, 'Password must be at most 128 characters')
-  .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
-  .regex(/[a-z]/, 'Password must contain at least one lowercase letter')
-  .regex(/[0-9]/, 'Password must contain at least one number')
-  .regex(/[^A-Za-z0-9]/, 'Password must contain at least one special character');
+  .check(
+    z.minLength(8, 'Password must be at least 8 characters'),
+    z.maxLength(128, 'Password must be at most 128 characters'),
+    z.regex(/[A-Z]/, 'Password must contain at least one uppercase letter'),
+    z.regex(/[a-z]/, 'Password must contain at least one lowercase letter'),
+    z.regex(/[0-9]/, 'Password must contain at least one number'),
+    z.regex(/[^A-Za-z0-9]/, 'Password must contain at least one special character'),
+  );
 
 export const displayNameSchema = z
   .string()
-  .min(2, 'Display name must be at least 2 characters')
-  .max(100, 'Display name must be at most 100 characters');
+  .check(
+    z.minLength(2, 'Display name must be at least 2 characters'),
+    z.maxLength(100, 'Display name must be at most 100 characters'),
+  );
 
-export const phoneSchema = z.string().regex(/^\+?[1-9]\d{1,14}$/, 'Invalid phone number');
+export const phoneSchema = z.string().check(z.regex(/^\+?[1-9]\d{1,14}$/, 'Invalid phone number'));
 
 export const loginSchema = z.object({
   email: emailSchema,
-  password: z.string().min(1, 'Password is required'),
+  password: z.string().check(z.minLength(1, 'Password is required')),
 });
 
 export const registerSchema = z
   .object({
     email: emailSchema,
     password: passwordSchema,
-    confirmPassword: z.string().min(1, 'Please confirm your password'),
+    confirmPassword: z.string().check(z.minLength(1, 'Please confirm your password')),
     displayName: displayNameSchema,
   })
-  .refine((data) => data.password === data.confirmPassword, {
-    message: 'Passwords do not match',
-    path: ['confirmPassword'],
-  });
+  .check(
+    z.refine((data) => data.password === data.confirmPassword, {
+      message: 'Passwords do not match',
+      path: ['confirmPassword'],
+    }),
+  );
 
 export const jobTitleSchema = z
   .string()
-  .min(10, 'Title must be at least 10 characters')
-  .max(200, 'Title must be at most 200 characters');
+  .check(
+    z.minLength(10, 'Title must be at least 10 characters'),
+    z.maxLength(200, 'Title must be at most 200 characters'),
+  );
 
 export const jobDescriptionSchema = z
   .string()
-  .min(50, 'Description must be at least 50 characters')
-  .max(5000, 'Description must be at most 5000 characters');
+  .check(
+    z.minLength(50, 'Description must be at least 50 characters'),
+    z.maxLength(5000, 'Description must be at most 5000 characters'),
+  );
 
 export const bidAmountSchema = z
   .number()
-  .int('Amount must be in whole cents')
-  .positive('Amount must be positive');
+  .check(z.int('Amount must be in whole cents'), z.positive('Amount must be positive'));
 
 export const reviewCommentSchema = z
   .string()
-  .min(50, 'Review must be at least 50 characters')
-  .max(2000, 'Review must be at most 2000 characters');
+  .check(
+    z.minLength(50, 'Review must be at least 50 characters'),
+    z.maxLength(2000, 'Review must be at most 2000 characters'),
+  );
 
-export const ratingSchema = z.number().int().min(1).max(5);
+export const ratingSchema = starRating();
 
 // Profile schemas
-export const timezoneSchema = z.string().min(1, 'Timezone is required');
+export const timezoneSchema = z.string().check(z.minLength(1, 'Timezone is required'));
 
 export const profileSchema = z.object({
   displayName: displayNameSchema,
-  phone: phoneSchema.optional().or(z.literal('')),
+  phone: optionalOrEmpty(phoneSchema),
   timezone: timezoneSchema,
-  avatarUrl: z.url('Must be a valid URL').optional().or(z.literal('')),
+  avatarUrl: optionalOrEmpty(z.url('Must be a valid URL')),
 });
 
 export type ProfileFormValues = z.infer<typeof profileSchema>;
@@ -73,26 +109,28 @@ export type ProfileFormValues = z.infer<typeof profileSchema>;
 export const businessInfoSchema = z.object({
   businessName: z
     .string()
-    .min(2, 'Business name must be at least 2 characters')
-    .max(100, 'Business name must be at most 100 characters'),
-  bio: z.string().max(500, 'Bio must be at most 500 characters').optional().or(z.literal('')),
-  serviceAddress: z.string().optional().or(z.literal('')),
-  einTin: z
-    .string()
-    .regex(/^\d{2}-?\d{7}$/, 'EIN/TIN must be in XX-XXXXXXX format')
-    .optional()
-    .or(z.literal('')),
-  insuranceProvider: z.string().max(200).optional().or(z.literal('')),
-  insurancePolicyNumber: z.string().max(100).optional().or(z.literal('')),
-  insuranceExpiry: z.string().optional().or(z.literal('')),
-  insuranceCoverageDollars: z.number().positive('Coverage must be positive').optional(),
+    .check(
+      z.minLength(2, 'Business name must be at least 2 characters'),
+      z.maxLength(100, 'Business name must be at most 100 characters'),
+    ),
+  bio: optionalOrEmpty(z.string().check(z.maxLength(500, 'Bio must be at most 500 characters'))),
+  serviceAddress: optionalOrEmpty(z.string()),
+  einTin: optionalOrEmpty(
+    z.string().check(z.regex(/^\d{2}-?\d{7}$/, 'EIN/TIN must be in XX-XXXXXXX format')),
+  ),
+  insuranceProvider: optionalOrEmpty(z.string().check(z.maxLength(200))),
+  insurancePolicyNumber: optionalOrEmpty(z.string().check(z.maxLength(100))),
+  insuranceExpiry: optionalOrEmpty(z.string()),
+  insuranceCoverageDollars: z.optional(z.number().check(z.positive('Coverage must be positive'))),
 });
 
 export type BusinessInfoFormValues = z.infer<typeof businessInfoSchema>;
 
 const milestoneSchema = z.object({
-  description: z.string().min(1, 'Description is required'),
-  percentage: z.number().min(1, 'Must be at least 1%').max(100, 'Must be at most 100%'),
+  description: z.string().check(z.minLength(1, 'Description is required')),
+  percentage: z
+    .number()
+    .check(z.minimum(1, 'Must be at least 1%'), z.maximum(100, 'Must be at most 100%')),
 });
 
 export const globalTermsSchema = z
@@ -100,21 +138,23 @@ export const globalTermsSchema = z
     paymentTiming: z.enum(['upfront', 'milestone', 'completion', 'payment_plan', 'recurring'], {
       error: (issue) => (issue.input === undefined ? 'Payment timing is required' : undefined),
     }),
-    milestones: z.array(milestoneSchema).optional(),
-    cancellationPolicy: z.string().optional().or(z.literal('')),
-    warrantyTerms: z.string().optional().or(z.literal('')),
+    milestones: z.optional(z.array(milestoneSchema)),
+    cancellationPolicy: optionalOrEmpty(z.string()),
+    warrantyTerms: optionalOrEmpty(z.string()),
   })
-  .refine(
-    (data) => {
-      if (data.paymentTiming !== 'milestone') return true;
-      if (!data.milestones || data.milestones.length === 0) return false;
-      const sum = data.milestones.reduce((acc, m) => acc + m.percentage, 0);
-      return sum === 100;
-    },
-    {
-      message: 'Milestone percentages must sum to 100',
-      path: ['milestones'],
-    },
+  .check(
+    z.refine(
+      (data) => {
+        if (data.paymentTiming !== 'milestone') return true;
+        if (!data.milestones || data.milestones.length === 0) return false;
+        const sum = data.milestones.reduce((acc, m) => acc + m.percentage, 0);
+        return sum === 100;
+      },
+      {
+        message: 'Milestone percentages must sum to 100',
+        path: ['milestones'],
+      },
+    ),
   );
 
 export type GlobalTermsFormValues = z.infer<typeof globalTermsSchema>;
@@ -122,67 +162,69 @@ export type GlobalTermsFormValues = z.infer<typeof globalTermsSchema>;
 // Job posting schema
 export const jobPostingSchema = z
   .object({
-    categoryId: z.string().min(1, 'Category is required'),
+    categoryId: z.string().check(z.minLength(1, 'Category is required')),
     title: jobTitleSchema,
     description: jobDescriptionSchema,
     scheduleType: z.union(
       [z.literal('specific_date'), z.literal('date_range'), z.literal('flexible')],
       { error: (issue) => (issue.input === undefined ? 'Schedule type is required' : undefined) },
     ),
-    scheduledDate: z.string().optional(),
+    scheduledDate: z.optional(z.string()),
     isRecurring: z.boolean(),
-    recurrenceFrequency: z
-      .union([
+    recurrenceFrequency: z.optional(
+      z.union([
         z.literal('weekly'),
         z.literal('biweekly'),
         z.literal('monthly'),
         z.literal('quarterly'),
-      ])
-      .optional(),
-    locationAddress: z.string().optional(),
-    locationLat: z.number().optional(),
-    locationLng: z.number().optional(),
-    startingBidDollars: z
-      .number()
-      .positive('Starting bid must be positive')
-      .optional()
-      .or(z.literal(0).transform(() => undefined)),
-    offerAcceptedDollars: z
-      .number()
-      .positive('Accepted offer must be positive')
-      .optional()
-      .or(z.literal(0).transform(() => undefined)),
+      ]),
+    ),
+    locationAddress: z.optional(z.string()),
+    locationLat: z.optional(z.number()),
+    locationLng: z.optional(z.number()),
+    startingBidDollars: z.union([
+      z.optional(z.number().check(z.positive('Starting bid must be positive'))),
+      zeroAsUndefined(),
+    ]),
+    offerAcceptedDollars: z.union([
+      z.optional(z.number().check(z.positive('Accepted offer must be positive'))),
+      zeroAsUndefined(),
+    ]),
     auctionDurationHours: z
       .number()
-      .int('Duration must be a whole number')
-      .min(24, 'Minimum auction duration is 24 hours')
-      .max(168, 'Maximum auction duration is 168 hours (7 days)'),
-    auctionType: z.union([z.literal('sealed'), z.literal('live')]).optional(),
-    photoUrls: z.array(z.url()).optional(),
+      .check(
+        z.int('Duration must be a whole number'),
+        z.minimum(24, 'Minimum auction duration is 24 hours'),
+        z.maximum(168, 'Maximum auction duration is 168 hours (7 days)'),
+      ),
+    auctionType: z.optional(z.union([z.literal('sealed'), z.literal('live')])),
+    photoUrls: z.optional(z.array(z.url())),
   })
-  .refine(
-    (data) => {
-      if (data.scheduleType === 'specific_date') {
-        return !!data.scheduledDate;
-      }
-      return true;
-    },
-    {
-      message: 'Scheduled date is required for specific date jobs',
-      path: ['scheduledDate'],
-    },
-  )
-  .refine(
-    (data) => {
-      if (data.isRecurring) {
-        return !!data.recurrenceFrequency;
-      }
-      return true;
-    },
-    {
-      message: 'Recurrence frequency is required for recurring jobs',
-      path: ['recurrenceFrequency'],
-    },
+  .check(
+    z.refine(
+      (data) => {
+        if (data.scheduleType === 'specific_date') {
+          return !!data.scheduledDate;
+        }
+        return true;
+      },
+      {
+        message: 'Scheduled date is required for specific date jobs',
+        path: ['scheduledDate'],
+      },
+    ),
+    z.refine(
+      (data) => {
+        if (data.isRecurring) {
+          return !!data.recurrenceFrequency;
+        }
+        return true;
+      },
+      {
+        message: 'Recurrence frequency is required for recurring jobs',
+        path: ['recurrenceFrequency'],
+      },
+    ),
   );
 
 export type JobPostingFormValues = z.infer<typeof jobPostingSchema>;
@@ -200,24 +242,31 @@ export type LegalContactPreference = (typeof LEGAL_CONTACT_PREFERENCE)[number];
 
 export const legalIntakeSchema = z.object({
   // The matter type is a legal service category id (level-2 of the legal subtree).
-  matterCategoryId: z.string().min(1, 'Select the type of legal help you need'),
+  matterCategoryId: z.string().check(z.minLength(1, 'Select the type of legal help you need')),
   title: jobTitleSchema,
   description: jobDescriptionSchema,
   // 2-letter US state code — the jurisdiction the matter falls under.
   jurisdiction: z
     .string()
-    .min(1, 'Select the state your matter is in')
-    .max(2, 'Use the 2-letter state code'),
+    .check(
+      z.minLength(1, 'Select the state your matter is in'),
+      z.maxLength(2, 'Use the 2-letter state code'),
+    ),
   urgency: z.enum(LEGAL_URGENCY, {
     error: (issue) => (issue.input === undefined ? 'Choose a timeline' : undefined),
   }),
   // Budget is the customer's max — optional, positive whole dollars.
-  budgetDollars: z
-    .number({ error: (issue) => (issue.input === undefined ? undefined : 'Enter a number') })
-    .positive('Budget must be greater than $0')
-    .max(1_000_000, 'Budget is too large')
-    .optional()
-    .or(z.literal(0).transform(() => undefined)),
+  budgetDollars: z.union([
+    z.optional(
+      z
+        .number({ error: (issue) => (issue.input === undefined ? undefined : 'Enter a number') })
+        .check(
+          z.positive('Budget must be greater than $0'),
+          z.maximum(1_000_000, 'Budget is too large'),
+        ),
+    ),
+    zeroAsUndefined(),
+  ]),
   contactPreference: z.enum(LEGAL_CONTACT_PREFERENCE, {
     error: (issue) => (issue.input === undefined ? 'Choose a contact preference' : undefined),
   }),
@@ -227,7 +276,7 @@ export type LegalIntakeFormValues = z.infer<typeof legalIntakeSchema>;
 
 // Bid schemas
 export const bidSchema = z.object({
-  amountDollars: z.number().positive('Bid amount must be positive'),
+  amountDollars: z.number().check(z.positive('Bid amount must be positive')),
 });
 
 export type BidFormValues = z.infer<typeof bidSchema>;
@@ -235,44 +284,48 @@ export type BidFormValues = z.infer<typeof bidSchema>;
 // Contract schemas
 export const revisionNotesSchema = z
   .string()
-  .min(10, 'Revision notes must be at least 10 characters')
-  .max(2000);
+  .check(z.minLength(10, 'Revision notes must be at least 10 characters'), z.maxLength(2000));
 
 // Review schemas
 export const reviewSchema = z.object({
-  overallRating: z.number().int().min(1).max(5),
+  overallRating: starRating(),
   // Customer → provider
-  qualityRating: z.number().int().min(1).max(5).optional(),
-  communicationRating: z.number().int().min(1).max(5).optional(),
-  timelinessRating: z.number().int().min(1).max(5).optional(),
-  valueRating: z.number().int().min(1).max(5).optional(),
+  qualityRating: z.optional(starRating()),
+  communicationRating: z.optional(starRating()),
+  timelinessRating: z.optional(starRating()),
+  valueRating: z.optional(starRating()),
   // Provider → customer (FR-6.2)
-  paymentPromptnessRating: z.number().int().min(1).max(5).optional(),
-  scopeAccuracyRating: z.number().int().min(1).max(5).optional(),
-  accessRating: z.number().int().min(1).max(5).optional(),
+  paymentPromptnessRating: z.optional(starRating()),
+  scopeAccuracyRating: z.optional(starRating()),
+  accessRating: z.optional(starRating()),
   comment: z
     .string()
-    .min(50, 'Comment must be at least 50 characters')
-    .max(2000, 'Comment must be at most 2000 characters'),
+    .check(
+      z.minLength(50, 'Comment must be at least 50 characters'),
+      z.maxLength(2000, 'Comment must be at most 2000 characters'),
+    ),
 });
 export type ReviewFormValues = z.infer<typeof reviewSchema>;
 
 export const reviewResponseSchema = z
   .string()
-  .min(10, 'Response must be at least 10 characters')
-  .max(2000, 'Response must be at most 2000 characters');
+  .check(
+    z.minLength(10, 'Response must be at least 10 characters'),
+    z.maxLength(2000, 'Response must be at most 2000 characters'),
+  );
 
 // Chat schemas
 export const chatMessageSchema = z
   .string()
-  .min(1, 'Message cannot be empty')
-  .max(2000, 'Message too long');
+  .check(z.minLength(1, 'Message cannot be empty'), z.maxLength(2000, 'Message too long'));
 
 // MFA schema
 export const mfaCodeSchema = z
   .string()
-  .min(6, 'Code must be at least 6 characters')
-  .max(8, 'Code must be at most 8 characters');
+  .check(
+    z.minLength(6, 'Code must be at least 6 characters'),
+    z.maxLength(8, 'Code must be at most 8 characters'),
+  );
 
 // Auth flow schemas
 export const forgotPasswordSchema = z.object({
@@ -286,35 +339,39 @@ export const resetPasswordSchema = z
     password: passwordSchema,
     confirmPassword: z.string(),
   })
-  .refine((data) => data.password === data.confirmPassword, {
-    message: 'Passwords do not match',
-    path: ['confirmPassword'],
-  });
+  .check(
+    z.refine((data) => data.password === data.confirmPassword, {
+      message: 'Passwords do not match',
+      path: ['confirmPassword'],
+    }),
+  );
 
 export type ResetPasswordFormValues = z.infer<typeof resetPasswordSchema>;
 
 export const changePasswordSchema = z
   .object({
-    currentPassword: z.string().min(1, 'Current password is required'),
+    currentPassword: z.string().check(z.minLength(1, 'Current password is required')),
     newPassword: passwordSchema,
     confirmNewPassword: z.string(),
   })
-  .refine((data) => data.newPassword === data.confirmNewPassword, {
-    message: 'Passwords do not match',
-    path: ['confirmNewPassword'],
-  });
+  .check(
+    z.refine((data) => data.newPassword === data.confirmNewPassword, {
+      message: 'Passwords do not match',
+      path: ['confirmNewPassword'],
+    }),
+  );
 
 export type ChangePasswordFormValues = z.infer<typeof changePasswordSchema>;
 
 // Property schemas — `street` is the form field; the API nests it inside
 // `address: { street, city, state, zip_code, ... }`.
 export const propertySchema = z.object({
-  nickname: z.string().min(1, 'Nickname is required').max(100),
-  street: z.string().min(1, 'Street is required'),
-  city: z.string().min(1, 'City is required'),
-  state: z.string().min(1, 'State is required').max(2),
-  zip_code: z.string().regex(/^\d{5}(-\d{4})?$/, 'Invalid zip code'),
-  notes: z.string().max(500).optional(),
+  nickname: z.string().check(z.minLength(1, 'Nickname is required'), z.maxLength(100)),
+  street: z.string().check(z.minLength(1, 'Street is required')),
+  city: z.string().check(z.minLength(1, 'City is required')),
+  state: z.string().check(z.minLength(1, 'State is required'), z.maxLength(2)),
+  zip_code: z.string().check(z.regex(/^\d{5}(-\d{4})?$/, 'Invalid zip code')),
+  notes: z.optional(z.string().check(z.maxLength(500))),
 });
 
 export type PropertyFormValues = z.infer<typeof propertySchema>;
@@ -322,81 +379,90 @@ export type PropertyFormValues = z.infer<typeof propertySchema>;
 // Listing (goods marketplace) schemas
 export const listingTitleSchema = z
   .string()
-  .min(5, 'Title must be at least 5 characters')
-  .max(120, 'Title must be at most 120 characters');
+  .check(
+    z.minLength(5, 'Title must be at least 5 characters'),
+    z.maxLength(120, 'Title must be at most 120 characters'),
+  );
 
 export const listingDescriptionSchema = z
   .string()
-  .min(20, 'Description must be at least 20 characters')
-  .max(5000, 'Description must be at most 5000 characters');
+  .check(
+    z.minLength(20, 'Description must be at least 20 characters'),
+    z.maxLength(5000, 'Description must be at most 5000 characters'),
+  );
 
 export const listingZipSchema = z
   .string()
-  .regex(/^\d{5}(-\d{4})?$/, 'Pickup zip must be a valid 5-digit zip code');
+  .check(z.regex(/^\d{5}(-\d{4})?$/, 'Pickup zip must be a valid 5-digit zip code'));
 
 export const listingPostingSchema = z
   .object({
-    categoryId: z.string().min(1, 'Category is required'),
+    categoryId: z.string().check(z.minLength(1, 'Category is required')),
     title: listingTitleSchema,
     description: listingDescriptionSchema,
     photoUrls: z
       .array(z.url('Each photo must be a valid URL'))
-      .min(1, 'At least one photo is required')
-      .max(10, 'You can upload up to 10 photos'),
+      .check(
+        z.minLength(1, 'At least one photo is required'),
+        z.maxLength(10, 'You can upload up to 10 photos'),
+      ),
     pickupZip: listingZipSchema,
-    pickupAddress: z.string().max(200).optional().or(z.literal('')),
+    pickupAddress: optionalOrEmpty(z.string().check(z.maxLength(200))),
     startingPriceDollars: z
       .number()
-      .positive('Starting price must be greater than $0')
-      .max(1_000_000, 'Starting price is too large'),
-    buyNowDollars: z
-      .number()
-      .positive('Buy now must be greater than $0')
-      .max(1_000_000, 'Buy now price is too large')
-      .optional(),
+      .check(
+        z.positive('Starting price must be greater than $0'),
+        z.maximum(1_000_000, 'Starting price is too large'),
+      ),
+    buyNowDollars: z.optional(
+      z
+        .number()
+        .check(
+          z.positive('Buy now must be greater than $0'),
+          z.maximum(1_000_000, 'Buy now price is too large'),
+        ),
+    ),
     auctionDurationHours: z.union([z.literal(24), z.literal(48), z.literal(168)], {
       error: (issue) => (issue.input === undefined ? 'Pick an auction duration' : undefined),
     }),
     // Condition is optional — empty string = "seller didn't say".
-    condition: z
-      .enum(['', 'new', 'like_new', 'very_good', 'good', 'acceptable', 'for_parts'])
-      .optional(),
+    condition: z.optional(
+      z.enum(['', 'new', 'like_new', 'very_good', 'good', 'acceptable', 'for_parts']),
+    ),
   })
-  .superRefine((values, ctx) => {
-    if (values.buyNowDollars === undefined) return;
-    const buyCents = Math.round(values.buyNowDollars * 100);
-    const startCents = Math.round(values.startingPriceDollars * 100);
-    if (buyCents < startCents) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['buyNowDollars'],
-        message: 'Buy now must be at least the starting price.',
-      });
-    }
-  });
+  .check(
+    z.superRefine((values, ctx) => {
+      if (values.buyNowDollars === undefined) return;
+      const buyCents = Math.round(values.buyNowDollars * 100);
+      const startCents = Math.round(values.startingPriceDollars * 100);
+      if (buyCents < startCents) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['buyNowDollars'],
+          message: 'Buy now must be at least the starting price.',
+        });
+      }
+    }),
+  );
 
 export type ListingPostingFormValues = z.infer<typeof listingPostingSchema>;
 
 // Employee schemas
 export const addEmployeeSchema = z.object({
-  firstName: z.string().min(1, 'First name is required').max(100),
-  lastName: z.string().min(1, 'Last name is required').max(100),
-  email: z.email('Invalid email').optional().or(z.literal('')),
-  phone: z.string().optional().or(z.literal('')),
-  dateOfBirth: z.string().optional().or(z.literal('')),
+  firstName: z.string().check(z.minLength(1, 'First name is required'), z.maxLength(100)),
+  lastName: z.string().check(z.minLength(1, 'Last name is required'), z.maxLength(100)),
+  email: optionalOrEmpty(z.email('Invalid email')),
+  phone: optionalOrEmpty(z.string()),
+  dateOfBirth: optionalOrEmpty(z.string()),
   role: z.enum(['technician', 'lead', 'manager', 'apprentice'], {
     error: (issue) => (issue.input === undefined ? 'Role is required' : undefined),
   }),
-  ssnLastFour: z
-    .string()
-    .regex(/^\d{4}$/, 'Must be exactly 4 digits')
-    .optional()
-    .or(z.literal('')),
-  licenseNumber: z.string().optional().or(z.literal('')),
-  licenseState: z.string().optional().or(z.literal('')),
-  licenseExpiry: z.string().optional().or(z.literal('')),
-  insurancePolicyNumber: z.string().optional().or(z.literal('')),
-  insuranceExpiry: z.string().optional().or(z.literal('')),
+  ssnLastFour: optionalOrEmpty(z.string().check(z.regex(/^\d{4}$/, 'Must be exactly 4 digits'))),
+  licenseNumber: optionalOrEmpty(z.string()),
+  licenseState: optionalOrEmpty(z.string()),
+  licenseExpiry: optionalOrEmpty(z.string()),
+  insurancePolicyNumber: optionalOrEmpty(z.string()),
+  insuranceExpiry: optionalOrEmpty(z.string()),
 });
 
 export type AddEmployeeFormValues = z.infer<typeof addEmployeeSchema>;

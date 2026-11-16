@@ -6,7 +6,6 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { Suspense, useCallback, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { z } from 'zod';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -33,6 +32,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useContracts } from '@/hooks/useContracts';
 import { useFileDispute } from '@/hooks/useDisputes';
 import { useImageUpload } from '@/hooks/useImageUpload';
+import * as z from '@/lib/zod-mini';
 
 const DISPUTE_STEPS = [
   { title: 'Contract', description: 'Select the affected contract' },
@@ -53,11 +53,13 @@ const DISPUTE_REASONS = [
 type _DisputeReason = (typeof DISPUTE_REASONS)[number]['value'];
 
 const disputeSchema = z.object({
-  contractId: z.string().min(1, 'Please select a contract'),
+  contractId: z.string().check(z.minLength(1, 'Please select a contract')),
   reason: z.enum(['quality_issue', 'incomplete_work', 'no_show', 'property_damage', 'other'], {
     error: (issue) => (issue.input === undefined ? 'Please select a reason' : undefined),
   }),
-  description: z.string().min(50, 'Description must be at least 50 characters').max(5000),
+  description: z
+    .string()
+    .check(z.minLength(50, 'Description must be at least 50 characters'), z.maxLength(5000)),
 });
 
 type DisputeFormValues = z.infer<typeof disputeSchema>;
