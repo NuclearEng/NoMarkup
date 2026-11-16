@@ -146,7 +146,7 @@ struct HomeView: View {
                             Text("REVERSE AUCTION")
                                 .font(.caption2.weight(.heavy).monospaced())
                                 .tracking(1.4)
-                                .foregroundStyle(BrandTheme.gold)
+                                .foregroundStyle(BrandTheme.goldBright)
                                 .lineLimit(1)
                         }
                         (
@@ -715,7 +715,7 @@ struct HomeView: View {
             Text(title.uppercased())
                 .font(.caption2.weight(.heavy).monospaced())
                 .tracking(1.4)
-                .foregroundStyle(BrandTheme.gold)
+                .foregroundStyle(BrandTheme.goldBright)
                 .lineLimit(1)
             Spacer(minLength: 0)
         }
@@ -1310,7 +1310,7 @@ private struct HomeListingCard: View {
                 .overlay {
                     Image(systemName: "bag.fill")
                         .font(.body.weight(.medium))
-                        .foregroundStyle(BrandTheme.gold)
+                        .foregroundStyle(BrandTheme.goldBright)
                         .symbolRenderingMode(.hierarchical)
                 }
 
@@ -1342,7 +1342,7 @@ private struct HomeListingCard: View {
                     if bidCountValue > 0 {
                         Text(String(localized: "\(bidCountValue) bids"))
                             .font(.caption.weight(.semibold).monospacedDigit())
-                            .foregroundStyle(BrandTheme.gold)
+                            .foregroundStyle(BrandTheme.goldBright)
                     }
                 }
             }

@@ -23,18 +23,19 @@ struct ClientActionEvent: Identifiable, Equatable, Sendable {
 
 /// In-process ring buffer of recent API calls so a tap/submit can be audited
 /// against gateway `X-Request-ID` logs. Device-local only (not Keychain, not
-/// uploaded). Cap 100. Never stores Authorization or bodies.
-final class ClientActionLog: ObservableObject, @unchecked Sendable {
+/// uploaded). Cap 200. Never stores Authorization or bodies.
+/// Isolated to the main actor so `@Published` rows and the recording switch
+/// are not touched from the API actor.
+@MainActor
+final class ClientActionLog: ObservableObject {
     static let shared = ClientActionLog()
 
-    static let requestIDHeader = "X-Request-ID"
-    static let capacity = 200
-    static let recordingDefaultsKey = "nomarkup.requestLogEnabled"
+    nonisolated static let requestIDHeader = "X-Request-ID"
+    nonisolated static let capacity = 200
+    nonisolated static let recordingDefaultsKey = "nomarkup.requestLogEnabled"
 
     @Published private(set) var events: [ClientActionEvent] = []
     @Published private(set) var recordingEnabled: Bool
-
-    private let lock = NSLock()
 
     init() {
         #if DEBUG
@@ -63,7 +64,7 @@ final class ClientActionLog: ObservableObject, @unchecked Sendable {
     }
 
     /// 16-hex-char id matching gateway `observability.NewRequestID`.
-    static func mintRequestID() -> String {
+    nonisolated static func mintRequestID() -> String {
         var bytes = [UInt8](repeating: 0, count: 8)
         let status = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
         if status != errSecSuccess {
@@ -73,19 +74,19 @@ final class ClientActionLog: ObservableObject, @unchecked Sendable {
     }
 
     /// Stamp `X-Request-ID` when the caller did not already set one.
-    static func stamp(_ request: inout URLRequest) {
+    nonisolated static func stamp(_ request: inout URLRequest) {
         if request.value(forHTTPHeaderField: requestIDHeader) == nil {
             request.setValue(mintRequestID(), forHTTPHeaderField: requestIDHeader)
         }
     }
 
-    static func sanitizedPath(from url: URL?) -> String {
+    nonisolated static func sanitizedPath(from url: URL?) -> String {
         guard let url else { return "" }
         let path = url.path
         return path.isEmpty ? "/" : path
     }
 
-    static func outcome(status: Int, error: Error?, kind: String = "http") -> String {
+    nonisolated static func outcome(status: Int, error: Error?, kind: String = "http") -> String {
         if kind == "ui" { return "ui" }
         if kind == "screen" { return "screen" }
         if error != nil, status == 0 { return "unreachable" }
@@ -102,7 +103,7 @@ final class ClientActionLog: ObservableObject, @unchecked Sendable {
     }
 
     /// Labels / a11y ids only — never field values (passwords, PANs).
-    static func sanitizeLabel(_ raw: String) -> String {
+    nonisolated static func sanitizeLabel(_ raw: String) -> String {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         let collapsed = trimmed.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
         // Drop long digit runs (cards, OTPs).
@@ -132,35 +133,65 @@ final class ClientActionLog: ObservableObject, @unchecked Sendable {
             requestID: requestID,
             outcome: Self.outcome(status: status, error: error, kind: kind)
         )
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.lock.lock()
-            defer { self.lock.unlock() }
-            var next = self.events
-            next.insert(event, at: 0)
-            if next.count > Self.capacity {
-                next = Array(next.prefix(Self.capacity))
+        append(event)
+    }
+
+    func append(_ event: ClientActionEvent) {
+        guard recordingEnabled else { return }
+        var next = events
+        next.insert(event, at: 0)
+        if next.count > Self.capacity {
+            next = Array(next.prefix(Self.capacity))
+        }
+        events = next
+    }
+
+    /// Actor and swizzle callers enqueue a Sendable row. The append happens on the main actor.
+    nonisolated static func enqueue(
+        method: String,
+        path: String,
+        status: Int,
+        durationMs: Int,
+        requestID: String,
+        kind: String
+    ) {
+        let event = ClientActionEvent(
+            id: UUID(),
+            at: Date(),
+            kind: kind,
+            method: method.uppercased(),
+            path: path,
+            status: status,
+            durationMs: max(0, durationMs),
+            requestID: requestID,
+            outcome: outcome(status: status, error: nil, kind: kind)
+        )
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated {
+                ClientActionLog.shared.append(event)
             }
-            self.events = next
         }
     }
 
-    func record(request: URLRequest, response: URLResponse?, error: Error?, started: Date) {
+    nonisolated static func enqueueHTTP(request: URLRequest, response: URLResponse?, started: Date) {
         let http = response as? HTTPURLResponse
-        let echoed = http?.value(forHTTPHeaderField: Self.requestIDHeader)
-        let minted = request.value(forHTTPHeaderField: Self.requestIDHeader)
+        let echoed = http?.value(forHTTPHeaderField: requestIDHeader)
+        let minted = request.value(forHTTPHeaderField: requestIDHeader)
         let requestID = (echoed?.isEmpty == false ? echoed : minted) ?? ""
-        let status = http?.statusCode ?? 0
-        let ms = Int((Date().timeIntervalSince(started) * 1000).rounded())
-        record(
+        enqueue(
             method: request.httpMethod ?? "GET",
-            path: Self.sanitizedPath(from: request.url),
-            status: status,
-            durationMs: ms,
+            path: sanitizedPath(from: request.url),
+            status: http?.statusCode ?? 0,
+            durationMs: Int((Date().timeIntervalSince(started) * 1000).rounded()),
             requestID: requestID,
-            error: error,
             kind: "http"
         )
+    }
+
+    nonisolated static func enqueueUI(method: String, path: String, kind: String = "ui") {
+        let cleaned = sanitizeLabel(path)
+        guard !cleaned.isEmpty else { return }
+        enqueue(method: method, path: cleaned, status: 1, durationMs: 0, requestID: "", kind: kind)
     }
 
     func recordUI(method: String, path: String, kind: String = "ui") {
@@ -177,9 +208,7 @@ final class ClientActionLog: ObservableObject, @unchecked Sendable {
     }
 
     func clear() {
-        DispatchQueue.main.async { [weak self] in
-            self?.events = []
-        }
+        events = []
     }
 
     /// Last 8 HTTP hops as `METHOD path status requestID` (labels only — no bodies/tokens).
@@ -188,7 +217,7 @@ final class ClientActionLog: ObservableObject, @unchecked Sendable {
         Self.formatDebugSummary(events)
     }
 
-    static func formatDebugSummary(_ events: [ClientActionEvent], limit: Int = 8) -> String {
+    nonisolated static func formatDebugSummary(_ events: [ClientActionEvent], limit: Int = 8) -> String {
         events
             .filter { $0.kind == "http" }
             .prefix(limit)
@@ -229,7 +258,7 @@ final class ClientActionLog: ObservableObject, @unchecked Sendable {
     }
 
     /// Strip query/hash from a path the way the gateway sanitizes on read.
-    static func sanitizedActivityPath(_ raw: String) -> String {
+    nonisolated static func sanitizedActivityPath(_ raw: String) -> String {
         var path = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         if path.isEmpty { return "/" }
         if let idx = path.firstIndex(where: { $0 == "?" || $0 == "#" }) {
@@ -239,12 +268,12 @@ final class ClientActionLog: ObservableObject, @unchecked Sendable {
     }
 
     /// Flexible decode of `{events|items|activity|rows}` or a bare array.
-    static func parseMeActivityPayload(_ data: Data) -> [MeActivityItem] {
+    nonisolated static func parseMeActivityPayload(_ data: Data) -> [MeActivityItem] {
         guard let obj = try? JSONSerialization.jsonObject(with: data) else { return [] }
         return parseMeActivityJSON(obj)
     }
 
-    static func parseMeActivityJSON(_ raw: Any?) -> [MeActivityItem] {
+    nonisolated static func parseMeActivityJSON(_ raw: Any?) -> [MeActivityItem] {
         if let arr = raw as? [Any] {
             return arr.compactMap { parseMeActivityRow($0) }
         }
@@ -257,7 +286,7 @@ final class ClientActionLog: ObservableObject, @unchecked Sendable {
         return []
     }
 
-    private static func parseMeActivityRow(_ raw: Any) -> MeActivityItem? {
+    nonisolated private static func parseMeActivityRow(_ raw: Any) -> MeActivityItem? {
         guard let dict = raw as? [String: Any] else { return nil }
         func str(_ keys: String...) -> String {
             for key in keys {
@@ -283,7 +312,7 @@ final class ClientActionLog: ObservableObject, @unchecked Sendable {
         )
     }
 
-    static func parseActivityDate(_ raw: String) -> Date {
+    nonisolated static func parseActivityDate(_ raw: String) -> Date {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return Date.distantPast }
         let fractional = ISO8601DateFormatter()
@@ -295,7 +324,7 @@ final class ClientActionLog: ObservableObject, @unchecked Sendable {
     }
 
     /// Dedupes on `requestID` when present (web `mergeActivity`). Local wins; server fills gaps.
-    static func mergeActivity(
+    nonisolated static func mergeActivity(
         local: [ClientActionEvent],
         server: [MeActivityItem]
     ) -> [MergedActionEvent] {

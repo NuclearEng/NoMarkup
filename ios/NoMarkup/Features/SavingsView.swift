@@ -83,7 +83,7 @@ struct SavingsView: View {
                         .font(.system(.largeTitle, design: .rounded).weight(.bold).monospacedDigit())
                         .foregroundStyle(BrandTheme.savings)
                         .contentTransition(.numericText())
-                        .animation(.easeOut(duration: 0.25), value: lifetimeCents)
+                        .brandAnimation(.easeOut(duration: 0.25), value: lifetimeCents)
                         .minimumScaleFactor(0.5)
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)

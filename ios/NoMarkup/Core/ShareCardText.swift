@@ -75,7 +75,7 @@ enum ShareCardText {
         if let snippet = commentSnippet(comment) {
             lines.append("“\(snippet)”")
         }
-        lines.append("Find verified providers at fair reverse-auction prices.")
+        lines.append("Find local providers at reverse-auction prices.")
         appendReferralLine(to: &lines, code: referralCode)
         return SharePayload(
             subject: "My NoMarkup review",

@@ -113,7 +113,7 @@ struct MyOrdersView: View {
                 pendingGoodsCharge = nil
                 Task { await confirmReviewedOrderPayment(snapshot) }
             }
-            Button("Not now", role: .cancel) {
+            Button("Cancel", role: .cancel) {
                 pendingGoodsCharge = nil
                 statusIsError = false
                 statusMessage = "Payment not started."

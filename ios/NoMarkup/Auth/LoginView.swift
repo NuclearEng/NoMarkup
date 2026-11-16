@@ -346,11 +346,11 @@ struct LoginView: View {
 
     private var divider: some View {
         HStack {
-            Rectangle().frame(height: 1).foregroundStyle(BrandTheme.gold.opacity(0.2))
+            Rectangle().frame(height: 1).foregroundStyle(BrandTheme.goldBright.opacity(0.2))
             Text("or")
                 .font(.caption)
                 .foregroundStyle(BrandTheme.textSecondary)
-            Rectangle().frame(height: 1).foregroundStyle(BrandTheme.gold.opacity(0.2))
+            Rectangle().frame(height: 1).foregroundStyle(BrandTheme.goldBright.opacity(0.2))
         }
     }
 

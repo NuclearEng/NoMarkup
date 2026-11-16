@@ -75,6 +75,9 @@ struct RootView: View {
             if auth.isAuthenticated {
                 ZStack {
                     RootTabView()
+                    if auth.sessionEndingSoon {
+                        sessionEndingBanner
+                    }
                     if BiometricGate.requireForSensitiveActions, !isBiometricallyUnlocked {
                         biometricLockOverlay
                     }
@@ -175,12 +178,31 @@ struct RootView: View {
             Button(NotificationPermissionCopy.prePromptConfirm) {
                 push.confirmPrePrompt()
             }
-            Button(NotificationPermissionCopy.prePromptNotNow, role: .cancel) {
-                push.dismissPrePrompt()
-            }
         } message: {
             Text(NotificationPermissionCopy.prePromptBody)
         }
+    }
+
+    private var sessionEndingBanner: some View {
+        VStack {
+            Spacer()
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Your session will end in less than a minute because this device has been idle.")
+                    .font(.subheadline)
+                    .foregroundStyle(BrandTheme.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("Stay signed in") {
+                    Task { await auth.staySignedIn() }
+                }
+                .buttonStyle(BrandPrimaryButtonStyle())
+                .accessibilityIdentifier("session.staySignedIn")
+            }
+            .padding(16)
+            .background(BrandTheme.surfaceRaised, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .padding(.horizontal, 16)
+            .padding(.bottom, 12)
+        }
+        .accessibilityElement(children: .contain)
     }
 
     private var biometricLockOverlay: some View {
@@ -190,7 +212,7 @@ struct RootView: View {
                 Image(systemName: "lock.fill")
                     .font(.largeTitle.weight(.semibold))
                     .imageScale(.large)
-                    .foregroundStyle(BrandTheme.gold)
+                    .foregroundStyle(BrandTheme.goldBright)
                     .accessibilityHidden(true)
                 Text("NoMarkup is locked")
                     .font(.title3.weight(.semibold))

@@ -67,7 +67,7 @@ export const metadata: Metadata = {
     'local contractors',
     'fair price',
     'local marketplace',
-    'verified providers',
+    'local providers',
   ],
   alternates: { canonical: '/' },
   // Favicon + apple-touch-icon come from App Router file conventions:

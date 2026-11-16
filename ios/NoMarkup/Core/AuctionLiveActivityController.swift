@@ -409,8 +409,9 @@ enum AuctionLiveActivityController {
 }
 
 #if canImport(ActivityKit)
-/// Unchecked box so we can `await` ActivityKit methods without Sendable diagnostics
-/// (Activity is not marked Sendable; Live Activities are main-thread UI best-effort).
+// SAFETY: Activity is not Sendable. This box is created on the main actor, holds one
+// activity, and is not stored or shared. update, end, and push-token reads run one at a
+// time. There is no mutable stored state, so the await cannot race another caller.
 private struct ActivityUpdateBox: @unchecked Sendable {
     let activity: Activity<AuctionActivityAttributes>
 

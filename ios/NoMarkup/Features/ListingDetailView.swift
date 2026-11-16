@@ -252,7 +252,7 @@ struct ListingDetailView: View {
                 pendingGoodsCharge = nil
                 Task { await confirmReviewedGoodsCharge(snapshot) }
             }
-            Button("Not now", role: .cancel) {
+            Button("Cancel", role: .cancel) {
                 noteGoodsChargeDeferred(charge)
                 pendingGoodsCharge = nil
             }
@@ -324,7 +324,7 @@ struct ListingDetailView: View {
                     .foregroundStyle(BrandTheme.textSecondary)
                     .contentTransition(.numericText())
                     .brandMoneyFlash(token: leadingFlashToken, isDown: false)
-                    .animation(.easeOut(duration: 0.2), value: leading)
+                    .brandAnimation(.easeOut(duration: 0.2), value: leading)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             Text(Self.buyerPaysAgreedPriceLine)
@@ -778,7 +778,7 @@ struct ListingDetailView: View {
                     .contentTransition(.numericText())
                     // Forward auction: bids climb — blue wash (`isDown: false`), not reverse green.
                     .brandMoneyFlash(token: leadingFlashToken, isDown: false)
-                    .animation(.easeOut(duration: 0.2), value: heroPriceAmount(listing))
+                    .brandAnimation(.easeOut(duration: 0.2), value: heroPriceAmount(listing))
                     .accessibilityLabel("\(heroPriceCaption(listing)): \(heroPriceAmount(listing))")
                     .onChange(of: leadingBidCents) { _, newValue in
                         guard let newValue, newValue > 0 else { return }
@@ -1039,7 +1039,7 @@ struct ListingDetailView: View {
                             token: isWinning ? leadingFlashToken : 0,
                             isDown: false
                         )
-                        .animation(.easeOut(duration: 0.2), value: row.displayAmount)
+                        .brandAnimation(.easeOut(duration: 0.2), value: row.displayAmount)
                     if isWinning {
                         Text("Winning")
                             .font(.caption2.weight(.bold))
@@ -2849,7 +2849,7 @@ private struct ListingReportSheet: View {
                 } header: {
                     Text("Details (optional)").brandSectionHeader()
                 } footer: {
-                    Text("Reports help keep the marketplace safe. False reports may lead to account action.")
+                    Text("Reports help moderators review this listing. False reports may lead to account action.")
                         .foregroundStyle(BrandTheme.textSecondary)
                 }
 

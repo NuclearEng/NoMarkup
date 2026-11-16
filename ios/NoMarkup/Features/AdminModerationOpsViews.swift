@@ -1169,7 +1169,7 @@ struct AdminFeesView: View {
 
                     Section {
                         Toggle("Lead-gen fee enabled", isOn: $leadGenEnabled)
-                            .tint(BrandTheme.gold)
+                            .tint(BrandTheme.goldBright)
                             .accessibilityIdentifier("admin.fees.leadGenEnabled")
                         HStack {
                             Text("Lead-gen %")

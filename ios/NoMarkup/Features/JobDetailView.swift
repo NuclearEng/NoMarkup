@@ -911,7 +911,7 @@ struct JobDetailView: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .contentTransition(.numericText())
                         .brandMoneyFlash(token: leadingFlashToken, isDown: true)
-                        .animation(.easeOut(duration: 0.2), value: arenaLeadingAmount)
+                        .brandAnimation(.easeOut(duration: 0.2), value: arenaLeadingAmount)
                     Text("Providers bid down · lowest trusted bid leads")
                         .font(.caption)
                         .foregroundStyle(BrandTheme.textSecondary)
@@ -3431,7 +3431,7 @@ private struct JobReportSheet: View {
                 } header: {
                     Text("Details (optional)").brandSectionHeader()
                 } footer: {
-                    Text("Reports help keep jobs safe. False reports may lead to account action.")
+                    Text("Reports help moderators review this job. False reports may lead to account action.")
                         .foregroundStyle(BrandTheme.textSecondary)
                 }
 

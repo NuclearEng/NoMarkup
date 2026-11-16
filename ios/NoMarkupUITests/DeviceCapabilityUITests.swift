@@ -255,7 +255,7 @@ final class DeviceCapabilityUITests: XCTestCase {
             evidence("APNs: Turn on push notifications visible — requesting permission (not inventing a token)")
             _ = safeTap(enablePush)
             settle(0.8)
-            let enable = app.alerts.buttons["Enable notifications"]
+            let enable = app.alerts.buttons["Continue"]
             if enable.waitForExistence(timeout: 4) {
                 enable.tap()
                 settle(1.5)

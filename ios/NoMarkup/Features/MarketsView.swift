@@ -103,7 +103,7 @@ struct MarketsView: View {
                     {
                         Text(country.uppercased())
                             .font(.caption2.weight(.semibold))
-                            .foregroundStyle(BrandTheme.gold.opacity(0.9))
+                            .foregroundStyle(BrandTheme.goldBright.opacity(0.9))
                     }
                 }
 
