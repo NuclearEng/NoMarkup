@@ -15,6 +15,9 @@ pub enum TrustTier {
 
 impl TrustTier {
     /// Parse from the database text representation.
+    // Lib/test surface (round-trip tested against `as_db_str`); the binary only
+    // writes tiers via `as_db_str`, so this parser is unused in the `bin` target.
+    #[allow(dead_code)]
     #[must_use]
     pub fn from_db_str(s: &str) -> Self {
         match s {
@@ -29,7 +32,7 @@ impl TrustTier {
 
     /// Convert to the database text representation.
     #[must_use]
-    pub fn as_db_str(&self) -> &'static str {
+    pub const fn as_db_str(&self) -> &'static str {
         match self {
             Self::UnderReview => "under_review",
             Self::New => "new",
@@ -93,9 +96,16 @@ pub struct DimensionScores {
 impl DimensionScores {
     /// Compute weighted overall score.
     /// Feedback: 35%, Volume: 20%, Risk: 25%, Fraud: 20%.
+    // Lib/test/bench surface; the binary computes the composite via
+    // `scoring::composite_score`, so this convenience method is unused in `bin`.
+    #[allow(dead_code)]
     #[must_use]
     pub fn overall(&self) -> f64 {
-        self.feedback * 0.35 + self.volume * 0.20 + self.risk * 0.25 + self.fraud * 0.20
+        self.fraud.mul_add(
+            0.20,
+            self.risk
+                .mul_add(0.25, self.feedback.mul_add(0.35, self.volume * 0.20)),
+        )
     }
 }
 
@@ -172,7 +182,7 @@ pub fn all_tier_requirements() -> Vec<TierRequirement> {
             min_reviews: 0,
             min_rating: 0.0,
             requires_verification: false,
-            description: "New accounts or those with score below 50".into(),
+            description: "New accounts or those with a score below 0.50".into(),
         },
         TierRequirement {
             tier: TrustTier::Rising,
@@ -236,7 +246,10 @@ mod tests {
 
     #[test]
     fn tier_from_db_str_known_values() {
-        assert_eq!(TrustTier::from_db_str("under_review"), TrustTier::UnderReview);
+        assert_eq!(
+            TrustTier::from_db_str("under_review"),
+            TrustTier::UnderReview
+        );
         assert_eq!(TrustTier::from_db_str("new"), TrustTier::New);
         assert_eq!(TrustTier::from_db_str("rising"), TrustTier::Rising);
         assert_eq!(TrustTier::from_db_str("trusted"), TrustTier::Trusted);
@@ -341,7 +354,7 @@ mod tests {
             risk: 0.9,
             fraud: 0.7,
         };
-        let expected = 0.8 * 0.35 + 0.5 * 0.20 + 0.9 * 0.25 + 0.7 * 0.20;
+        let expected = 0.7f64.mul_add(0.20, 0.9f64.mul_add(0.25, 0.8f64.mul_add(0.35, 0.5 * 0.20)));
         assert!((scores.overall() - expected).abs() < f64::EPSILON);
     }
 
@@ -366,7 +379,12 @@ mod tests {
     fn tier_requirements_thresholds_ascending() {
         let reqs = all_tier_requirements();
         // Filter to the ordered tiers (New, Rising, Trusted, TopRated).
-        let ordered = [TrustTier::New, TrustTier::Rising, TrustTier::Trusted, TrustTier::TopRated];
+        let ordered = [
+            TrustTier::New,
+            TrustTier::Rising,
+            TrustTier::Trusted,
+            TrustTier::TopRated,
+        ];
         let ordered_reqs: Vec<&TierRequirement> = ordered
             .iter()
             .filter_map(|t| reqs.iter().find(|r| r.tier == *t))

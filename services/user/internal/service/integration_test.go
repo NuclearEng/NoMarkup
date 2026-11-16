@@ -90,11 +90,12 @@ func TestIntegration_Registration_Login_ProfileUpdate(t *testing.T) {
 				getUserByEmailFn: func(_ context.Context, email string) (*domain.User, error) {
 					if storedUser != nil && storedUser.Email == email {
 						return &domain.User{
-							ID:           storedUser.ID,
-							Email:        storedUser.Email,
-							PasswordHash: storedHash,
-							Roles:        storedUser.Roles,
-							Status:       "active",
+							ID:            storedUser.ID,
+							Email:         storedUser.Email,
+							EmailVerified: true,
+							PasswordHash:  storedHash,
+							Roles:         storedUser.Roles,
+							Status:        "active",
 						}, nil
 					}
 					return nil, domain.ErrUserNotFound
@@ -194,6 +195,9 @@ func TestIntegration_TokenRefresh_and_Logout(t *testing.T) {
 		},
 		revokeRefreshTokenFn: func(_ context.Context, _ string) error {
 			return nil
+		},
+		rotateRefreshTokenIfActiveFn: func(_ context.Context, _ string) (bool, error) {
+			return true, nil
 		},
 		getUserByIDFn: func(_ context.Context, _ string) (*domain.User, error) {
 			return &domain.User{

@@ -1,6 +1,6 @@
 'use client';
 
-import { Bell, CreditCard, Crown, Shield } from 'lucide-react';
+import { Bell, ClipboardList, CreditCard, Crown, Shield, UserX } from 'lucide-react';
 import type { Route } from 'next';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -12,6 +12,8 @@ const SETTINGS_NAV = [
   { href: '/settings/notifications' as Route, label: 'Notifications', icon: Bell },
   { href: '/settings/payment-methods' as Route, label: 'Payment Methods', icon: CreditCard },
   { href: '/settings/subscription' as Route, label: 'Subscription', icon: Crown },
+  { href: '/settings/account' as Route, label: 'Account', icon: UserX },
+  { href: '/settings/request-log' as Route, label: 'Request log', icon: ClipboardList },
 ];
 
 export default function SettingsLayout({ children }: { children: React.ReactNode }) {
@@ -19,9 +21,17 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
-      <div>
-        <h1 className="gold-text text-2xl font-bold tracking-tight">Settings</h1>
-        <p className="mt-1 text-zinc-300">Manage your account preferences.</p>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="gold-text text-2xl font-bold tracking-tight">Settings</h1>
+          <p className="mt-1 text-zinc-300">Manage your account preferences.</p>
+        </div>
+        <Link
+          href={'/onboarding' as Route}
+          className="inline-flex min-h-11 items-center text-sm font-medium text-zinc-100 underline-offset-2 hover:underline"
+        >
+          Finish setup
+        </Link>
       </div>
 
       {/* Settings tab navigation */}

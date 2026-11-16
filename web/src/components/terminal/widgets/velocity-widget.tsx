@@ -61,7 +61,7 @@ export function VelocityWidget({ sim }: WidgetProps) {
             key={idx}
             className={`w-3 rounded-sm transition-all duration-300 ${config.barColor}`}
             style={{
-              height: `${Math.max(4, (count / maxBucket) * 40)}px`,
+              height: `${String(Math.max(4, (count / maxBucket) * 40))}px`,
               opacity: 0.4 + (count / maxBucket) * 0.6,
             }}
           />

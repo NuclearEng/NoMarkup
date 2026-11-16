@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/nomarkup/nomarkup/services/payment/internal/domain"
 )
 
@@ -26,9 +27,37 @@ func (r *PostgresRepository) CreateInstallmentPlan(ctx context.Context, plan *do
 		plan.Status,
 	).Scan(&plan.CreatedAt, &plan.UpdatedAt)
 	if err != nil {
+		// Atomic backstop for the one-active-plan-per-contract invariant: the
+		// partial-unique index (migration 069) rejects a concurrent second active
+		// plan that slipped past the service pre-check. Surface a typed conflict so
+		// the gRPC/gateway layers map it to 409, never a 500 — and crucially this
+		// fires BEFORE the provider payout, so no double payment occurs.
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return fmt.Errorf("create installment plan: %w", domain.ErrInstallmentPlanExists)
+		}
 		return fmt.Errorf("create installment plan: %w", err)
 	}
 	return nil
+}
+
+// HasActiveInstallmentPlanForContract reports whether the contract already has a
+// plan in 'active' status. Used to fail closed BEFORE the provider is paid, so a
+// direct API call (or double-submit) cannot create a second plan — and pay the
+// provider twice — for one contract. The DB partial-unique index
+// (uniq_installment_plans_active_per_contract) is the atomic backstop for the
+// concurrent race; this check produces the friendly 409 in the common case.
+func (r *PostgresRepository) HasActiveInstallmentPlanForContract(ctx context.Context, contractID string) (bool, error) {
+	var exists bool
+	err := r.pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM installment_plans
+			WHERE contract_id = $1 AND status = 'active'
+		)`, contractID).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("has active installment plan for contract: %w", err)
+	}
+	return exists, nil
 }
 
 func (r *PostgresRepository) GetInstallmentPlan(ctx context.Context, planID string) (*domain.InstallmentPlan, error) {
@@ -167,7 +196,9 @@ func (r *PostgresRepository) CreateScheduledInstallments(ctx context.Context, in
 func (r *PostgresRepository) GetScheduledInstallmentsForPlan(ctx context.Context, planID string) ([]domain.ScheduledInstallment, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT id, plan_id, installment_number, amount_cents,
-		       due_date, payment_id, status, attempts,
+		       due_date,
+		       COALESCE(payment_id::text, stripe_payment_intent_id) AS payment_ref,
+		       status, attempts,
 		       last_attempt_at, paid_at,
 		       created_at, updated_at
 		FROM scheduled_installments
@@ -238,18 +269,71 @@ func (r *PostgresRepository) UpdateScheduledInstallmentStatus(ctx context.Contex
 
 	switch status {
 	case "paid":
+		// paymentID carries the Stripe PaymentIntent id (e.g. "pi_..."), which is
+		// NOT a UUID — it must go in the TEXT stripe_payment_intent_id column, never
+		// in payment_id (a UUID FK to an internal payments row that installment
+		// charges never create). Writing it into payment_id failed every UPDATE with
+		// SQLSTATE 22P02, silently leaving installments stuck 'scheduled'. We keep
+		// payment_id NULL here and record the Stripe charge in its own column.
+		//
+		// A row that is already paid is not counted again. A second confirm must
+		// not bump attempts (that counter seeds later charge idempotency keys).
+		// Same-statement snapshot: the status read sees the pre-update row, so
+		// updated_count distinguishes a new paid write from an already-paid row.
+		var updatedCount int64
+		var priorStatus *string
+		err := r.pool.QueryRow(ctx, `
+			WITH updated AS (
+				UPDATE scheduled_installments SET
+					status = $1,
+					paid_at = now(),
+					stripe_payment_intent_id = $2,
+					last_attempt_at = now(),
+					attempts = attempts + 1,
+					updated_at = now()
+				WHERE id = $3 AND status <> 'paid'
+				RETURNING id
+			)
+			SELECT
+				(SELECT COUNT(*) FROM updated),
+				(SELECT s.status FROM scheduled_installments s WHERE s.id = $3)`,
+			status, paymentID, id).Scan(&updatedCount, &priorStatus)
+		if err != nil {
+			return fmt.Errorf("update scheduled installment status: %w", err)
+		}
+		if updatedCount > 0 {
+			return nil
+		}
+		if priorStatus != nil && *priorStatus == "paid" {
+			return nil
+		}
+		return fmt.Errorf("update scheduled installment status: not found")
+	case "processing":
+		// In-flight PaymentIntents stay on this attempt. Incrementing attempts
+		// here would mint a new idempotency key and charge the customer again.
 		query = `UPDATE scheduled_installments SET
-			status = $1, paid_at = now(), payment_id = $2,
-			last_attempt_at = now(), attempts = attempts + 1,
+			status = $1, last_attempt_at = now(),
+			stripe_payment_intent_id = COALESCE($2, stripe_payment_intent_id),
 			updated_at = now()
 			WHERE id = $3`
 		args = []interface{}{status, paymentID, id}
-	case "processing":
+	case "processing_failed":
+		// Only a row parked as processing may consume an attempt. A cron
+		// decline already counted its attempt via the failed branch.
 		query = `UPDATE scheduled_installments SET
-			status = $1, last_attempt_at = now(), attempts = attempts + 1,
+			status = CASE WHEN attempts + 1 >= 3 THEN 'failed' ELSE 'retrying' END,
+			last_attempt_at = now(), attempts = attempts + 1,
 			updated_at = now()
-			WHERE id = $2`
-		args = []interface{}{status, id}
+			WHERE id = $1 AND status = 'processing'`
+		args = []interface{}{id}
+		tag, err := r.pool.Exec(ctx, query, args...)
+		if err != nil {
+			return fmt.Errorf("update scheduled installment status: %w", err)
+		}
+		if tag.RowsAffected() == 0 {
+			return nil
+		}
+		return nil
 	case "failed":
 		query = `UPDATE scheduled_installments SET
 			status = CASE WHEN attempts + 1 >= 3 THEN 'failed' ELSE 'retrying' END,

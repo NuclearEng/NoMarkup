@@ -11,6 +11,10 @@ interface ServiceAreaMapProps {
   className?: string;
 }
 
+function getMapboxToken(): string {
+  return process.env['NEXT_PUBLIC_MAPBOX_TOKEN'] ?? '';
+}
+
 export function ServiceAreaMap({
   radiusKm,
   center = [-98.5795, 39.8283],
@@ -20,12 +24,17 @@ export function ServiceAreaMap({
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const [mapError, setMapError] = useState(false);
 
-  const mapboxToken = process.env['NEXT_PUBLIC_MAPBOX_TOKEN'];
+  const mapboxToken = getMapboxToken();
 
   useEffect(() => {
     if (!mapboxToken || !mapContainerRef.current || mapRef.current) return;
 
     let cancelled = false;
+
+    // Tracks whether the style finished loading. A non-fatal error AFTER load
+    // (a single missing tile/sprite/glyph, a telemetry blip) must NOT replace
+    // the whole map with the fallback — only a failure to load is fatal.
+    let loaded = false;
 
     async function initMap() {
       try {
@@ -33,7 +42,7 @@ export function ServiceAreaMap({
 
         if (cancelled || !mapContainerRef.current) return;
 
-        mapboxgl.accessToken = mapboxToken as string;
+        mapboxgl.accessToken = mapboxToken;
 
         const map = new mapboxgl.Map({
           container: mapContainerRef.current,
@@ -46,10 +55,13 @@ export function ServiceAreaMap({
           if (cancelled) return;
           mapRef.current = map;
           addCircleLayer(map, center, radiusKm);
+          loaded = true;
         });
 
         map.on('error', () => {
-          if (!cancelled) setMapError(true);
+          if (cancelled) return;
+          // Only fatal if the map never loaded; ignore post-load non-fatal errors.
+          if (!loaded) setMapError(true);
         });
       } catch {
         if (!cancelled) setMapError(true);

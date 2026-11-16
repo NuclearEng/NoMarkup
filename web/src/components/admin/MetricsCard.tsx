@@ -47,10 +47,10 @@ export function MetricsCard({
   return (
     <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
       <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <CardTitle className="text-sm font-medium text-zinc-400">{label}</CardTitle>
+        <CardTitle className="text-sm font-medium text-muted-foreground">{label}</CardTitle>
         {Icon ? (
-          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-white/[0.06]">
-            <Icon className="h-4 w-4 text-zinc-500" aria-hidden="true" />
+          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-muted">
+            <Icon className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
           </div>
         ) : null}
       </CardHeader>
@@ -58,7 +58,7 @@ export function MetricsCard({
         {loading ? (
           <Skeleton variant="price" className="h-8 w-24" />
         ) : (
-          <p className="text-2xl font-bold tabular-nums tracking-tight text-zinc-100">
+          <p className="text-2xl font-bold tabular-nums tracking-tight text-foreground">
             <AnimatedValue value={value} numericValue={numericValue} />
           </p>
         )}
@@ -67,7 +67,7 @@ export function MetricsCard({
             <span
               className={cn(
                 'inline-flex items-center gap-1 text-xs font-medium',
-                trend >= 0 ? 'text-emerald-400' : 'text-red-400',
+                trend >= 0 ? 'text-trust-high' : 'text-destructive',
               )}
             >
               {trend >= 0 ? (
@@ -80,7 +80,7 @@ export function MetricsCard({
             </span>
           ) : null}
           {description ? (
-            <span className="text-xs text-zinc-500">{description}</span>
+            <span className="text-xs text-muted-foreground">{description}</span>
           ) : null}
         </div>
       </CardContent>

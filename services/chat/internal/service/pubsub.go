@@ -55,3 +55,21 @@ func (ps *PubSub) PublishTyping(ctx context.Context, channelID string, userID st
 	topic := fmt.Sprintf("chat:%s:typing", channelID)
 	return ps.rdb.Publish(ctx, topic, payload).Err()
 }
+
+// PublishReadReceipt notifies channel subscribers that userID updated their
+// MarkRead watermark. Topic is chat:{channelID}:read so message payloads on
+// chat:{channelID} are not confused with receipt frames. lastReadAt should be
+// RFC3339 (UTC). Membership was already enforced by MarkRead.
+func (ps *PubSub) PublishReadReceipt(ctx context.Context, channelID, userID, lastReadAt string) error {
+	payload, err := json.Marshal(map[string]string{
+		"type":         "read_receipt",
+		"channel_id":   channelID,
+		"user_id":      userID,
+		"last_read_at": lastReadAt,
+	})
+	if err != nil {
+		return fmt.Errorf("pubsub marshal read receipt: %w", err)
+	}
+	topic := fmt.Sprintf("chat:%s:read", channelID)
+	return ps.rdb.Publish(ctx, topic, payload).Err()
+}

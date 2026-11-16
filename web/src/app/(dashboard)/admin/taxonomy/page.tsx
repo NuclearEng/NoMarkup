@@ -94,7 +94,8 @@ export default function AdminTaxonomyPage() {
       <div>
         <h1 className="gold-text text-2xl font-bold tracking-tight">Service Taxonomy</h1>
         <p className="mt-1 text-zinc-300">
-          Manage service categories, subcategories, and service types.
+          Browse the live service category tree (read-only). Category create/edit ships via
+          migrations and seed — there is no admin CRUD on this page yet.
         </p>
       </div>
 
@@ -156,7 +157,7 @@ export default function AdminTaxonomyPage() {
           ) : !categories || categories.length === 0 ? (
             <div className="py-12 text-center rounded-lg border border-white/[0.06]">
               <p className="text-sm text-white/50">
-                No categories found. Create your first category to get started.
+                No categories found. Seed or migrate taxonomy data to populate this tree.
               </p>
             </div>
           ) : (

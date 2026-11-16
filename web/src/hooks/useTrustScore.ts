@@ -12,7 +12,10 @@ export function useTrustScore(userId: string) {
     queryKey: ['trust-score', userId],
     queryFn: async () => {
       try {
-        return await api.get<{ score: TrustScore }>(`/api/v1/users/${userId}/trust-score`);
+        // Gateway returns the trust score at the top level, not wrapped in
+        // { score }. Normalize so existing consumers that read .score still work.
+        const raw = await api.get<TrustScore>(`/api/v1/users/${userId}/trust-score`);
+        return { score: raw };
       } catch (error) {
         if (error instanceof ApiError && (error.status === 404 || error.status === 500)) return null;
         throw error;

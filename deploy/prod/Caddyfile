@@ -1,0 +1,100 @@
+# NoMarkup production edge (Caddy 2)
+#
+# DNS (Cloudflare, zone no-markup.com):
+#   A/AAAA  no-markup.com      → VPS public IP  (proxied / orange cloud)
+#   A/AAAA  www                → VPS public IP
+#   A/AAAA  api                → VPS public IP
+#
+# Cloudflare SSL/TLS modes (Dashboard → SSL/TLS → Overview):
+#
+#   Full
+#     CF ↔ origin may use a self-signed / Caddy "tls internal" cert.
+#     Browser still sees a valid CF cert. Use this for the first boot if
+#     HTTP-01 ACME is blocked by the orange cloud.
+#
+#   Full (strict)  ← prefer once stable
+#     CF ↔ origin requires a cert trusted by CF (Let's Encrypt via Caddy,
+#     or a Cloudflare Origin CA cert). Browser + origin both verified.
+#     For ACME HTTP-01 while proxied: either (a) temporarily grey-cloud the
+#     hostnames, issue certs, then re-proxy, or (b) use a DNS-01 challenge
+#     with a CF API token (not configured here — add a Caddy DNS plugin if needed).
+#
+# Never use "Flexible" — that encrypts only browser↔CF and talks plain HTTP
+# to origin, which breaks Secure cookies and misleads the threat model.
+#
+# Stripe webhook endpoint (Dashboard → Developers → Webhooks):
+#   POST https://api.no-markup.com/api/v1/webhooks/stripe
+#
+# ACME account email is optional; set ACME_EMAIL in deploy/prod/.env so Caddy
+# can recover certs. Leave empty only for tls internal / Origin CA setups.
+
+{
+	# Global options
+	email {$ACME_EMAIL}
+	# Uncomment on a tiny VPS if you want less aggressive OCSP/stapling noise:
+	# ocsp_stapling off
+	servers {
+		protocols h1 h2 h3
+	}
+}
+
+# ── Marketing + app (Next.js) ─────────────────────────────────
+no-markup.com, www.no-markup.com {
+	# --- Cloudflare Full (self-signed origin) ---
+	# Uncomment the next line AND comment out auto-HTTPS if CF is on Full
+	# (not strict) and you do not want public ACME:
+	# tls internal
+
+	encode zstd gzip
+
+	# Security headers (CF may add its own; these apply at origin too).
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+
+	# Next.js standalone listens on 3000 inside the web container.
+	reverse_proxy web:3000 {
+		# Preserve client IP through Cloudflare → Caddy → app.
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Real-IP {remote_host}
+		# Health-aware upstream (web /api/health).
+		health_uri /api/health
+		health_interval 15s
+		health_timeout 5s
+	}
+}
+
+# ── API + WebSocket + Stripe webhooks ─────────────────────────
+api.no-markup.com {
+	# --- Cloudflare Full (self-signed origin) ---
+	# tls internal
+
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+
+	# Do NOT reverse-proxy /metrics publicly. Scrape from the Docker network
+	# or an SSH tunnel; gateway enforces METRICS_BEARER_TOKEN in production.
+
+	reverse_proxy gateway:8080 {
+		# Caddy supports WebSocket upgrades by default (chat / auctions / live).
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Real-IP {remote_host}
+		# Longer timeouts for WS; HTTP API still bounded by the gateway.
+		transport http {
+			read_timeout 0
+			write_timeout 0
+		}
+		health_uri /health
+		health_interval 15s
+		health_timeout 5s
+	}
+}

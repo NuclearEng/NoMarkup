@@ -37,9 +37,32 @@ resources:
   - trust/service.yaml
   - imaging/deployment.yaml
   - imaging/service.yaml
+  - underwriting/deployment.yaml
+  - underwriting/service.yaml
+  - pricing/deployment.yaml
+  - pricing/service.yaml
+  # In-cluster infrastructure (referenced by nomarkup-config:
+  # MEILISEARCH_URL / OTEL_EXPORTER_OTLP_ENDPOINT)
+  - meilisearch/deployment.yaml
+  - meilisearch/service.yaml
+  - otel-collector/configmap.yaml
+  - otel-collector/backend-configmap.yaml
+  - otel-collector/deployment.yaml
+  - otel-collector/service.yaml
+  # PodDisruptionBudgets (minAvailable: 1 for multi-replica services)
+  - pdb.yaml
+  # NOTE: migration-job.yaml is intentionally NOT listed here. Deploy CI
+  # creates a uniquely named Job per release (db-migrate-<version>) from the
+  # same template so completed Jobs never collide with `kubectl apply -k`.
+  # Manual: kubectl apply -f deploy/k8s/base/migration-job.yaml
   # Ingress
   - ingress.yaml
   # Storage
   - pvc.yaml
-  # Network Policies
+  # Network Policies (ingress least-privilege + OPS-19 egress default-deny)
   - network-policy.yaml
+  - network-policy-egress.yaml
+  # NOTE: externalsecret.sample.yaml and sealedsecret.sample.yaml are
+  # intentionally NOT listed — operators copy them after Vault /
+  # ClusterSecretStore (or Sealed Secrets controller) is provisioned.
+  # See SECRETS.md (OPS-04 Partial — Founder still wires live secrets).

@@ -19,13 +19,13 @@ import { Textarea } from '@/components/ui/textarea';
 import { useReviewFraudAlert } from '@/hooks/useFraud';
 import { FRAUD_ALERT_STATUS_CLASSES, FRAUD_RISK_CLASSES } from '@/lib/status-badge-classes';
 import { cn } from '@/lib/utils';
-import type { AlertStatus, FraudAlert, FraudSignal, RiskLevel } from '@/types';
+import type { AlertStatus, FraudAlert, FraudSignal } from '@/types';
 import { ALERT_STATUS } from '@/types';
 
 function confidenceColor(confidence: number): string {
-  if (confidence >= 0.8) return 'bg-red-500';
-  if (confidence >= 0.5) return 'bg-orange-500';
-  return 'bg-yellow-500';
+  if (confidence >= 0.8) return 'bg-destructive';
+  if (confidence >= 0.5) return 'bg-status-disputed';
+  return 'bg-trust-medium';
 }
 
 function formatSignalType(type: string): string {
@@ -58,20 +58,39 @@ const STATUS_LABELS: Record<AlertStatus, string> = {
   dismissed: 'Dismissed',
 };
 
+function statusLabel(status: AlertStatus | null | undefined): string {
+  if (status && status in STATUS_LABELS) return STATUS_LABELS[status];
+  return 'Unknown';
+}
+
+function riskLabel(risk: string | null | undefined): string {
+  return risk ? risk.toUpperCase() : 'UNKNOWN';
+}
+
+function formatDateSafe(dateStr: string | null | undefined): string {
+  if (!dateStr) return 'N/A';
+  const parsed = new Date(dateStr);
+  if (Number.isNaN(parsed.getTime())) return 'N/A';
+  return formatDate(dateStr);
+}
+
 function SignalRow({ signal }: { signal: FraudSignal }) {
   return (
     <div className="rounded-lg border p-4 space-y-3">
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium">{formatSignalType(signal.signal_type)}</span>
-          <Badge variant="outline" className={cn('text-xs', FRAUD_RISK_CLASSES[signal.risk_level])}>
-            {signal.risk_level.toUpperCase()}
+          <Badge
+            variant="outline"
+            className={cn('text-xs', FRAUD_RISK_CLASSES[signal.risk_level])}
+          >
+            {riskLabel(signal.risk_level)}
           </Badge>
         </div>
-        <span className="text-xs text-muted-foreground">{formatDate(signal.created_at)}</span>
+        <span className="text-xs text-muted-foreground">{formatDateSafe(signal.created_at)}</span>
       </div>
 
-      <p className="text-sm text-muted-foreground">{signal.description}</p>
+      <p className="text-sm text-muted-foreground">{signal.description || '—'}</p>
 
       <div className="space-y-1">
         <div className="flex items-center justify-between text-xs">
@@ -87,16 +106,16 @@ function SignalRow({ signal }: { signal: FraudSignal }) {
       <div className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-2">
         <div>
           <span className="text-muted-foreground">IP: </span>
-          <span className="font-mono">{signal.ip_address}</span>
+          <span className="font-mono">{signal.ip_address || '—'}</span>
         </div>
         <div>
           <span className="text-muted-foreground">Fingerprint: </span>
-          <span className="font-mono">{truncate(signal.device_fingerprint, 16)}</span>
+          <span className="font-mono">{truncate(signal.device_fingerprint, 16) || '—'}</span>
         </div>
         <div className="sm:col-span-2">
           <span className="text-muted-foreground">Entity: </span>
           <span className="font-mono">
-            {signal.reference_entity_type}/{truncate(signal.reference_entity_id, 12)}
+            {signal.reference_entity_type || '—'}/{truncate(signal.reference_entity_id, 12)}
           </span>
         </div>
       </div>
@@ -114,6 +133,8 @@ export function FraudAlertDetail({ alert }: FraudAlertDetailProps) {
   const [restrictUser, setRestrictUser] = useState(false);
 
   const reviewMutation = useReviewFraudAlert();
+
+  const signals = alert.signals;
 
   const isResolved = alert.status === ALERT_STATUS.RESOLVED_FRAUD
     || alert.status === ALERT_STATUS.RESOLVED_LEGITIMATE
@@ -140,11 +161,17 @@ export function FraudAlertDetail({ alert }: FraudAlertDetailProps) {
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <CardTitle className="text-base">Alert Details</CardTitle>
             <div className="flex items-center gap-2">
-              <Badge variant="outline" className={cn(FRAUD_RISK_CLASSES[alert.aggregate_risk_level])}>
-                {alert.aggregate_risk_level.toUpperCase()} RISK
+              <Badge
+                variant="outline"
+                className={cn(FRAUD_RISK_CLASSES[alert.aggregate_risk_level])}
+              >
+                {riskLabel(alert.aggregate_risk_level)} RISK
               </Badge>
-              <Badge variant="outline" className={cn(FRAUD_ALERT_STATUS_CLASSES[alert.status])}>
-                {STATUS_LABELS[alert.status]}
+              <Badge
+                variant="outline"
+                className={cn(FRAUD_ALERT_STATUS_CLASSES[alert.status])}
+              >
+                {statusLabel(alert.status)}
               </Badge>
             </div>
           </div>
@@ -153,19 +180,19 @@ export function FraudAlertDetail({ alert }: FraudAlertDetailProps) {
           <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
             <div>
               <span className="text-muted-foreground">User ID</span>
-              <p className="font-mono text-xs mt-0.5">{alert.user_id}</p>
+              <p className="font-mono text-xs mt-0.5">{alert.user_id || '—'}</p>
             </div>
             <div>
               <span className="text-muted-foreground">Created</span>
-              <p className="mt-0.5">{formatDate(alert.created_at)}</p>
+              <p className="mt-0.5">{formatDateSafe(alert.created_at)}</p>
             </div>
             <div>
               <span className="text-muted-foreground">Updated</span>
-              <p className="mt-0.5">{formatDate(alert.updated_at)}</p>
+              <p className="mt-0.5">{formatDateSafe(alert.updated_at)}</p>
             </div>
             <div>
               <span className="text-muted-foreground">Resolved</span>
-              <p className="mt-0.5">{alert.resolved_at ? formatDate(alert.resolved_at) : 'N/A'}</p>
+              <p className="mt-0.5">{formatDateSafe(alert.resolved_at)}</p>
             </div>
           </div>
           {alert.auto_resolved ? (
@@ -186,15 +213,15 @@ export function FraudAlertDetail({ alert }: FraudAlertDetailProps) {
       <Card>
         <CardHeader>
           <CardTitle className="text-base">
-            Signals ({String(alert.signals.length)})
+            Signals ({String(signals.length)})
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {alert.signals.length === 0 ? (
+          {signals.length === 0 ? (
             <p className="text-sm text-muted-foreground">No signals recorded for this alert.</p>
           ) : (
             <div className="space-y-3">
-              {alert.signals.map((signal) => (
+              {signals.map((signal) => (
                 <SignalRow key={signal.id} signal={signal} />
               ))}
             </div>
@@ -266,7 +293,7 @@ export function FraudAlertDetail({ alert }: FraudAlertDetailProps) {
             ) : null}
 
             {reviewMutation.isSuccess ? (
-              <p className="text-sm text-green-600">
+              <p className="text-sm text-trust-high">
                 Alert reviewed successfully.
               </p>
             ) : null}

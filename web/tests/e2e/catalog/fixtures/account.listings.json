@@ -1,0 +1,12 @@
+{
+  "method": "GET",
+  "path": "/api/v1/listings/mine",
+  "status": 200,
+  "contentType": "application/json",
+  "body": {
+    "items": [],
+    "total_count": 0,
+    "page": 1,
+    "page_size": 20
+  }
+}

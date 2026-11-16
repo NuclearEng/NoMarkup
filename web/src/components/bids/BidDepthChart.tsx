@@ -42,7 +42,7 @@ export function BidDepthChart({
   } | null>(null);
 
   const height = 180;
-  const padding = { top: 16, right: 16, bottom: 28, left: 16 };
+  const padding = useMemo(() => ({ top: 16, right: 16, bottom: 28, left: 16 }), []);
 
   // Responsive width
   useEffect(() => {
@@ -199,10 +199,7 @@ export function BidDepthChart({
       if (!closest) return;
 
       for (const d of cumulativeData) {
-        if (
-          closest === undefined ||
-          Math.abs(d.amount_cents - mousePrice) < Math.abs(closest.amount_cents - mousePrice)
-        ) {
+        if (Math.abs(d.amount_cents - mousePrice) < Math.abs(closest.amount_cents - mousePrice)) {
           closest = d;
         }
       }
@@ -271,9 +268,9 @@ export function BidDepthChart({
       >
         <defs>
           <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%" stopColor="#22c55e" stopOpacity="0.35" />
-            <stop offset="50%" stopColor="#22c55e" stopOpacity="0.15" />
-            <stop offset="100%" stopColor="#22c55e" stopOpacity="0.04" />
+            <stop offset="0%" stopColor="var(--brand-green)" stopOpacity="0.35" />
+            <stop offset="50%" stopColor="var(--brand-green)" stopOpacity="0.15" />
+            <stop offset="100%" stopColor="var(--brand-green)" stopOpacity="0.04" />
           </linearGradient>
           <clipPath id={maskId}>
             <rect
@@ -300,7 +297,7 @@ export function BidDepthChart({
           <path
             d={linePath}
             fill="none"
-            stroke="#22c55e"
+            stroke="var(--brand-green)"
             strokeWidth={2}
             opacity={mounted ? 1 : 0}
             style={{ transition: 'opacity 0.5s ease-out 0.3s' }}
@@ -310,7 +307,7 @@ export function BidDepthChart({
           <path
             d={linePath}
             fill="none"
-            stroke="#22c55e"
+            stroke="var(--brand-green)"
             strokeWidth={6}
             opacity={mounted ? 0.1 : 0}
             style={{ transition: 'opacity 0.5s ease-out 0.3s' }}
@@ -328,7 +325,7 @@ export function BidDepthChart({
               y1={padding.top}
               x2={lowestX}
               y2={padding.top + chartHeight}
-              stroke="#f59e0b"
+              stroke="hsl(var(--trust-medium))"
               strokeWidth={1.5}
               strokeDasharray="4 4"
               opacity={0.6}
@@ -337,7 +334,7 @@ export function BidDepthChart({
               x={lowestX}
               y={padding.top - 4}
               textAnchor="middle"
-              className="fill-amber-400 text-[9px] font-bold"
+              className="fill-trust-medium text-[9px] font-bold"
             >
               {formatPrice(currentLowest)}
             </text>
@@ -377,8 +374,8 @@ export function BidDepthChart({
               cx={hoverInfo.x}
               cy={hoverInfo.y}
               r={4}
-              fill="#22c55e"
-              stroke="#0a0a0a"
+              fill="var(--brand-green)"
+              stroke="var(--background)"
               strokeWidth={2}
             />
             {/* Tooltip background */}
@@ -388,8 +385,8 @@ export function BidDepthChart({
               width={96}
               height={24}
               rx={4}
-              fill="rgba(10, 10, 10, 0.9)"
-              stroke="rgba(34, 197, 94, 0.3)"
+              fill="color-mix(in srgb, var(--background) 90%, transparent)"
+              stroke="color-mix(in srgb, var(--brand-green) 30%, transparent)"
               strokeWidth={1}
             />
             <text
@@ -397,7 +394,7 @@ export function BidDepthChart({
               y={hoverInfo.y - 16}
               textAnchor="middle"
               className="text-[10px] font-medium"
-              fill="#22c55e"
+              fill="var(--brand-green)"
             >
               {formatPrice(hoverInfo.price)} ({String(hoverInfo.cumulativeCount)} bid{hoverInfo.cumulativeCount !== 1 ? 's' : ''})
             </text>
@@ -411,8 +408,8 @@ export function BidDepthChart({
             cx={scaleX(d.amount_cents)}
             cy={scaleY(d.cumulative)}
             r={3}
-            fill="#22c55e"
-            stroke="#0a0a0a"
+            fill="var(--brand-green)"
+            stroke="var(--background)"
             strokeWidth={1.5}
             opacity={mounted ? 0.8 : 0}
             style={{ transition: `opacity 0.3s ease-out ${String(0.5 + i * 0.05)}s` }}

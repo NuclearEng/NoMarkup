@@ -27,6 +27,24 @@ services:
       DEFAULT_POOL_SIZE: 100
       MAX_CLIENT_CONN: 500
       MAX_DB_CONNECTIONS: 150
+      # Every Go service sends statement_timeout, lock_timeout and
+      # idle_in_transaction_session_timeout in the connection startup packet
+      # (RES-02, */internal/observability/postgres.go). PgBouncer rejects any
+      # startup parameter it does not track ("FATAL: unsupported startup
+      # parameter: lock_timeout", SQLSTATE 08P01), so without this list no Go
+      # service can open a connection: user/job/payment/notification exit 1
+      # and the gateway /readyz stays 503. extra_float_digits is the image
+      # default and must be repeated because this variable replaces it.
+      IGNORE_STARTUP_PARAMETERS: "extra_float_digits,statement_timeout,lock_timeout,idle_in_transaction_session_timeout"
+      # "Ignored" means the three GUCs above never reach Postgres through the
+      # pooler, so bound pooled traffic here instead, with the same values the
+      # services ask for (seconds): query_timeout ~ statement_timeout (10s),
+      # idle_transaction_timeout ~ idle_in_transaction_session_timeout (30s).
+      # PgBouncer has no lock_timeout equivalent; a lock wait is cut by the
+      # 10s query timeout. Migrations and the seed connect to Postgres
+      # directly (:5433) and are deliberately not subject to these.
+      QUERY_TIMEOUT: 10
+      IDLE_TRANSACTION_TIMEOUT: 30
     ports:
       - "6432:5432"
     depends_on:
@@ -91,6 +109,9 @@ services:
     volumes:
       - ./deploy/monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./deploy/monitoring/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      # Satisfies authorization.credentials_file in prometheus.yml (k8s uses
+      # nomarkup-metrics-token). Dev-only value; never use in a real cluster.
+      - ./deploy/monitoring/prometheus/dev-metrics-bearer-token:/etc/prometheus/secrets/metrics-bearer-token:ro
       - prometheusdata:/prometheus
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
@@ -112,6 +133,7 @@ services:
     ports:
       - "9093:9093"
     volumes:
+      - ./deploy/monitoring/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
       - alertmanagerdata:/alertmanager
     command:
       - "--config.file=/etc/alertmanager/alertmanager.yml"
@@ -148,12 +170,20 @@ services:
       context: .
       dockerfile: deploy/docker/user.Dockerfile
     environment:
+      # REQUIRED. Every Go service validates ENVIRONMENT against
+      # development|staging|production and exits 1 when unset, so that a
+      # missing value can never silently grant dev-only bypasses (10x rate
+      # limits, feature-flag fail-open, unauthenticated /metrics, ephemeral
+      # PII keys). Local compose is a development environment.
+      ENVIRONMENT: "development"
       DATABASE_URL: "postgresql://nomarkup:password@pgbouncer:5432/nomarkup?sslmode=disable"
       REDIS_URL: "redis://redis:6379"
       USER_SERVICE_PORT: "50051"
       JWT_PRIVATE_KEY_PATH: "/keys/private.pem"
       SESSION_SECRET: "${SESSION_SECRET:-}"
       NOTIFICATION_SERVICE_ADDR: "notification:50059"
+      PAYMENT_SERVICE_ADDR: "payment:50054"
+      IMAGING_SERVICE_ADDR: "imaging:50058"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
       OTEL_SERVICE_NAME: "user-service"
     volumes:
@@ -165,17 +195,33 @@ services:
         condition: service_healthy
       notification:
         condition: service_started
+      payment:
+        condition: service_started
+      imaging:
+        condition: service_started
 
   job:
     build:
       context: .
       dockerfile: deploy/docker/job.Dockerfile
     environment:
+      # REQUIRED. Every Go service validates ENVIRONMENT against
+      # development|staging|production and exits 1 when unset, so that a
+      # missing value can never silently grant dev-only bypasses (10x rate
+      # limits, feature-flag fail-open, unauthenticated /metrics, ephemeral
+      # PII keys). Local compose is a development environment.
+      ENVIRONMENT: "development"
       DATABASE_URL: "postgresql://nomarkup:password@pgbouncer:5432/nomarkup?sslmode=disable"
       REDIS_URL: "redis://redis:6379"
       JOB_SERVICE_PORT: "50052"
+      # Fair-Price engine (feature is off when unset — wire it in-network).
+      PRICING_ENGINE_ADDR: "pricing:50061"
+      # 7-day contract auto-approve releases services escrow as System.
+      PAYMENT_SERVICE_ADDR: "payment:50054"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
       OTEL_SERVICE_NAME: "job-service"
+      # MEILISEARCH_URL is canonical; MEILISEARCH_HOST kept for older tooling.
+      MEILISEARCH_URL: "http://meilisearch:7700"
       MEILISEARCH_HOST: "http://meilisearch:7700"
       MEILISEARCH_API_KEY: "masterKey"
     depends_on:
@@ -194,10 +240,25 @@ services:
       DATABASE_URL: "postgresql://nomarkup:password@pgbouncer:5432/nomarkup?sslmode=disable"
       REDIS_URL: "redis://redis:6379"
       PAYMENT_SERVICE_PORT: "50054"
+      # Required at startup (fail-fast): development|staging|production.
+      ENVIRONMENT: "development"
+      # In-network engine addresses — the binary defaults are localhost, which
+      # is wrong inside a container (underwriting would fail closed: no offers).
+      TRUST_ENGINE_ADDR: "trust:50057"
+      UNDERWRITING_ENGINE_ADDR: "underwriting:50060"
+      # Marketplace notifications (escrow released, dispute filed/resolved,
+      # payment captured / declined / authentication required). The binary
+      # default is localhost, which is wrong inside a container: every
+      # notification would be dropped silently.
+      NOTIFICATION_SERVICE_ADDR: "notification:50059"
+      # FR-18.8: pause recurring config on payment_intent.payment_failed for
+      # payments with recurring_instance_id (job ContractService).
+      JOB_SERVICE_ADDR: "job:50052"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
       OTEL_SERVICE_NAME: "payment-service"
       STRIPE_SECRET_KEY: "${STRIPE_SECRET_KEY:-}"
       STRIPE_WEBHOOK_SECRET: "${STRIPE_WEBHOOK_SECRET:-}"
+      PLATFORM_EIN: "${PLATFORM_EIN:-}"
     depends_on:
       pgbouncer:
         condition: service_healthy
@@ -209,6 +270,12 @@ services:
       context: .
       dockerfile: deploy/docker/chat.Dockerfile
     environment:
+      # REQUIRED. Every Go service validates ENVIRONMENT against
+      # development|staging|production and exits 1 when unset, so that a
+      # missing value can never silently grant dev-only bypasses (10x rate
+      # limits, feature-flag fail-open, unauthenticated /metrics, ephemeral
+      # PII keys). Local compose is a development environment.
+      ENVIRONMENT: "development"
       DATABASE_URL: "postgresql://nomarkup:password@pgbouncer:5432/nomarkup?sslmode=disable"
       REDIS_URL: "redis://redis:6379"
       CHAT_SERVICE_PORT: "50055"
@@ -226,6 +293,12 @@ services:
       context: .
       dockerfile: deploy/docker/notification.Dockerfile
     environment:
+      # REQUIRED. Every Go service validates ENVIRONMENT against
+      # development|staging|production and exits 1 when unset, so that a
+      # missing value can never silently grant dev-only bypasses (10x rate
+      # limits, feature-flag fail-open, unauthenticated /metrics, ephemeral
+      # PII keys). Local compose is a development environment.
+      ENVIRONMENT: "development"
       DATABASE_URL: "postgresql://nomarkup:password@pgbouncer:5432/nomarkup?sslmode=disable"
       REDIS_URL: "redis://redis:6379"
       NOTIFICATION_SERVICE_PORT: "50059"
@@ -245,6 +318,11 @@ services:
       dockerfile: deploy/docker/engines.Dockerfile
       target: bidding
     environment:
+      # REQUIRED. The Rust engines validate ENVIRONMENT against
+      # development|staging|production and exit 1 when it is unset, so a
+      # production pod can never boot on the dev DATABASE_URL / S3_ENDPOINT
+      # defaults. Local compose is a development environment.
+      ENVIRONMENT: "development"
       DATABASE_URL: "postgresql://nomarkup:password@pgbouncer:5432/nomarkup?sslmode=disable"
       BID_ENGINE_PORT: "50053"
       RUST_LOG: "info"
@@ -260,6 +338,11 @@ services:
       dockerfile: deploy/docker/engines.Dockerfile
       target: fraud
     environment:
+      # REQUIRED. The Rust engines validate ENVIRONMENT against
+      # development|staging|production and exit 1 when it is unset, so a
+      # production pod can never boot on the dev DATABASE_URL / S3_ENDPOINT
+      # defaults. Local compose is a development environment.
+      ENVIRONMENT: "development"
       DATABASE_URL: "postgresql://nomarkup:password@pgbouncer:5432/nomarkup?sslmode=disable"
       FRAUD_ENGINE_PORT: "50056"
       RUST_LOG: "info"
@@ -275,6 +358,11 @@ services:
       dockerfile: deploy/docker/engines.Dockerfile
       target: trust
     environment:
+      # REQUIRED. The Rust engines validate ENVIRONMENT against
+      # development|staging|production and exit 1 when it is unset, so a
+      # production pod can never boot on the dev DATABASE_URL / S3_ENDPOINT
+      # defaults. Local compose is a development environment.
+      ENVIRONMENT: "development"
       DATABASE_URL: "postgresql://nomarkup:password@pgbouncer:5432/nomarkup?sslmode=disable"
       TRUST_ENGINE_PORT: "50057"
       RUST_LOG: "info"
@@ -290,6 +378,11 @@ services:
       dockerfile: deploy/docker/engines.Dockerfile
       target: imaging
     environment:
+      # REQUIRED. The Rust engines validate ENVIRONMENT against
+      # development|staging|production and exit 1 when it is unset, so a
+      # production pod can never boot on the dev DATABASE_URL / S3_ENDPOINT
+      # defaults. Local compose is a development environment.
+      ENVIRONMENT: "development"
       IMAGING_SERVICE_PORT: "50058"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
       OTEL_SERVICE_NAME: "imaging-service"
@@ -304,6 +397,40 @@ services:
       minio:
         condition: service_healthy
 
+  # Pure-function engines (no DB/IO — deterministic gRPC):
+
+  underwriting:
+    build:
+      context: .
+      dockerfile: deploy/docker/engines.Dockerfile
+      target: underwriting
+    environment:
+      # REQUIRED. The Rust engines validate ENVIRONMENT against
+      # development|staging|production and exit 1 when it is unset, so a
+      # production pod can never boot on the dev DATABASE_URL / S3_ENDPOINT
+      # defaults. Local compose is a development environment.
+      ENVIRONMENT: "development"
+      UNDERWRITING_ENGINE_PORT: "50060"
+      RUST_LOG: "info"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
+      OTEL_SERVICE_NAME: "underwriting-engine"
+
+  pricing:
+    build:
+      context: .
+      dockerfile: deploy/docker/engines.Dockerfile
+      target: pricing
+    environment:
+      # REQUIRED. The Rust engines validate ENVIRONMENT against
+      # development|staging|production and exit 1 when it is unset, so a
+      # production pod can never boot on the dev DATABASE_URL / S3_ENDPOINT
+      # defaults. Local compose is a development environment.
+      ENVIRONMENT: "development"
+      PRICING_ENGINE_PORT: "50061"
+      RUST_LOG: "info"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
+      OTEL_SERVICE_NAME: "pricing-engine"
+
   # ── API Gateway ────────────────────────────────────────────
 
   gateway:
@@ -313,6 +440,12 @@ services:
     ports:
       - "8080:8080"
     environment:
+      # REQUIRED. Every Go service validates ENVIRONMENT against
+      # development|staging|production and exits 1 when unset, so that a
+      # missing value can never silently grant dev-only bypasses (10x rate
+      # limits, feature-flag fail-open, unauthenticated /metrics, ephemeral
+      # PII keys). Local compose is a development environment.
+      ENVIRONMENT: "development"
       DATABASE_URL: "postgresql://nomarkup:password@pgbouncer:5432/nomarkup?sslmode=disable"
       GATEWAY_PORT: "8080"
       JWT_PUBLIC_KEY_PATH: "/keys/public.pem"

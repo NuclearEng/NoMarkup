@@ -3,7 +3,7 @@
 import Image from 'next/image';
 import { useCallback, useState } from 'react';
 
-import { cn } from '@/lib/utils';
+import { canNextImageLoad, cn } from '@/lib/utils';
 
 interface ProgressiveImageProps {
   src: string;
@@ -13,6 +13,14 @@ interface ProgressiveImageProps {
   height?: number;
   className?: string;
   priority?: boolean;
+  /**
+   * Responsive `sizes` hint for fill mode. Defaults to `100vw` (the safe
+   * upper bound), but card/thumbnail slots MUST pass their real rendered
+   * width — otherwise the browser downloads a viewport-width image for a
+   * 64px thumbnail (LCP budget, CLAUDE.md §8/§14). Ignored in fixed
+   * width/height mode, where next/image derives the size itself.
+   */
+  sizes?: string;
 }
 
 /**
@@ -79,6 +87,7 @@ export function ProgressiveImage({
   height,
   className,
   priority = false,
+  sizes = '100vw',
 }: ProgressiveImageProps) {
   const [isLoaded, setIsLoaded] = useState(false);
 
@@ -91,6 +100,14 @@ export function ProgressiveImage({
   // When both width and height are provided, use fixed-size rendering.
   // Otherwise, use fill mode for responsive containers.
   const useFill = width === undefined || height === undefined;
+
+  // next/image THROWS during render for a remote host that isn't in
+  // next.config.ts's remotePatterns allowlist, which crashes the whole tree
+  // up to the root error boundary. For an unconfigured/seed host, render
+  // unoptimized (next/image's documented escape hatch — still <Image>, not a
+  // raw <img>, so §13 holds) so the page degrades gracefully instead of
+  // crashing (CLAUDE.md §15: fail soft).
+  const unoptimized = !canNextImageLoad(src);
 
   return (
     <div
@@ -106,12 +123,13 @@ export function ProgressiveImage({
           alt={alt}
           fill
           priority={priority}
+          unoptimized={unoptimized}
           className={cn(
             'object-cover transition-opacity duration-200',
             isLoaded ? 'opacity-100' : 'opacity-0',
           )}
           onLoad={handleLoad}
-          sizes="100vw"
+          sizes={sizes}
         />
       ) : (
         <Image
@@ -120,6 +138,7 @@ export function ProgressiveImage({
           width={width}
           height={height}
           priority={priority}
+          unoptimized={unoptimized}
           className={cn(
             'transition-opacity duration-200',
             isLoaded ? 'opacity-100' : 'opacity-0',

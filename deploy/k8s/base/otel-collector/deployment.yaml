@@ -1,0 +1,103 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: otel-collector
+  labels:
+    app.kubernetes.io/name: otel-collector
+    app.kubernetes.io/component: observability
+    app.kubernetes.io/part-of: nomarkup
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: otel-collector
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: otel-collector
+        app.kubernetes.io/component: observability
+        app.kubernetes.io/part-of: nomarkup
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: otel-collector
+          image: otel/opentelemetry-collector-contrib:0.122.1
+          imagePullPolicy: IfNotPresent
+          args:
+            - "--config=/etc/otelcol/config.yaml"
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          env:
+            # Expanded into config.yaml exporters.otlphttp/backend.endpoint.
+            # Override via the otel-collector-backend ConfigMap (staging/prod).
+            - name: OTEL_BACKEND_OTLP_HTTP_ENDPOINT
+              valueFrom:
+                configMapKeyRef:
+                  name: otel-collector-backend
+                  key: OTEL_BACKEND_OTLP_HTTP_ENDPOINT
+            - name: OTEL_BACKEND_OTLP_TLS_INSECURE
+              valueFrom:
+                configMapKeyRef:
+                  name: otel-collector-backend
+                  key: OTEL_BACKEND_OTLP_TLS_INSECURE
+            # Optional: set on the pod (Secret) for vendor auth, e.g.
+            #   Authorization: Basic <base64>   or   Bearer <token>
+            # Not referenced in the base pipeline config (no empty header).
+            # See docs/operations/otel-collector.md for the headers patch.
+            - name: OTEL_BACKEND_OTLP_AUTH_HEADER
+              valueFrom:
+                secretKeyRef:
+                  name: otel-collector-backend-auth
+                  key: Authorization
+                  optional: true
+          ports:
+            - name: otlp-grpc
+              containerPort: 4317
+              protocol: TCP
+            - name: otlp-http
+              containerPort: 4318
+              protocol: TCP
+            - name: health
+              containerPort: 13133
+              protocol: TCP
+          volumeMounts:
+            - name: config
+              mountPath: /etc/otelcol
+              readOnly: true
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 13133
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 13133
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+      volumes:
+        - name: config
+          configMap:
+            name: otel-collector-config

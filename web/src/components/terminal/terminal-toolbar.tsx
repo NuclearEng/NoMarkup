@@ -27,7 +27,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useTerminalLayoutStore } from '@/stores/terminal-layout-store';
-import { WIDGET_CATEGORIES, CATEGORY_LABELS, type WidgetDefinition } from './widget-registry';
+import { WIDGET_CATEGORIES, CATEGORY_LABELS } from './widget-registry';
 
 // ── Types ──
 
@@ -105,7 +105,7 @@ export function TerminalToolbar({ className }: TerminalToolbarProps) {
   return (
     <div
       className={cn(
-        'flex h-10 items-center gap-1.5 rounded-2xl border border-[var(--brand-gold)]/10 bg-[#0c0f18] px-3',
+        'flex h-10 items-center gap-1.5 rounded-2xl border border-[var(--brand-gold)]/10 bg-card px-3',
         className,
       )}
     >
@@ -123,7 +123,7 @@ export function TerminalToolbar({ className }: TerminalToolbarProps) {
           {layouts.map((layout) => (
             <DropdownMenuItem
               key={layout.id}
-              onClick={() => setActiveLayout(layout.id)}
+              onClick={() => { setActiveLayout(layout.id); }}
               className="gap-2"
             >
               {layout.id === activeLayoutId ? (
@@ -156,14 +156,14 @@ export function TerminalToolbar({ className }: TerminalToolbarProps) {
         <input
           ref={renameInputRef}
           value={renameValue}
-          onChange={(e) => setRenameValue(e.target.value)}
+          onChange={(e) => { setRenameValue(e.target.value); }}
           onBlur={handleFinishRename}
           onKeyDown={(e) => {
             if (e.key === 'Enter') handleFinishRename();
             if (e.key === 'Escape') setIsRenaming(false);
           }}
           className="bg-muted focus:ring-ring h-7 rounded-md border px-2 text-xs font-medium focus:ring-1 focus:outline-none"
-          style={{ width: `${Math.max(80, renameValue.length * 8)}px` }}
+          style={{ width: `${String(Math.max(80, renameValue.length * 8))}px` }}
           aria-label="Layout name"
         />
       ) : (
@@ -206,12 +206,12 @@ export function TerminalToolbar({ className }: TerminalToolbarProps) {
         </Tooltip>
         <PopoverContent align="start" className="w-72 border-white/[0.08] bg-zinc-900 p-0 text-zinc-200 shadow-xl">
           <div className="max-h-80 overflow-y-auto">
-            {(Object.entries(WIDGET_CATEGORIES) as Array<[string, WidgetDefinition[]]>).map(
+            {(Object.entries(WIDGET_CATEGORIES)).map(
               ([category, widgets]) => (
                 <div key={category}>
                   <div className="bg-zinc-800/50 px-3 py-1.5">
                     <p className="text-[10px] font-semibold tracking-wider uppercase text-zinc-500">
-                      {CATEGORY_LABELS[category as keyof typeof CATEGORY_LABELS] ?? category}
+                      {CATEGORY_LABELS[category as keyof typeof CATEGORY_LABELS]}
                     </p>
                   </div>
                   {widgets.map((w) => {
@@ -325,7 +325,7 @@ export function TerminalToolbar({ className }: TerminalToolbarProps) {
                 variant="ghost"
                 size="sm"
                 className="h-7 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
-                onClick={() => setResetConfirmOpen(false)}
+                onClick={() => { setResetConfirmOpen(false); }}
               >
                 Cancel
               </Button>
@@ -364,7 +364,7 @@ export function TerminalToolbar({ className }: TerminalToolbarProps) {
                   variant="ghost"
                   size="sm"
                   className="h-7 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
-                  onClick={() => setDeleteConfirmOpen(false)}
+                  onClick={() => { setDeleteConfirmOpen(false); }}
                 >
                   Cancel
                 </Button>

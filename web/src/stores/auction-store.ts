@@ -175,7 +175,16 @@ export const useAuctionStore = create<AuctionState & AuctionActions>((set, get) 
       flashTimers: {},
     });
 
-    auctionWsManager.connect(jobId, token, () => useAuthStore.getState().accessToken);
+    auctionWsManager.connect(
+      jobId,
+      token,
+      () => useAuthStore.getState().accessToken,
+      // Refresh via the auth store so the refreshed token lands in
+      // useAuthStore.accessToken (what the tokenGetter above reads), not just
+      // the in-memory api token. Lets an idle auction socket reconnect with a
+      // fresh token instead of looping on an expired one (BUG 2).
+      () => useAuthStore.getState().refreshToken(),
+    );
   },
 
   clearActiveJob: () => {

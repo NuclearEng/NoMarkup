@@ -22,6 +22,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { GoldAccentCard } from '@/components/ui/gold-accent-card';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { MonoPrice } from '@/components/ui/mono-price';
 import { WinBadge } from '@/components/ui/win-badge';
 import { useAwardBid } from '@/hooks/useBids';
 import { cn, formatCents, formatRelativeTime } from '@/lib/utils';
@@ -40,49 +41,49 @@ interface BidCardProps {
 
 /** Trust-tier ring colors for the avatar border */
 const TRUST_RING_COLORS: Record<TrustTier, string> = {
-  [TRUST_TIER.TOP_RATED]: 'ring-amber-400 dark:ring-amber-500',
-  [TRUST_TIER.TRUSTED]: 'ring-violet-400 dark:ring-violet-500',
-  [TRUST_TIER.RISING]: 'ring-emerald-400 dark:ring-emerald-500',
-  [TRUST_TIER.NEW]: 'ring-sky-400 dark:ring-sky-500',
-  [TRUST_TIER.UNDER_REVIEW]: 'ring-gray-300 dark:ring-gray-600',
+  [TRUST_TIER.TOP_RATED]: 'ring-brand-gold',
+  [TRUST_TIER.TRUSTED]: 'ring-trust-elite',
+  [TRUST_TIER.RISING]: 'ring-trust-high',
+  [TRUST_TIER.NEW]: 'ring-bid-active',
+  [TRUST_TIER.UNDER_REVIEW]: 'ring-muted-foreground/40',
 };
 
 /** SVG stroke colors matching the trust tier for the score gauge */
 const TRUST_GAUGE_STROKE: Record<TrustTier, string> = {
-  [TRUST_TIER.TOP_RATED]: 'stroke-amber-500',
-  [TRUST_TIER.TRUSTED]: 'stroke-violet-500',
-  [TRUST_TIER.RISING]: 'stroke-emerald-500',
-  [TRUST_TIER.NEW]: 'stroke-sky-500',
-  [TRUST_TIER.UNDER_REVIEW]: 'stroke-gray-400',
+  [TRUST_TIER.TOP_RATED]: 'stroke-brand-gold',
+  [TRUST_TIER.TRUSTED]: 'stroke-trust-elite',
+  [TRUST_TIER.RISING]: 'stroke-trust-high',
+  [TRUST_TIER.NEW]: 'stroke-bid-active',
+  [TRUST_TIER.UNDER_REVIEW]: 'stroke-muted-foreground',
 };
 
 /** Text colors for the numeric trust score */
 const TRUST_SCORE_TEXT: Record<TrustTier, string> = {
-  [TRUST_TIER.TOP_RATED]: 'text-amber-600 dark:text-amber-400',
-  [TRUST_TIER.TRUSTED]: 'text-violet-600 dark:text-violet-400',
-  [TRUST_TIER.RISING]: 'text-emerald-600 dark:text-emerald-400',
-  [TRUST_TIER.NEW]: 'text-sky-600 dark:text-sky-400',
-  [TRUST_TIER.UNDER_REVIEW]: 'text-gray-500 dark:text-gray-400',
+  [TRUST_TIER.TOP_RATED]: 'text-brand-gold',
+  [TRUST_TIER.TRUSTED]: 'text-trust-elite',
+  [TRUST_TIER.RISING]: 'text-trust-high',
+  [TRUST_TIER.NEW]: 'text-bid-active',
+  [TRUST_TIER.UNDER_REVIEW]: 'text-muted-foreground',
 };
 
 /** Rank badge colors */
 const RANK_STYLES: Record<number, { bg: string; text: string; border: string; label: string }> = {
   1: {
-    bg: 'bg-amber-500/15',
-    text: 'text-amber-600 dark:text-amber-400',
-    border: 'border-amber-500/30',
+    bg: 'bg-brand-gold/15',
+    text: 'text-brand-gold',
+    border: 'border-brand-gold/30',
     label: 'Lowest bid',
   },
   2: {
-    bg: 'bg-slate-300/20 dark:bg-slate-400/15',
-    text: 'text-slate-600 dark:text-slate-300',
-    border: 'border-slate-400/30',
+    bg: 'bg-muted',
+    text: 'text-muted-foreground',
+    border: 'border-border',
     label: '2nd lowest',
   },
   3: {
-    bg: 'bg-orange-600/10',
-    text: 'text-orange-700 dark:text-orange-400',
-    border: 'border-orange-500/20',
+    bg: 'bg-trust-medium/10',
+    text: 'text-trust-medium',
+    border: 'border-trust-medium/20',
     label: '3rd lowest',
   },
 };
@@ -104,16 +105,16 @@ function getCompetitivePosition(
   label: string;
   color: string;
 } {
-  if (rank === 1) return { label: 'Lowest bid', color: 'text-emerald-600 dark:text-emerald-400' };
-  if (rank === 2) return { label: '2nd lowest', color: 'text-amber-600 dark:text-amber-400' };
+  if (rank === 1) return { label: 'Lowest bid', color: 'text-bid-winning' };
+  if (rank === 2) return { label: '2nd lowest', color: 'text-trust-medium' };
   // Above median
   const medianPosition = Math.ceil(totalBids / 2);
   if (rank > medianPosition) {
-    return { label: 'Above median', color: 'text-red-500 dark:text-red-400' };
+    return { label: 'Above median', color: 'text-destructive' };
   }
   return {
     label: `${String(rank)}${getOrdinalSuffix(rank)} lowest`,
-    color: 'text-amber-600 dark:text-amber-400',
+    color: 'text-trust-medium',
   };
 }
 
@@ -123,20 +124,25 @@ function getOrdinalSuffix(n: number): string {
   return s[(v - 20) % 10] || s[v] || s[0] || 'th';
 }
 
-function getWinProbability(
+/**
+ * Illustrative rank-based strength heuristic for reverse auctions.
+ * NOT a trained model or calibrated win probability — purely rank bands
+ * for UI orientation (FE-12).
+ */
+function getRankEstimate(
   rank: number,
   totalBids: number,
 ): {
   label: string;
-  percent: number;
+  strength: number;
   color: string;
 } {
-  if (totalBids === 0) return { label: 'N/A', percent: 0, color: 'text-muted-foreground' };
-  if (rank === 1) return { label: 'High chance', percent: 85, color: 'text-emerald-500' };
-  if (rank === 2) return { label: 'Competitive', percent: 55, color: 'text-amber-500' };
+  if (totalBids === 0) return { label: 'N/A', strength: 0, color: 'text-muted-foreground' };
+  if (rank === 1) return { label: 'Leading', strength: 85, color: 'text-bid-winning' };
+  if (rank === 2) return { label: 'Close', strength: 55, color: 'text-trust-medium' };
   if (rank <= Math.ceil(totalBids / 3))
-    return { label: 'Competitive', percent: 35, color: 'text-amber-500' };
-  return { label: 'Needs lower bid', percent: 15, color: 'text-red-500' };
+    return { label: 'Mid pack', strength: 35, color: 'text-trust-medium' };
+  return { label: 'Needs lower bid', strength: 15, color: 'text-destructive' };
 }
 
 /** Renders a small SVG circular gauge for the trust score with glow effect */
@@ -148,13 +154,13 @@ function TrustScoreGauge({ score, tier }: { score: number; tier: TrustTier }) {
   const strokeColor = TRUST_GAUGE_STROKE[tier];
   const textColor = TRUST_SCORE_TEXT[tier];
 
-  // Glow color for the gauge arc
+  // Glow color for the gauge arc (semantic token channels)
   const TRUST_GLOW_MAP: Record<TrustTier, string> = {
-    [TRUST_TIER.TOP_RATED]: 'rgba(245,158,11,0.4)',
-    [TRUST_TIER.TRUSTED]: 'rgba(139,92,246,0.4)',
-    [TRUST_TIER.RISING]: 'rgba(16,185,129,0.4)',
-    [TRUST_TIER.NEW]: 'rgba(56,189,248,0.3)',
-    [TRUST_TIER.UNDER_REVIEW]: 'rgba(156,163,175,0.2)',
+    [TRUST_TIER.TOP_RATED]: 'var(--brand-gold-glow)',
+    [TRUST_TIER.TRUSTED]: 'hsl(var(--trust-elite) / 0.4)',
+    [TRUST_TIER.RISING]: 'hsl(var(--trust-high) / 0.4)',
+    [TRUST_TIER.NEW]: 'hsl(var(--bid-active) / 0.3)',
+    [TRUST_TIER.UNDER_REVIEW]: 'color-mix(in oklch, var(--muted-foreground) 20%, transparent)',
   };
   const glowColor = TRUST_GLOW_MAP[tier];
 
@@ -165,6 +171,7 @@ function TrustScoreGauge({ score, tier }: { score: number; tier: TrustTier }) {
           className="relative flex-shrink-0 cursor-default"
           aria-label={`Trust score: ${String(scorePercent)} out of 100`}
           role="img"
+          // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- focusable for tooltip accessibility
           tabIndex={0}
         >
           <svg width="48" height="48" viewBox="0 0 48 48" className="-rotate-90" aria-hidden="true">
@@ -218,21 +225,21 @@ function StarRating({ rating, max = 5 }: { rating: number; max?: number }) {
     if (rating >= i) {
       // Full star
       stars.push(
-        <Star key={i} className="h-3.5 w-3.5 fill-yellow-400 text-yellow-400" aria-hidden="true" />,
+        <Star key={i} className="h-3.5 w-3.5 fill-brand-gold text-brand-gold" aria-hidden="true" />,
       );
     } else if (rating >= i - 0.5) {
       // Half star — render a full star with a clip mask
       stars.push(
         <span key={i} className="relative inline-flex h-3.5 w-3.5" aria-hidden="true">
-          <Star className="absolute h-3.5 w-3.5 text-yellow-400/30" />
+          <Star className="absolute h-3.5 w-3.5 text-brand-gold/30" />
           <span className="absolute inset-0 overflow-hidden" style={{ width: '50%' }}>
-            <Star className="h-3.5 w-3.5 fill-yellow-400 text-yellow-400" />
+            <Star className="h-3.5 w-3.5 fill-brand-gold text-brand-gold" />
           </span>
         </span>,
       );
     } else {
       // Empty star
-      stars.push(<Star key={i} className="h-3.5 w-3.5 text-yellow-400/30" aria-hidden="true" />);
+      stars.push(<Star key={i} className="h-3.5 w-3.5 text-brand-gold/30" aria-hidden="true" />);
     }
   }
   return (
@@ -246,42 +253,58 @@ function StarRating({ rating, max = 5 }: { rating: number; max?: number }) {
   );
 }
 
-/** Win probability bar indicator with gradient fill */
-function WinProbabilityBar({ rank, totalBids }: { rank: number; totalBids: number }) {
-  const { label, percent, color } = getWinProbability(rank, totalBids);
+/** Rank-estimate bar — illustrative strength from price rank, not a model. */
+function RankEstimateBar({ rank, totalBids }: { rank: number; totalBids: number }) {
+  const { label, strength, color } = getRankEstimate(rank, totalBids);
 
   const barGradient = cn(
-    percent >= 70 && 'bg-gradient-to-r from-emerald-600 to-emerald-400',
-    percent >= 30 && percent < 70 && 'bg-gradient-to-r from-amber-600 to-amber-400',
-    percent < 30 && 'bg-gradient-to-r from-red-600 to-red-400',
+    strength >= 70 && 'bg-gradient-to-r from-bid-winning to-bid-winning',
+    strength >= 30 && strength < 70 && 'bg-gradient-to-r from-trust-medium to-trust-medium',
+    strength < 30 && 'bg-gradient-to-r from-destructive to-destructive',
   );
 
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <div className="cursor-default space-y-1" tabIndex={0} role="img" aria-label={`Win probability: ${label}, ${String(percent)}%`}>
+        {/*
+          A real button rather than a div with role="img" and tabIndex={0}.
+          The element exists specifically to be focusable so keyboard users can
+          open the tooltip, which makes it interactive by definition — putting
+          tabIndex on a non-interactive role is what jsx-a11y flags, and the
+          previous eslint-disable sat on the wrong line so it suppressed
+          nothing. A button carries the right role and focus behaviour for
+          free; aria-label supplies the accessible name.
+        */}
+        <button
+          type="button"
+          className="cursor-default space-y-1 text-left"
+          aria-label={`Rank estimate: ${label}, illustrative strength ${String(strength)} of 100`}
+        >
           <div className="flex items-center justify-between">
             <span className={cn('text-xs font-bold', color)}>{label}</span>
             <span className={cn('text-[10px] font-semibold tabular-nums', color)}>
-              {String(percent)}%
+              #{String(rank)}
             </span>
           </div>
           <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/[0.06]">
             <div
               className={cn('h-full rounded-full transition-all duration-500', barGradient)}
-              style={{ width: `${String(percent)}%` }}
+              style={{ width: `${String(strength)}%` }}
               role="progressbar"
-              aria-valuenow={percent}
+              aria-valuenow={strength}
               aria-valuemin={0}
               aria-valuemax={100}
               aria-hidden="true"
             />
           </div>
-        </div>
+        </button>
       </TooltipTrigger>
       <TooltipContent>
-        <p className="font-semibold">Win Probability</p>
-        <p className="mt-0.5 text-zinc-400">Estimated likelihood based on price rank vs. competition. Rank-1 bids historically win ~85% of auctions.</p>
+        <p className="font-semibold">Rank estimate</p>
+        <p className="mt-0.5 text-zinc-400">
+          Illustrative strength from current price rank vs. other bids — not a
+          predictive model or win probability.
+        </p>
       </TooltipContent>
     </Tooltip>
   );
@@ -332,7 +355,6 @@ export const BidCard = memo(function BidCard({
 
   // Time advantage
   const bidAge = formatRelativeTime(new Date(bid.created_at));
-  const isFirstBid = hasRank && displayTotalBids > 0 && bid.created_at !== undefined;
 
   function handleAward() {
     setShowAwardConfirm(true);
@@ -351,7 +373,7 @@ export const BidCard = memo(function BidCard({
 
   const baseCardClass = cn(
     'relative',
-    isGoldRank && !isAwarded && 'border-amber-400/50 dark:border-amber-500/40',
+    isGoldRank && !isAwarded && 'border-brand-gold/50',
   );
 
   const Wrapper = isAwarded
@@ -415,12 +437,10 @@ export const BidCard = memo(function BidCard({
         {/* ── 2. Bid amount (prominent) + competitive position ── */}
         <div className="space-y-2">
           <div className="flex items-baseline justify-between">
-            <p
-              className="text-2xl font-bold text-emerald-400"
-              style={{ textShadow: '0 0 16px rgba(16,185,129,0.3), 0 0 32px rgba(16,185,129,0.1)' }}
-            >
-              {formatCents(bid.amount_cents)}
-            </p>
+            <MonoPrice
+              cents={bid.amount_cents}
+              className="text-2xl font-bold text-bid-winning [text-shadow:0_0_16px_hsl(var(--bid-winning)/0.3),0_0_32px_hsl(var(--bid-winning)/0.1)]"
+            />
             <div className="text-muted-foreground flex items-center gap-1.5 text-xs">
               <Clock className="h-3 w-3" aria-hidden="true" />
               <span>{bidAge}</span>
@@ -437,7 +457,8 @@ export const BidCard = memo(function BidCard({
               <Tooltip>
                 <TooltipTrigger asChild>
                   <span
-                    className="inline-flex cursor-default items-center gap-0.5 rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400"
+                    className="inline-flex cursor-default items-center gap-0.5 rounded-full bg-bid-winning/10 px-2 py-0.5 text-xs font-medium text-bid-winning"
+                    // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- focusable for tooltip accessibility
                     tabIndex={0}
                   >
                     <TrendingDown className="h-3 w-3" aria-hidden="true" />
@@ -456,7 +477,8 @@ export const BidCard = memo(function BidCard({
               <Tooltip>
                 <TooltipTrigger asChild>
                   <span
-                    className="inline-flex cursor-default items-center gap-0.5 rounded-full bg-blue-500/10 px-2 py-0.5 text-xs font-medium text-blue-600 dark:text-blue-400"
+                    className="inline-flex cursor-default items-center gap-0.5 rounded-full bg-bid-active/10 px-2 py-0.5 text-xs font-medium text-bid-active"
+                    // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- focusable for tooltip accessibility
                     tabIndex={0}
                   >
                     {String(priceDiffVsMedian)}% below market
@@ -471,10 +493,10 @@ export const BidCard = memo(function BidCard({
           </div>
         </div>
 
-        {/* ── 2.5. Win probability (desktop only, hidden on mobile) ── */}
+        {/* ── 2.5. Rank estimate (desktop only; illustrative, not a model) ── */}
         {hasRank && displayTotalBids > 1 ? (
           <div className="hidden sm:block">
-            <WinProbabilityBar rank={rank} totalBids={displayTotalBids} />
+            <RankEstimateBar rank={rank} totalBids={displayTotalBids} />
           </div>
         ) : null}
 
@@ -499,7 +521,7 @@ export const BidCard = memo(function BidCard({
                     />
                   ) : null}
                   {trust_score ? (
-                    <span className="inline-flex items-center gap-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                    <span className="inline-flex items-center gap-0.5 text-xs font-medium text-bid-winning">
                       <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
                       Verified
                     </span>
@@ -523,10 +545,16 @@ export const BidCard = memo(function BidCard({
                   </span>
                   {review_summary ? (
                     <>
-                      <span aria-hidden="true" className="text-border">
-                        |
-                      </span>
-                      <span>{String(Math.round(review_summary.on_time_rate * 100))}% on-time</span>
+                      {review_summary.on_time_rate !== null ? (
+                        <>
+                          <span aria-hidden="true" className="text-border">
+                            |
+                          </span>
+                          <span>
+                            {String(Math.round(review_summary.on_time_rate * 100))}% on-time
+                          </span>
+                        </>
+                      ) : null}
                       <span aria-hidden="true" className="text-border">
                         |
                       </span>
@@ -589,7 +617,9 @@ export const BidCard = memo(function BidCard({
               <div className="mt-2 space-y-2 border-l-2 pl-4">
                 {bid.bid_history.map((update, index) => (
                   <div key={update.updated_at} className="text-sm">
-                    <span className="font-medium">{formatCents(update.amount_cents)}</span>
+                    <span className="font-mono font-medium tabular-nums tracking-tight">
+                      {formatCents(update.amount_cents)}
+                    </span>
                     <span className="text-muted-foreground ml-2">
                       {formatRelativeTime(new Date(update.updated_at))}
                     </span>
@@ -609,7 +639,9 @@ export const BidCard = memo(function BidCard({
             <div className="space-y-3 rounded-lg border p-3">
               <p className="text-sm">
                 Award this job to <span className="font-medium">{provider_display_name}</span> at{' '}
-                <span className="font-semibold">{formatCents(bid.amount_cents)}</span>?
+                <span className="font-mono font-semibold tabular-nums tracking-tight">
+                  {`${formatCents(bid.amount_cents)}?`}
+                </span>
               </p>
               <div className="flex gap-3">
                 <Button
@@ -666,7 +698,7 @@ function RankBadge({ rank, totalBids }: { rank: number; totalBids: number }) {
           style.bg,
           style.text,
           style.border,
-          rank === 1 && 'shadow-amber-500/20',
+          rank === 1 && 'shadow-brand-gold/20',
         )}
         aria-label={`Rank ${String(rank)} of ${String(totalBids)} bids`}
       >
@@ -695,15 +727,15 @@ function CompetitivePositionBadge({ rank, totalBids }: { rank: number; totalBids
       className={cn(
         'inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold',
         rank === 1
-          ? 'bg-emerald-500/15 text-emerald-600 shadow-[0_0_8px_rgba(16,185,129,0.25)] dark:text-emerald-400 dark:shadow-[0_0_8px_rgba(52,211,153,0.2)]'
+          ? 'bg-bid-winning/15 text-bid-winning shadow-[0_0_8px_hsl(var(--bid-winning)/0.25)]'
           : rank <= 3
-            ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
-            : 'bg-red-500/10 text-red-500',
+            ? 'bg-trust-medium/10 text-trust-medium'
+            : 'bg-destructive/10 text-destructive',
       )}
     >
       {rank === 1 ? (
         <span
-          className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500"
+          className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-bid-winning"
           aria-hidden="true"
         />
       ) : null}

@@ -1,23 +1,46 @@
 package handler
 
 import (
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
-	paymentv1 "github.com/nomarkup/nomarkup/proto/payment/v1"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
+	analyticsv1 "github.com/nomarkup/nomarkup/proto/analytics/v1"
+	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
+	paymentv1 "github.com/nomarkup/nomarkup/proto/payment/v1"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // TaxHandler handles HTTP endpoints for tax forms and invoices.
+//
+// The tax/invoice RPCs live on the unified PaymentService (the proto was
+// consolidated — there is no separate TaxInvoiceService client).
+//
+// The tax-ESTIMATE endpoint additionally needs the authoritative net-earnings
+// figure (from the analytics service, same source the Tax Center earnings card
+// uses) and the provider's state (read directly from their completed jobs via
+// the db pool), so we inject both here. Computing the estimate gateway-side
+// mirrors the existing advance_pricing.go precedent (financial figures derived
+// in the gateway against the analytics client + db pool).
 type TaxHandler struct {
-	taxClient paymentv1.TaxInvoiceServiceClient
+	taxClient       paymentv1.PaymentServiceClient
+	analyticsClient analyticsv1.AnalyticsServiceClient
+	db              *pgxpool.Pool
 }
 
 // NewTaxHandler creates a new TaxHandler.
-func NewTaxHandler(taxClient paymentv1.TaxInvoiceServiceClient) *TaxHandler {
-	return &TaxHandler{taxClient: taxClient}
+func NewTaxHandler(
+	taxClient paymentv1.PaymentServiceClient,
+	analyticsClient analyticsv1.AnalyticsServiceClient,
+	db *pgxpool.Pool,
+) *TaxHandler {
+	return &TaxHandler{taxClient: taxClient, analyticsClient: analyticsClient, db: db}
 }
 
 // GenerateTaxForm handles POST /api/v1/providers/me/tax-forms/{year}/generate.
@@ -139,6 +162,102 @@ func (h *TaxHandler) DownloadTaxForm(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(resp.GetHtml()))
 }
 
+// GetTaxEstimate handles GET /api/v1/providers/me/tax-estimate?year=YYYY.
+//
+// Returns an authoritative, itemized self-employment + federal income + state
+// tax estimate for the provider's net SE earnings in the given tax year. All
+// math is server-side and in integer cents (see tax_estimate_calc.go for the
+// formula and cited 2025 brackets/rates). Owner-scoped via the JWT subject.
+func (h *TaxHandler) GetTaxEstimate(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+
+	year := time.Now().Year()
+	if y := r.URL.Query().Get("year"); y != "" {
+		if v, err := strconv.Atoi(y); err == nil && v >= 2020 && v <= 2100 {
+			year = v
+		}
+	}
+
+	// Authoritative net SE earnings for the year — same analytics source the Tax
+	// Center earnings card reads, so the estimate and the displayed net agree.
+	start := time.Date(year, time.January, 1, 0, 0, 0, 0, time.UTC)
+	end := time.Date(year, time.December, 31, 23, 59, 59, 0, time.UTC)
+	earnResp, err := h.analyticsClient.GetProviderEarnings(r.Context(), &analyticsv1.GetProviderEarningsRequest{
+		ProviderId: claims.UserID,
+		DateRange: &commonv1.DateRange{
+			Start: timestamppb.New(start),
+			End:   timestamppb.New(end),
+		},
+		GroupBy: "year",
+	})
+	if err != nil {
+		slog.Error("tax estimate: get provider earnings failed", "error", err, "provider_id", claims.UserID, "year", year)
+		writeGRPCError(w, err)
+		return
+	}
+	netEarningsCents := earnResp.GetNetEarningsCents()
+
+	// Source the provider's state from their most recent completed job's
+	// service_state (the authoritative location where they earned). Best-effort:
+	// an unknown state simply yields a $0 state-tax line, clearly labeled in the
+	// UI, rather than failing the whole estimate (fail soft, CLAUDE.md §15).
+	stateCode := h.lookupProviderState(r, claims.UserID)
+
+	est := computeTaxEstimate(netEarningsCents, stateCode)
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"tax_estimate": map[string]interface{}{
+			"tax_year":                    year,
+			"net_earnings_cents":          est.NetEarningsCents,
+			"se_calc_base_cents":          est.SECalcBaseCents,
+			"se_tax_cents":                est.SETaxCents,
+			"se_tax_rate":                 seTaxRate,
+			"half_se_tax_deduction_cents": est.HalfSETaxDeductCents,
+			"standard_deduction_cents":    est.StandardDeductCents,
+			"federal_taxable_cents":       est.FederalTaxableCents,
+			"federal_income_tax_cents":    est.FederalIncomeTaxCents,
+			"state_code":                  est.StateCode,
+			"state_tax_rate":              est.StateTaxRate,
+			"state_income_tax_cents":      est.StateIncomeTaxCents,
+			"has_state_data":              est.HasStateData,
+			"total_tax_cents":             est.TotalTaxCents,
+			"effective_rate":              est.EffectiveRate,
+		},
+	})
+}
+
+// lookupProviderState returns the USPS 2-letter state where the provider most
+// recently completed work, read from contracts → jobs.service_state. Returns ""
+// (no state data) on any miss; never errors the request.
+func (h *TaxHandler) lookupProviderState(r *http.Request, providerID string) string {
+	if h.db == nil {
+		return ""
+	}
+	var state *string
+	err := h.db.QueryRow(r.Context(), `
+		SELECT j.service_state
+		FROM contracts c
+		JOIN jobs j ON j.id = c.job_id
+		WHERE c.provider_id = $1 AND j.service_state IS NOT NULL AND j.service_state <> ''
+		ORDER BY c.created_at DESC
+		LIMIT 1`, providerID).Scan(&state)
+	if err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			slog.Warn("tax estimate: provider state lookup failed; proceeding without state tax",
+				"error", err, "provider_id", providerID)
+		}
+		return ""
+	}
+	if state == nil {
+		return ""
+	}
+	return *state
+}
+
 // GenerateInvoice handles POST /api/v1/contracts/{id}/invoice.
 func (h *TaxHandler) GenerateInvoice(w http.ResponseWriter, r *http.Request) {
 	_, ok := middleware.GetClaims(r.Context())
@@ -212,21 +331,21 @@ func protoTaxFormToJSON(tf *paymentv1.TaxForm) map[string]interface{} {
 
 	result := map[string]interface{}{
 		"id":                         tf.GetId(),
-		"provider_id":               tf.GetProviderId(),
-		"tax_year":                  tf.GetTaxYear(),
-		"form_type":                 tf.GetFormType(),
-		"provider_legal_name":       tf.GetProviderLegalName(),
-		"provider_tax_id_last4":     tf.GetProviderTaxIdLast4(),
-		"provider_address":          tf.GetProviderAddress(),
-		"total_compensation_cents":  tf.GetTotalCompensationCents(),
+		"provider_id":                tf.GetProviderId(),
+		"tax_year":                   tf.GetTaxYear(),
+		"form_type":                  tf.GetFormType(),
+		"provider_legal_name":        tf.GetProviderLegalName(),
+		"provider_tax_id_last4":      tf.GetProviderTaxIdLast4(),
+		"provider_address":           tf.GetProviderAddress(),
+		"total_compensation_cents":   tf.GetTotalCompensationCents(),
 		"federal_tax_withheld_cents": tf.GetFederalTaxWithheldCents(),
-		"state_tax_withheld_cents":  tf.GetStateTaxWithheldCents(),
-		"platform_ein":             tf.GetPlatformEin(),
-		"platform_name":            tf.GetPlatformName(),
-		"pdf_url":                  tf.GetPdfUrl(),
-		"status":                   tf.GetStatus(),
-		"created_at":               formatTimestamp(tf.GetCreatedAt()),
-		"updated_at":               formatTimestamp(tf.GetUpdatedAt()),
+		"state_tax_withheld_cents":   tf.GetStateTaxWithheldCents(),
+		"platform_ein":               tf.GetPlatformEin(),
+		"platform_name":              tf.GetPlatformName(),
+		"pdf_url":                    tf.GetPdfUrl(),
+		"status":                     tf.GetStatus(),
+		"created_at":                 formatTimestamp(tf.GetCreatedAt()),
+		"updated_at":                 formatTimestamp(tf.GetUpdatedAt()),
 	}
 
 	if tf.GetDeliveredAt() != nil {
@@ -238,4 +357,3 @@ func protoTaxFormToJSON(tf *paymentv1.TaxForm) map[string]interface{} {
 
 	return result
 }
-

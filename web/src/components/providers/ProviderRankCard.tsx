@@ -2,6 +2,7 @@
 
 import { Award, Flame, Trophy } from 'lucide-react';
 
+import { Skeleton } from '@/components/ui/skeleton';
 import { useProviderStreaks } from '@/hooks/useBids';
 
 export function ProviderRankCard() {
@@ -9,9 +10,13 @@ export function ProviderRankCard() {
 
   if (isLoading) {
     return (
-      <div className="bg-card rounded-lg border p-6">
-        <div className="bg-muted h-6 w-32 animate-pulse rounded" />
-        <div className="bg-muted mt-4 h-10 w-48 animate-pulse rounded" />
+      <div
+        className="bg-card rounded-lg border p-6"
+        role="status"
+        aria-label="Loading win stats"
+      >
+        <Skeleton className="h-6 w-32" />
+        <Skeleton className="mt-4 h-10 w-48" />
       </div>
     );
   }

@@ -86,9 +86,14 @@ function ContractTabContent({ tab }: { tab: ContractTab }) {
         title="No contracts"
         description={emptyMessages[tab]}
         action={
-          <Button asChild className="min-h-[44px]">
-            <Link href="/jobs">Browse Jobs</Link>
-          </Button>
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <Button asChild className="min-h-[44px]">
+              <Link href="/jobs/new">Post a Job</Link>
+            </Button>
+            <Button asChild variant="outline" className="min-h-[44px]">
+              <Link href="/jobs/mine">My Jobs</Link>
+            </Button>
+          </div>
         }
         className="glass"
       />

@@ -4,13 +4,18 @@
 // Found by /qa on 2026-04-17.
 // Report: .gstack/qa-reports/qa-report-localhost-2026-04-17.md
 
-import { render } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const refreshTokenMock = vi.fn();
 const routerReplaceMock = vi.fn();
 
+// AuthGuard reads the current path so the login redirect can carry a
+// same-origin `next` target (post-login return, 5481834d).
+const PROTECTED_PATH = '/dashboard/jobs';
+
 vi.mock('next/navigation', () => ({
+  usePathname: () => PROTECTED_PATH,
   useRouter: () => ({
     replace: routerReplaceMock,
     push: vi.fn(),
@@ -20,10 +25,17 @@ vi.mock('next/navigation', () => ({
 }));
 
 vi.mock('@/stores/auth-store', () => ({
-  useAuthStore: () => ({
-    isAuthenticated: false,
-    refreshToken: refreshTokenMock,
-  }),
+  useAuthStore: (selector?: unknown) => {
+    const state = {
+      isAuthenticated: false,
+      isHydrating: false,
+      refreshToken: refreshTokenMock,
+    };
+    if (typeof selector === 'function') {
+      return (selector as (s: unknown) => unknown)(state);
+    }
+    return state;
+  },
 }));
 
 import { AuthGuard } from '@/components/providers/AuthGuard';
@@ -54,28 +66,51 @@ describe('AuthGuard — ISSUE-002 regression', () => {
       </AuthGuard>,
     );
     expect(refreshTokenMock).not.toHaveBeenCalled();
-    expect(routerReplaceMock).toHaveBeenCalledWith('/login');
+    // Still exactly one redirect, still to /login — it now also carries the
+    // protected path so the user lands back on it after signing in.
+    expect(routerReplaceMock).toHaveBeenCalledTimes(1);
+    expect(routerReplaceMock).toHaveBeenCalledWith(
+      `/login?next=${encodeURIComponent(PROTECTED_PATH)}`,
+    );
   });
 
   it('renders a branded dark loader while redirect is in flight', () => {
     setCookie('');
-    const { container } = render(
+    render(
       <AuthGuard>
         <div>secret</div>
       </AuthGuard>,
     );
-    // The loader lives on the dark shell, not the default white body.
-    const loader = container.querySelector('.bg-\\[\\#070b14\\]');
-    expect(loader).not.toBeNull();
+
+    // The loader is the full-viewport dark shell, not a bare spinner on the
+    // default white body. The shell used to be a raw `bg-[#070b14]` hex; it is
+    // now the `dark` + `bg-background` semantic token pair (CLAUDE.md §4: no
+    // raw hex in components), so assert the tokens, not the literal colour.
+    const loader = screen.getByRole('status');
+    expect(loader).toHaveClass('dark');
+    expect(loader).toHaveClass('bg-background');
+    expect(loader).toHaveClass('min-h-screen');
+
+    // …and it must announce itself rather than showing a silent blank frame.
+    expect(loader).toHaveAttribute('aria-live', 'polite');
+    expect(screen.getByText(/Loading your dashboard/i)).toBeInTheDocument();
+
+    // The guarded content must NOT be in the tree while unauthenticated.
+    expect(screen.queryByText('secret')).toBeNull();
   });
 
-  it('calls refreshToken when has_session=1 is present', () => {
+  it('never calls refreshToken itself — that is delegated to AuthRestorer to avoid racing the single-use refresh token', () => {
+    // The original ISSUE-002 fix prevented AuthGuard from calling refresh when
+    // no session sentinel was present. The follow-up refactor (see AuthGuard
+    // docstring) moved refresh to AuthRestorer entirely so the two never race
+    // on the single-use refresh token. Either way, AuthGuard must never call
+    // refreshToken from within its own effect.
     setCookie('has_session=1');
     render(
       <AuthGuard>
         <div>secret</div>
       </AuthGuard>,
     );
-    expect(refreshTokenMock).toHaveBeenCalledTimes(1);
+    expect(refreshTokenMock).not.toHaveBeenCalled();
   });
 });

@@ -3,11 +3,15 @@
 > All 16 vertical slices are architecturally complete (~96K lines).
 > This plan covers stabilization, gap-filling, and launch readiness.
 >
-> **Status: ALL PHASES COMPLETE** ✅
+> **Status: scaffold / plan closed — residuals remain**
+> Handoff (`docs/planning/next-session-handoff.md`), launch-checklist
+> (`docs/launch-checklist.md`), E2E (CI is backendless smoke, not the 12-flow
+> funnel), and `DEPLOY_PROVISIONED` are still open. Do not treat this file as
+> “ship-complete.”
 
 ---
 
-## Phase 1: Testing & Confidence (Priority: Critical) ✅
+## Phase 1: Testing & Confidence (Priority: Critical)
 
 Zero tests exist today. Goal: 80% coverage on business logic, integration tests on all gRPC boundaries, E2E on critical user flows.
 
@@ -20,13 +24,16 @@ Zero tests exist today. Goal: 80% coverage on business logic, integration tests 
 - [x] Test data-display components in loading/success/error/empty states
 
 ### 1.2 Frontend E2E Tests (Playwright)
-- [x] Auth flow: register → verify email → login → logout
-- [x] Job flow: create job → publish → view listing
-- [x] Bid flow: browse jobs → place bid → view my bids
-- [x] Contract flow: accept bid → start work → mark complete → approve
-- [x] Payment flow: add payment method → process payment
-- [x] Chat flow: open channel → send message → receive message
-- [x] Admin flow: login as admin → view dashboard → suspend user
+> **Honesty (2026-08-12):** specs exist under `web/tests/e2e/`. CI Playwright is
+> **backendless smoke** (web-only; `testIgnore: dogfood/**` when `SEED_PASSWORD`
+> is unset). This is **not** a live-stack 12-flow funnel.
+- [ ] Auth flow: register → verify email → login → logout
+- [ ] Job flow: create job → publish → view listing
+- [ ] Bid flow: browse jobs → place bid → view my bids
+- [ ] Contract flow: accept bid → start work → mark complete → approve
+- [ ] Payment flow: add payment method → process payment
+- [ ] Chat flow: open channel → send message → receive message
+- [ ] Admin flow: login as admin → view dashboard → suspend user
 
 ### 1.3 Go Backend Unit Tests
 - [x] Gateway middleware tests (auth JWT parsing, rate limiting, CORS, admin role check)

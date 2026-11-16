@@ -340,31 +340,31 @@ Base path: `/api/v1/`
 
 | Method | Path                                   | gRPC Method              | Auth          | Rate Limit | Input Source            |
 |--------|----------------------------------------|--------------------------|---------------|------------|-------------------------|
-| POST   | /api/v1/chat/channels                  | ChatService.CreateChannel| authenticated | standard   | JSON body               |
-| GET    | /api/v1/chat/channels/{channelId}      | ChatService.GetChannel   | authenticated | standard   | path params             |
-| GET    | /api/v1/chat/channels                  | ChatService.ListChannels | authenticated | standard   | query params            |
+| POST   | /api/v1/channels                  | ChatService.CreateChannel| authenticated | standard   | JSON body               |
+| GET    | /api/v1/channels/{channelId}      | ChatService.GetChannel   | authenticated | standard   | path params             |
+| GET    | /api/v1/channels                  | ChatService.ListChannels | authenticated | standard   | query params            |
 
 ### Messages
 
 | Method | Path                                                  | gRPC Method                | Auth          | Rate Limit | Input Source            |
 |--------|-------------------------------------------------------|----------------------------|---------------|------------|-------------------------|
-| POST   | /api/v1/chat/channels/{channelId}/messages            | ChatService.SendMessage    | authenticated | standard   | path params + JSON body |
-| GET    | /api/v1/chat/channels/{channelId}/messages            | ChatService.ListMessages   | authenticated | standard   | path params + query params |
-| POST   | /api/v1/chat/channels/{channelId}/read                | ChatService.MarkRead       | authenticated | standard   | path params + JSON body |
+| POST   | /api/v1/channels/{channelId}/messages            | ChatService.SendMessage    | authenticated | standard   | path params + JSON body |
+| GET    | /api/v1/channels/{channelId}/messages            | ChatService.ListMessages   | authenticated | standard   | path params + query params |
+| POST   | /api/v1/channels/{channelId}/read                | ChatService.MarkRead       | authenticated | standard   | path params + JSON body |
 
 ### Contacts
 
 | Method | Path                                                      | gRPC Method                  | Auth          | Rate Limit | Input Source            |
 |--------|-----------------------------------------------------------|------------------------------|---------------|------------|-------------------------|
-| POST   | /api/v1/chat/channels/{channelId}/share-contact           | ChatService.ShareContactInfo | authenticated | strict     | path params + JSON body |
-| GET    | /api/v1/chat/channels/{channelId}/shared-contacts         | ChatService.GetSharedContacts| authenticated | standard   | path params             |
+| POST   | /api/v1/channels/{channelId}/share-contact           | ChatService.ShareContactInfo | authenticated | strict     | path params + JSON body |
+| GET    | /api/v1/channels/{channelId}/shared-contacts         | ChatService.GetSharedContacts| authenticated | standard   | path params             |
 
 ### Typing & Unread
 
 | Method | Path                                                     | gRPC Method                     | Auth          | Rate Limit | Input Source            |
 |--------|----------------------------------------------------------|---------------------------------|---------------|------------|-------------------------|
-| POST   | /api/v1/chat/channels/{channelId}/typing                 | ChatService.SendTypingIndicator | authenticated | standard   | path params             |
-| GET    | /api/v1/chat/unread-count                                | ChatService.GetUnreadCount      | authenticated | standard   | query params            |
+| POST   | /api/v1/channels/{channelId}/typing                 | ChatService.SendTypingIndicator | authenticated | standard   | path params             |
+| GET    | /api/v1/channels/unread                                | ChatService.GetUnreadCount      | authenticated | standard   | query params            |
 
 ### Admin
 
@@ -624,26 +624,43 @@ Base path: `/api/v1/`
 
 ## WebSocket Connections
 
-| Protocol  | Path                    | Backend                   | Auth          | Description                              |
-|-----------|-------------------------|---------------------------|---------------|------------------------------------------|
-| WebSocket | /api/v1/ws/chat         | ChatService (streaming)   | authenticated | Real-time chat messages and typing indicators. Client sends JSON frames; server pushes new messages, typing events, and read receipts. |
-| WebSocket | /api/v1/ws/notifications| NotificationService       | authenticated | Real-time push for in-app notifications and unread count updates. |
+Gateway mounts these at the root (not under `/api/v1`). See `gateway/internal/router/router.go`.
 
-### WebSocket Chat Frame Types
+| Protocol  | Path                                   | Backend                         | Auth            | Description |
+|-----------|----------------------------------------|---------------------------------|-----------------|-------------|
+| WebSocket | `/ws/chat`                             | Chat service (proxied)          | authenticated   | Real-time chat: subscribe to channels, typing, messages, peer read receipts. |
+| WebSocket | `/ws/auction/{jobId}`                  | Chat/auction stream (proxied)   | authenticated + participant (owner or bidder) | Live auction feed for participants. |
+| WebSocket | `/ws/auction/{jobId}/spectate`         | Spectator stream                | public (anonymous) | Delayed, PII-stripped live auction spectate feed. |
+| WebSocket | `/ws/marketplace/{listingId}/spectate` | Marketplace spectator stream    | public (anonymous) | Delayed live bid stream for goods listings. |
 
-**Client to Server:**
+**Not implemented:** `/api/v1/ws/notifications` (and `/ws/notifications`) — there is no notifications WebSocket. Unread/notification updates use REST (and chat `unread` where applicable), not a dedicated notif socket.
+
+Chat REST lives under **`/api/v1/channels`** (not `/api/v1/chat/channels`).
+
+### WebSocket Chat Frame Types (`/ws/chat`)
+
+Snake_case field names on the wire (`channel_id`, `user_id`, `last_read_at`).
+
+**Client → Server:**
 ```json
-{ "type": "message", "channelId": "...", "content": "..." }
-{ "type": "typing", "channelId": "..." }
-{ "type": "read", "channelId": "...", "messageId": "..." }
+{ "type": "subscribe", "channel_id": "..." }
+{ "type": "unsubscribe", "channel_id": "..." }
+{ "type": "typing", "channel_id": "..." }
 ```
 
-**Server to Client:**
+Sending chat text is **not** a WS frame — use `POST /api/v1/channels/{id}/messages`. Mark-read is **not** a WS frame — use `POST /api/v1/channels/{id}/read`.
+
+**Server → Client:**
 ```json
-{ "type": "message", "channelId": "...", "message": { ... } }
-{ "type": "typing", "channelId": "...", "userId": "..." }
-{ "type": "read_receipt", "channelId": "...", "userId": "...", "messageId": "..." }
+{ "type": "message", "channel_id": "...", "message": { ... } }
+{ "type": "typing", "channel_id": "...", "user_id": "..." }
+{ "type": "read_receipt", "channel_id": "...", "user_id": "...", "last_read_at": "2026-07-27T12:00:00Z" }
 ```
+
+- `read_receipt` carries a peer MarkRead **watermark** as `last_read_at` (RFC3339). It does **not** use `messageId`.
+- `unread_update` is recognized on the web client type union for forward-compat but is **not emitted** by the chat WS server today (optional / dead path).
+
+Auction participant sockets also accept `subscribe_auction` / `unsubscribe_auction` over `/ws/auction/{jobId}` (separate from chat frames).
 
 ---
 
@@ -711,4 +728,4 @@ These RPCs are called directly between backend microservices over gRPC. They are
 7. **The `/me` convention** is used for current-user endpoints; the gateway resolves `me` to the authenticated user's ID from the JWT before forwarding to gRPC.
 8. **Rate limit tiers** are enforced by gateway middleware before the request reaches the gRPC backend.
 9. **Internal RPCs** are accessible only within the cluster network (no gateway route, no public ingress).
-10. **WebSocket connections** require an initial HTTP upgrade with a valid JWT in the `Authorization` header or `token` query parameter.
+10. **WebSocket connections** upgrade over HTTP. Authenticated sockets (`/ws/chat`, `/ws/auction/{jobId}`) accept JWT via `Authorization` header, `token` query param, or `access_token` cookie. Public spectate sockets (`/ws/auction/{jobId}/spectate`, `/ws/marketplace/{listingId}/spectate`) do not require auth.

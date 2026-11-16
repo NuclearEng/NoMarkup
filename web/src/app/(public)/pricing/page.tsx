@@ -1,15 +1,17 @@
 import type { Metadata } from 'next';
 
+import { BUYER_PAYS_AGREED_PRICE } from '@/lib/constants';
+
 import { PricingPageContent } from './PricingPageContent';
 
 export const metadata: Metadata = {
-  title: 'Fair Price Index — What Does Home Service Cost in Your Area? | NoMarkup',
+  title: 'Fair Price Index — The Market Sets The Rate | NoMarkup',
   description:
-    'See real market rates for home services by category and ZIP code. Based on actual completed jobs — no guesswork. Post your job on NoMarkup and save.',
+    `See real market rates for home services by category and ZIP code. Based on completed jobs — transparent pricing, not the markup. ${BUYER_PAYS_AGREED_PRICE}`,
   openGraph: {
-    title: 'Fair Price Index — Real Home Service Pricing',
+    title: 'Fair Price Index — Real Home Service Pricing | NoMarkup',
     description:
-      'Transparent pricing data from completed jobs. See what homeowners actually pay for plumbing, electrical, landscaping, and more.',
+      'Transparent pricing from completed jobs. Plumbing, electrical, landscaping, and more — the market sets the rate.',
   },
 };
 

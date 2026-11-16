@@ -1,7 +1,7 @@
 'use client';
 
 import { Inbox } from 'lucide-react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
 import { BidCard } from '@/components/bids/BidCard';
 import { Card, CardContent } from '@/components/ui/card';
@@ -12,6 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useBidsForJob } from '@/hooks/useBids';
 import type { BidWithProvider } from '@/types';
 
@@ -22,27 +23,56 @@ interface BidListProps {
   marketMedianCents?: number;
 }
 
-type SortOption = 'price_asc' | 'rating' | 'trust' | 'jobs_completed';
+type SortOption =
+  | 'price_asc'
+  | 'price_desc'
+  | 'win_chance'
+  | 'rating'
+  | 'trust'
+  | 'jobs_completed'
+  | 'newest';
+
+/**
+ * Price ascending is the canonical tiebreaker: in a reverse auction the lowest
+ * price is the most relevant signal, so equal/absent secondary fields fall back
+ * to it. Without this, sorting by trust/rating when those fields are null for
+ * every bid (a common case — they come from separate services) would leave the
+ * list in source order and look like the dropdown "did nothing".
+ */
+function byPriceAsc(a: BidWithProvider, b: BidWithProvider): number {
+  return a.bid.amount_cents - b.bid.amount_cents;
+}
 
 function sortBids(bids: BidWithProvider[], sortBy: SortOption): BidWithProvider[] {
   const sorted = [...bids];
   switch (sortBy) {
     case 'price_asc':
-      return sorted.sort((a, b) => a.bid.amount_cents - b.bid.amount_cents);
+    case 'win_chance':
+      // Win chance is derived purely from price rank (rank 1 = lowest = "High
+      // chance"), so it is equivalent to price ascending.
+      return sorted.sort(byPriceAsc);
+    case 'price_desc':
+      return sorted.sort((a, b) => b.bid.amount_cents - a.bid.amount_cents);
     case 'rating':
       return sorted.sort((a, b) => {
         const aRating = a.review_summary?.average_rating ?? 0;
         const bRating = b.review_summary?.average_rating ?? 0;
-        return bRating - aRating;
+        return bRating - aRating || byPriceAsc(a, b);
       });
     case 'trust':
       return sorted.sort((a, b) => {
         const aScore = a.trust_score?.overall_score ?? 0;
         const bScore = b.trust_score?.overall_score ?? 0;
-        return bScore - aScore;
+        return bScore - aScore || byPriceAsc(a, b);
       });
     case 'jobs_completed':
-      return sorted.sort((a, b) => b.jobs_completed - a.jobs_completed);
+      return sorted.sort((a, b) => b.jobs_completed - a.jobs_completed || byPriceAsc(a, b));
+    case 'newest':
+      return sorted.sort(
+        (a, b) =>
+          new Date(b.bid.created_at).getTime() - new Date(a.bid.created_at).getTime() ||
+          byPriceAsc(a, b),
+      );
     default:
       return sorted;
   }
@@ -52,17 +82,33 @@ export function BidList({ jobId, canAward, startingPriceCents, marketMedianCents
   const { data, isLoading, isError } = useBidsForJob(jobId);
   const [sortBy, setSortBy] = useState<SortOption>('price_asc');
 
+  const bids = useMemo(() => data?.bids ?? [], [data]);
+  const sortedBids = useMemo(() => sortBids(bids, sortBy), [bids, sortBy]);
+
+  // Price-based ranks for competitive context (always by price, regardless of sort).
+  const bidRankMap = useMemo(() => {
+    const ranked = [...bids].sort(byPriceAsc);
+    const map = new Map<string, number>();
+    ranked.forEach((b, i) => {
+      map.set(b.bid.id, i + 1);
+    });
+    return map;
+  }, [bids]);
+
   if (isLoading) {
     return (
-      <div className="space-y-4">
-        <div className="h-6 w-32 animate-pulse rounded bg-muted" />
+      <div className="space-y-4" aria-busy="true" aria-label="Loading bids">
+        <Skeleton className="h-6 w-32" variant="text" />
         {[1, 2, 3].map((i) => (
-          <Card key={i}>
+          <Card key={i} className="overflow-hidden">
             <CardContent className="pt-6">
               <div className="space-y-3">
-                <div className="h-10 animate-pulse rounded bg-muted" />
-                <div className="h-4 w-2/3 animate-pulse rounded bg-muted" />
-                <div className="h-4 w-1/3 animate-pulse rounded bg-muted" />
+                <div className="flex items-center gap-3">
+                  <Skeleton className="h-10 w-10" variant="circular" />
+                  <Skeleton className="h-4 w-1/3" variant="text" />
+                </div>
+                <Skeleton className="h-8 w-28" variant="price" />
+                <Skeleton className="h-4 w-2/3" variant="text" />
               </div>
             </CardContent>
           </Card>
@@ -78,16 +124,6 @@ export function BidList({ jobId, canAward, startingPriceCents, marketMedianCents
       </div>
     );
   }
-
-  const bids = data?.bids ?? [];
-  const sortedBids = sortBids(bids, sortBy);
-
-  // Compute price-based ranks for competitive context (always by price, regardless of sort)
-  const priceRankedBids = [...bids].sort((a, b) => a.bid.amount_cents - b.bid.amount_cents);
-  const bidRankMap = new Map<string, number>();
-  priceRankedBids.forEach((b, i) => {
-    bidRankMap.set(b.bid.id, i + 1);
-  });
 
   if (bids.length === 0) {
     return (
@@ -114,9 +150,12 @@ export function BidList({ jobId, canAward, startingPriceCents, marketMedianCents
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="price_asc">Price: Low to High</SelectItem>
-            <SelectItem value="rating">Highest Rating</SelectItem>
+            <SelectItem value="price_desc">Price: High to Low</SelectItem>
+            <SelectItem value="win_chance">Best Win Chance</SelectItem>
             <SelectItem value="trust">Trust Score</SelectItem>
+            <SelectItem value="rating">Highest Rating</SelectItem>
             <SelectItem value="jobs_completed">Most Jobs</SelectItem>
+            <SelectItem value="newest">Newest First</SelectItem>
           </SelectContent>
         </Select>
       </div>

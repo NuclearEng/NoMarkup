@@ -14,18 +14,18 @@ const buttonVariants = cva(
         destructive:
           'bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90 hover:shadow-md hover:shadow-red-200 hover:animate-[shimmer_0.5s_ease-in-out]',
         outline:
-          'border border-input bg-background shadow-sm hover:bg-accent hover:text-accent-foreground hover:-translate-y-0.5 hover:shadow-md',
+          'border border-input bg-background text-foreground shadow-sm hover:bg-accent hover:text-accent-foreground hover:-translate-y-0.5 hover:shadow-md',
         secondary: 'bg-secondary text-secondary-foreground shadow-sm hover:bg-secondary/80 hover:-translate-y-0.5 hover:shadow-md',
         ghost: 'hover:bg-accent hover:text-accent-foreground',
         link: 'text-primary underline-offset-4 hover:underline',
         glass:
           'glass-button text-foreground hover:text-foreground',
         accept:
-          'bg-emerald-600 text-white shadow-sm hover:bg-emerald-500 hover:shadow-[0_0_20px_rgba(16,185,129,0.3)] hover:-translate-y-0.5 active:scale-[0.97] animate-accept-attention',
+          'bg-bid-winning text-white shadow-sm hover:bg-trust-high hover:shadow-[0_0_20px_hsl(var(--trust-high)_/_0.35)] hover:-translate-y-0.5 active:scale-[0.97] animate-accept-attention',
         bid:
-          'bg-blue-600 text-white shadow-sm hover:bg-blue-500 hover:shadow-[0_0_20px_rgba(59,130,246,0.3)] active:scale-[0.97]',
+          'bg-bid-active text-white shadow-sm hover:bg-status-open hover:shadow-[0_0_20px_hsl(var(--bid-active)_/_0.35)] active:scale-[0.97]',
         urgent:
-          'bg-amber-500 text-black shadow-sm hover:bg-amber-400 animate-[gold-pulse_2s_ease-in-out_infinite]',
+          'bg-trust-medium text-black shadow-sm hover:bg-trust-medium/90 animate-[gold-pulse_2s_ease-in-out_infinite]',
         premium:
           'gold-gradient text-white shadow-sm hover:shadow-[0_0_24px_var(--brand-gold-glow)] hover:-translate-y-0.5 relative overflow-hidden after:absolute after:inset-0 after:translate-x-[-100%] after:bg-gradient-to-r after:from-transparent after:via-white/30 after:to-transparent after:animate-[shimmer-sweep_3s_ease-in-out_infinite]',
       },
@@ -46,13 +46,22 @@ const buttonVariants = cva(
 export interface ButtonProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement>, VariantProps<typeof buttonVariants> {
   asChild?: boolean;
+  'data-workflow'?: string;
 }
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, asChild = false, ...props }, ref) => {
+  ({ className, variant, size, asChild = false, 'data-workflow': dataWorkflow, ...props }, ref) => {
     const Comp = asChild ? Slot : 'button';
+    const fromAria = props['aria-label'];
+    const fromChildren = typeof props.children === 'string' ? props.children : undefined;
+    const workflow = dataWorkflow ?? fromAria ?? fromChildren;
     return (
-      <Comp className={cn(buttonVariants({ variant, size, className }))} ref={ref} {...props} />
+      <Comp
+        className={cn(buttonVariants({ variant, size, className }))}
+        ref={ref}
+        {...props}
+        data-workflow={workflow}
+      />
     );
   },
 );

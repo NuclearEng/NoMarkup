@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"strconv"
 	"strings"
@@ -10,8 +11,9 @@ import (
 // Config holds all gateway configuration loaded from environment variables.
 type Config struct {
 	Port               int
-	Environment        string // "production", "staging", or "development" (default)
+	Environment        string // "production", "staging", or "development" (required, validated)
 	DatabaseURL        string
+	DatabaseReadURL    string // replica for reads (search, analytics, profiles, public catalog). Falls back to DatabaseURL.
 	RedisURL           string
 	JWTPublicKeyPath   string
 	UserServiceAddr    string
@@ -20,6 +22,7 @@ type Config struct {
 	PaymentServiceAddr string
 	ChatServiceAddr    string
 	ChatWSAddr         string
+	InternalWSSecret   string // shared secret presented to the chat WS backend
 	FraudEngineAddr    string
 	TrustEngineAddr    string
 	ImagingServiceAddr      string
@@ -42,10 +45,31 @@ func Load() (*Config, error) {
 
 	origins := getEnv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:3002")
 
+	// ENVIRONMENT drives a surprising amount of security behaviour: rate-limit
+	// multipliers (dev limits are 10x), the DATABASE_URL/REDIS_URL fail-fast,
+	// feature-flag fail-closed, /metrics exposure, and the PII-cipher
+	// fail-closed. Defaulting it to "development" meant an unset, misspelled,
+	// or "prod"-valued variable silently relaxed all of them at once — the
+	// single highest-leverage misconfiguration in the gateway.
+	//
+	// Follow the payment service (services/payment/cmd/server/main.go): no
+	// default, validated against a fixed set, fail closed. Values are trimmed
+	// and lower-cased so a stray space or capital letter in a ConfigMap is a
+	// clean startup failure rather than a silent downgrade.
+	env := strings.ToLower(strings.TrimSpace(os.Getenv("ENVIRONMENT")))
+	switch env {
+	case "development", "staging", "production":
+	case "":
+		return nil, fmt.Errorf("ENVIRONMENT is required (development|staging|production)")
+	default:
+		return nil, fmt.Errorf("ENVIRONMENT must be one of development|staging|production, got %q", env)
+	}
+
 	cfg := &Config{
 		Port:               port,
-		Environment:        getEnv("ENVIRONMENT", "development"),
+		Environment:        env,
 		DatabaseURL:        getEnv("DATABASE_URL", ""),
+		DatabaseReadURL:    getEnv("DATABASE_URL_REPLICA", getEnv("DATABASE_URL", "")),
 		RedisURL:           getEnv("REDIS_URL", "redis://localhost:6379"),
 		JWTPublicKeyPath:   getEnv("JWT_PUBLIC_KEY_PATH", ""),
 		UserServiceAddr:    getEnv("USER_SERVICE_ADDR", "localhost:50051"),
@@ -54,6 +78,7 @@ func Load() (*Config, error) {
 		PaymentServiceAddr: getEnv("PAYMENT_SERVICE_ADDR", "localhost:50054"),
 		ChatServiceAddr:    getEnv("CHAT_SERVICE_ADDR", "localhost:50055"),
 		ChatWSAddr:         getEnv("CHAT_WS_ADDR", "localhost:50065"),
+		InternalWSSecret:   getEnvFirst("", "INTERNAL_WS_SECRET", "GATEWAY_CHAT_SECRET"),
 		FraudEngineAddr:    getEnv("FRAUD_ENGINE_ADDR", "localhost:50056"),
 		TrustEngineAddr:    getEnv("TRUST_ENGINE_ADDR", "localhost:50057"),
 		ImagingServiceAddr:      getEnv("IMAGING_SERVICE_ADDR", "localhost:50058"),
@@ -64,9 +89,70 @@ func Load() (*Config, error) {
 	return cfg, nil
 }
 
+// MissingProductionVars returns the CLAUDE.md §12-required infrastructure
+// variables that are unset (or whitespace-only) in the environment.
+//
+// In development the gateway degrades gracefully without these (feature
+// flags off, in-memory rate limiting, localhost Redis default), but a
+// production gateway booting green without its database or Redis is
+// fail-open — main.go exits 1 when ENVIRONMENT=production and this returns
+// a non-empty list. Note REDIS_URL is checked against the raw environment,
+// not Config.RedisURL, because Load() applies a localhost default that must
+// not mask a missing production value.
+//
+// JWT_PUBLIC_KEY_PATH and MEILISEARCH_URL are not listed here: the key load
+// is already fatal in every environment, and Meilisearch has its own
+// production fail-fast at client init (commit e4208e7).
+func MissingProductionVars() []string {
+	var missing []string
+	for _, key := range []string{"DATABASE_URL", "REDIS_URL"} {
+		if strings.TrimSpace(os.Getenv(key)) == "" {
+			missing = append(missing, key)
+		}
+	}
+	return missing
+}
+
+// ResolveMeilisearchURL resolves the Meilisearch endpoint URL from the
+// environment.
+//
+// MEILISEARCH_URL is the canonical variable (.env.example, CLAUDE.md §12, and
+// the k8s configmaps all supply it). MEILISEARCH_HOST is honored as a
+// deprecated fallback so older tooling keeps working, with a slog warning.
+// The result is normalized to a full URL — a bare "host:port" gets an
+// "http://" scheme prepended, since the meilisearch client requires a URL.
+// Returns "" when neither variable is set (search disabled in dev).
+func ResolveMeilisearchURL() string {
+	url := strings.TrimSpace(os.Getenv("MEILISEARCH_URL"))
+	if url == "" {
+		if host := strings.TrimSpace(os.Getenv("MEILISEARCH_HOST")); host != "" {
+			slog.Warn("MEILISEARCH_HOST is deprecated; set MEILISEARCH_URL instead", "host", host)
+			url = host
+		}
+	}
+	if url == "" {
+		return ""
+	}
+	if !strings.Contains(url, "://") {
+		url = "http://" + url
+	}
+	return url
+}
+
 func getEnv(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
+	}
+	return fallback
+}
+
+// getEnvFirst returns the first non-empty value among the given env keys, or the
+// fallback if none are set. Used for vars with backwards-compatible aliases.
+func getEnvFirst(fallback string, keys ...string) string {
+	for _, k := range keys {
+		if v := os.Getenv(k); v != "" {
+			return v
+		}
 	}
 	return fallback
 }

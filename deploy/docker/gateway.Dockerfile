@@ -2,7 +2,7 @@
 # Multi-stage build for the Go API Gateway.
 # Build context must be the repository root.
 
-FROM golang:1.25-alpine AS builder
+FROM golang:1.26.11-alpine AS builder
 WORKDIR /app
 RUN echo "══════════════════════════════════════════════════════════" && \
     echo "  GATEWAY · Build started"                                 && \
@@ -12,6 +12,12 @@ RUN echo "═══════════════════════�
 # Copy the shared proto module first — the gateway's go.mod has:
 #   replace github.com/nomarkup/nomarkup/proto => ../proto/gen/go
 COPY proto/gen/go/ proto/gen/go/
+
+# Copy the shared gRPC mTLS module — the go.mod also has:
+#   replace github.com/nomarkup/nomarkup/pkg/grpmtls => ../pkg/grpmtls
+# Without it `go mod download` fails: "reading /app/pkg/grpmtls/go.mod: no such
+# file or directory".
+COPY pkg/grpmtls/ pkg/grpmtls/
 
 # Copy gateway module files and download dependencies.
 COPY gateway/go.mod gateway/go.sum gateway/
@@ -37,8 +43,10 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 
 # ── Runtime ──────────────────────────────────────────────────
 FROM alpine:3.20
-RUN apk --no-cache add ca-certificates
-COPY --from=builder /gateway /gateway
+RUN apk --no-cache add ca-certificates && \
+    addgroup -S app && adduser -S app -G app -u 10001
+COPY --from=builder --chown=app:app /gateway /gateway
 RUN echo "  [3/3] ✔ gateway image ready · $(du -h /gateway | awk '{print $1}')"
+USER app
 EXPOSE 8080
 ENTRYPOINT ["/gateway"]

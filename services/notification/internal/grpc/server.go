@@ -5,8 +5,8 @@ import (
 	"errors"
 	"strings"
 
-	notificationv1 "github.com/nomarkup/nomarkup/proto/notification/v1"
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
+	notificationv1 "github.com/nomarkup/nomarkup/proto/notification/v1"
 	"github.com/nomarkup/nomarkup/services/notification/internal/domain"
 	"github.com/nomarkup/nomarkup/services/notification/internal/service"
 	grpclib "google.golang.org/grpc"
@@ -188,8 +188,15 @@ func (s *Server) GetPreferences(ctx context.Context, req *notificationv1.GetPref
 
 	protoPrefs := make([]*notificationv1.NotificationPreference, 0, len(prefs.Preferences))
 	for typeStr, cp := range prefs.Preferences {
+		if strings.HasPrefix(typeStr, "_") {
+			continue
+		}
+		nt := stringToProtoNotificationType(typeStr)
+		if nt == notificationv1.NotificationType_NOTIFICATION_TYPE_UNSPECIFIED {
+			continue
+		}
 		protoPrefs = append(protoPrefs, &notificationv1.NotificationPreference{
-			NotificationType: stringToProtoNotificationType(typeStr),
+			NotificationType: nt,
 			PushEnabled:      cp.Push,
 			EmailEnabled:     cp.Email,
 			SmsEnabled:       cp.SMS,
@@ -197,11 +204,22 @@ func (s *Server) GetPreferences(ctx context.Context, req *notificationv1.GetPref
 		})
 	}
 
+	globalPush, globalEmail, globalSMS := true, true, false
+	if cp, ok := prefs.Preferences["_global_push"]; ok {
+		globalPush = cp.Push
+	}
+	if cp, ok := prefs.Preferences["_global_email"]; ok {
+		globalEmail = cp.Push
+	}
+	if cp, ok := prefs.Preferences["_global_sms"]; ok {
+		globalSMS = cp.Push
+	}
+
 	return &notificationv1.GetPreferencesResponse{
 		Preferences:        protoPrefs,
-		GlobalPushEnabled:  true,
-		GlobalEmailEnabled: true,
-		GlobalSmsEnabled:   false,
+		GlobalPushEnabled:  globalPush,
+		GlobalEmailEnabled: globalEmail,
+		GlobalSmsEnabled:   globalSMS,
 	}, nil
 }
 
@@ -210,6 +228,11 @@ func (s *Server) UpdatePreferences(ctx context.Context, req *notificationv1.Upda
 	prefsMap := make(map[string]domain.ChannelPrefs)
 	for _, p := range req.GetPreferences() {
 		typeStr := protoNotificationTypeToString(p.GetNotificationType())
+		// Unspecified is not a stored type. Dropping it keeps a partial client
+		// payload from writing a junk key over the merged document.
+		if typeStr == "" || typeStr == "unspecified" {
+			continue
+		}
 		prefsMap[typeStr] = domain.ChannelPrefs{
 			InApp: p.GetInAppEnabled(),
 			Email: p.GetEmailEnabled(),
@@ -221,7 +244,9 @@ func (s *Server) UpdatePreferences(ctx context.Context, req *notificationv1.Upda
 	domainPrefs := &domain.NotificationPreferences{
 		UserID:      req.GetUserId(),
 		Preferences: prefsMap,
-		EmailDigest: "daily",
+		GlobalPush:  req.GlobalPushEnabled,
+		GlobalEmail: req.GlobalEmailEnabled,
+		GlobalSMS:   req.GlobalSmsEnabled,
 	}
 
 	updated, err := s.svc.UpdatePreferences(ctx, domainPrefs)
@@ -231,8 +256,15 @@ func (s *Server) UpdatePreferences(ctx context.Context, req *notificationv1.Upda
 
 	protoPrefs := make([]*notificationv1.NotificationPreference, 0, len(updated.Preferences))
 	for typeStr, cp := range updated.Preferences {
+		if strings.HasPrefix(typeStr, "_") {
+			continue
+		}
+		nt := stringToProtoNotificationType(typeStr)
+		if nt == notificationv1.NotificationType_NOTIFICATION_TYPE_UNSPECIFIED {
+			continue
+		}
 		protoPrefs = append(protoPrefs, &notificationv1.NotificationPreference{
-			NotificationType: stringToProtoNotificationType(typeStr),
+			NotificationType: nt,
 			PushEnabled:      cp.Push,
 			EmailEnabled:     cp.Email,
 			SmsEnabled:       cp.SMS,
@@ -326,6 +358,8 @@ func protoNotificationTypeToString(nt notificationv1.NotificationType) string {
 		return "payment_released"
 	case notificationv1.NotificationType_NOTIFICATION_TYPE_PAYMENT_FAILED:
 		return "payment_failed"
+	case notificationv1.NotificationType_NOTIFICATION_TYPE_PAYMENT_AUTHENTICATION_REQUIRED:
+		return "payment_authentication_required"
 	case notificationv1.NotificationType_NOTIFICATION_TYPE_PAYOUT_SENT:
 		return "payout_sent"
 	case notificationv1.NotificationType_NOTIFICATION_TYPE_NEW_MESSAGE:
@@ -356,6 +390,16 @@ func protoNotificationTypeToString(nt notificationv1.NotificationType) string {
 		return "recurring_upcoming"
 	case notificationv1.NotificationType_NOTIFICATION_TYPE_RECURRING_INSTANCE_READY:
 		return "recurring_instance_ready"
+	case notificationv1.NotificationType_NOTIFICATION_TYPE_WISHLIST_MATCH:
+		return "wishlist_match"
+	case notificationv1.NotificationType_NOTIFICATION_TYPE_BID_OUTBID:
+		return "bid_outbid"
+	case notificationv1.NotificationType_NOTIFICATION_TYPE_JOB_MATCHED:
+		return "job_matched"
+	case notificationv1.NotificationType_NOTIFICATION_TYPE_PRICE_DROP:
+		return "price_drop"
+	case notificationv1.NotificationType_NOTIFICATION_TYPE_SELLER_NEW_LISTING:
+		return "seller_new_listing"
 	default:
 		return "unspecified"
 	}
@@ -397,6 +441,8 @@ func stringToProtoNotificationType(s string) notificationv1.NotificationType {
 		return notificationv1.NotificationType_NOTIFICATION_TYPE_PAYMENT_RELEASED
 	case "payment_failed":
 		return notificationv1.NotificationType_NOTIFICATION_TYPE_PAYMENT_FAILED
+	case "payment_authentication_required":
+		return notificationv1.NotificationType_NOTIFICATION_TYPE_PAYMENT_AUTHENTICATION_REQUIRED
 	case "payout_sent":
 		return notificationv1.NotificationType_NOTIFICATION_TYPE_PAYOUT_SENT
 	case "new_message":
@@ -427,6 +473,16 @@ func stringToProtoNotificationType(s string) notificationv1.NotificationType {
 		return notificationv1.NotificationType_NOTIFICATION_TYPE_RECURRING_UPCOMING
 	case "recurring_instance_ready":
 		return notificationv1.NotificationType_NOTIFICATION_TYPE_RECURRING_INSTANCE_READY
+	case "wishlist_match":
+		return notificationv1.NotificationType_NOTIFICATION_TYPE_WISHLIST_MATCH
+	case "bid_outbid":
+		return notificationv1.NotificationType_NOTIFICATION_TYPE_BID_OUTBID
+	case "job_matched":
+		return notificationv1.NotificationType_NOTIFICATION_TYPE_JOB_MATCHED
+	case "price_drop":
+		return notificationv1.NotificationType_NOTIFICATION_TYPE_PRICE_DROP
+	case "seller_new_listing":
+		return notificationv1.NotificationType_NOTIFICATION_TYPE_SELLER_NEW_LISTING
 	default:
 		return notificationv1.NotificationType_NOTIFICATION_TYPE_UNSPECIFIED
 	}
@@ -462,7 +518,10 @@ func stringToProtoChannel(s string) notificationv1.NotificationChannel {
 	}
 }
 
-// protoPlatformToString converts a proto DevicePlatform to a string.
+// protoPlatformToString converts a proto DevicePlatform to a string stored in
+// device_tokens.platform. IOS-SYS.LA.3: DEVICE_PLATFORM_IOS_LIVE_ACTIVITY
+// round-trips as "ios_live_activity" so alert fan-out can exclude LA tokens
+// and SendLiveActivityUpdate can target them.
 func protoPlatformToString(p notificationv1.DevicePlatform) string {
 	switch p {
 	case notificationv1.DevicePlatform_DEVICE_PLATFORM_IOS:
@@ -471,6 +530,8 @@ func protoPlatformToString(p notificationv1.DevicePlatform) string {
 		return "android"
 	case notificationv1.DevicePlatform_DEVICE_PLATFORM_WEB:
 		return "web"
+	case notificationv1.DevicePlatform_DEVICE_PLATFORM_IOS_LIVE_ACTIVITY:
+		return "ios_live_activity"
 	default:
 		return "unknown"
 	}

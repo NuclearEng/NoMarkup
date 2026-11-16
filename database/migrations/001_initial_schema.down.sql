@@ -1,7 +1,13 @@
 -- NoMarkup: Rollback initial schema
 -- Drops all tables in reverse dependency order
 
-DROP TABLE IF EXISTS schema_migrations CASCADE;
+-- NOTE: schema_migrations is deliberately NOT dropped here. That table belongs
+-- to golang-migrate, not to this schema. Dropping it mid-rollback destroys the
+-- version bookkeeping the tool is holding open, so `migrate down` to zero
+-- failed on its own trailing write ("relation schema_migrations does not
+-- exist") after this file had already succeeded — leaving a torn-down database
+-- the tool then refused to operate on. A migration must never touch it.
+
 DROP TABLE IF EXISTS events CASCADE;
 DROP TABLE IF EXISTS admin_audit_log CASCADE;
 DROP TABLE IF EXISTS platform_config CASCADE;
@@ -43,6 +49,12 @@ DROP TABLE IF EXISTS oauth_accounts CASCADE;
 DROP TABLE IF EXISTS users CASCADE;
 
 DROP FUNCTION IF EXISTS trigger_set_updated_at CASCADE;
+
+-- The up creates `CREATE SEQUENCE contract_number_seq` (no IF NOT EXISTS) but
+-- the down never dropped it, so a down-to-zero followed by an up died on
+-- `relation "contract_number_seq" already exists` and stamped (1, dirty=true)
+-- — the same wedge this file's other fix removes, one migration later.
+DROP SEQUENCE IF EXISTS contract_number_seq CASCADE;
 
 DROP EXTENSION IF EXISTS pg_trgm;
 DROP EXTENSION IF EXISTS postgis;

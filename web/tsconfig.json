@@ -1,10 +1,19 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "lib": ["dom", "dom.iterable", "ES2022"],
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "ES2022"
+    ],
     "allowJs": true,
     "skipLibCheck": true,
-    "types": ["node", "react", "react-dom", "mapbox-gl"],
+    "types": [
+      "node",
+      "react",
+      "react-dom",
+      "mapbox-gl"
+    ],
     "strict": true,
     "noEmit": true,
     "noUncheckedIndexedAccess": true,
@@ -21,9 +30,23 @@
       }
     ],
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": [
+        "./src/*"
+      ]
     }
   },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules"]
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts",
+    // Alternate production distDirs (PERF-07 bundle check / PERF-02 LHCI) —
+    // Next may rewrite this list on build; keep both so typecheck works after
+    // either isolated build.
+    ".next-prod/types/**/*.ts",
+    ".next-lhci/types/**/*.ts",
+    "next-env.d.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
 }

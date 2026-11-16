@@ -24,10 +24,10 @@ interface OrderBookProps {
 }
 
 const TRUST_TIER_CONFIG = {
-  top_rated: { label: 'Top Rated', icon: Star, colorClass: 'text-amber-400' },
-  trusted: { label: 'Trusted', icon: Shield, colorClass: 'text-emerald-400' },
-  rising: { label: 'Rising', icon: TrendingDown, colorClass: 'text-blue-400' },
-  new: { label: 'New', icon: User, colorClass: 'text-muted-foreground' },
+  top_rated: { label: 'Top Rated', icon: Star, colorClass: 'text-brand-gold' },
+  trusted: { label: 'Trusted', icon: Shield, colorClass: 'text-trust-elite' },
+  rising: { label: 'Rising', icon: TrendingDown, colorClass: 'text-trust-high' },
+  new: { label: 'New', icon: User, colorClass: 'text-bid-active' },
   under_review: { label: 'Review', icon: User, colorClass: 'text-muted-foreground/60' },
 } as const;
 
@@ -158,7 +158,7 @@ export function OrderBook({ jobId, bids, startingPrice, className }: OrderBookPr
               : 0.12;
 
           const tierKey = bid.trust_tier as keyof typeof TRUST_TIER_CONFIG;
-          const tierConfig = TRUST_TIER_CONFIG[tierKey] ?? TRUST_TIER_CONFIG.new;
+          const tierConfig = TRUST_TIER_CONFIG[tierKey];
           const TierIcon = tierConfig.icon;
 
           return (
@@ -207,7 +207,7 @@ export function OrderBook({ jobId, bids, startingPrice, className }: OrderBookPr
                     className={cn(
                       'flex h-6 w-6 items-center justify-center rounded-full',
                       isLowest
-                        ? 'bg-amber-500/20 text-amber-400'
+                        ? 'bg-brand-gold/20 text-brand-gold'
                         : 'bg-zinc-800 text-zinc-400',
                     )}
                   >
@@ -215,7 +215,7 @@ export function OrderBook({ jobId, bids, startingPrice, className }: OrderBookPr
                   </div>
                   {isLowest && (
                     <span
-                      className="absolute -top-1.5 -right-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-amber-500 text-[7px] font-black text-black"
+                      className="absolute -top-1.5 -right-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-brand-gold text-[7px] font-black text-background"
                       style={{ animation: 'lowestBadgePulse 2s ease-in-out infinite' }}
                       aria-label="Lowest bid"
                     >
@@ -240,6 +240,7 @@ export function OrderBook({ jobId, bids, startingPrice, className }: OrderBookPr
                       tierConfig.colorClass,
                     )}
                     aria-label={`Trust tier: ${tierConfig.label}, score: ${String(bid.trust_score)}`}
+                    // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- focusable for tooltip accessibility
                     tabIndex={0}
                   >
                     <TierIcon className="h-3 w-3" aria-hidden="true" />
@@ -257,11 +258,11 @@ export function OrderBook({ jobId, bids, startingPrice, className }: OrderBookPr
                 </TooltipContent>
               </Tooltip>
 
-              {/* Price */}
+              {/* Price — mono terminal figures */}
               <span
                 className={cn(
-                  'relative z-10 text-right text-xs font-bold tabular-nums',
-                  isLowest ? 'text-emerald-400' : 'text-zinc-100',
+                  'relative z-10 text-right font-mono text-xs font-bold tabular-nums tracking-tight',
+                  isLowest ? 'text-bid-winning' : 'text-zinc-100',
                 )}
                 style={{ textShadow: isLowest ? '0 0 8px rgba(34,197,94,0.4)' : '0 1px 2px rgba(0,0,0,0.2)' }}
               >

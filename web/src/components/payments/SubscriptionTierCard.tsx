@@ -4,8 +4,9 @@ import { Check, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { SUBSCRIPTION_RENEWAL_DISCLOSURE } from '@/lib/constants';
 import { cn } from '@/lib/utils';
-import { formatCents } from '@/lib/utils';
+import { formatCents, subscriptionTierLabel } from '@/lib/utils';
 import { BILLING_INTERVAL } from '@/types';
 import type { BillingInterval, SubscriptionTier } from '@/types';
 
@@ -29,7 +30,9 @@ function getFeatures(tier: SubscriptionTier): FeatureItem[] {
       included: true,
     },
     {
-      label: `${String(tier.fee_discount_percentage)}% fee discount`,
+      // fee_discount_percentage is a fraction (e.g. 0.10 = 10% off), matching
+      // the proto contract and the usage display in the subscription page.
+      label: `${String(Math.round(tier.fee_discount_percentage * 100))}% fee discount`,
       included: tier.fee_discount_percentage > 0,
     },
     { label: 'Featured placement', included: tier.featured_placement },
@@ -79,6 +82,7 @@ export function SubscriptionTierCard({
       : tier.monthly_price_cents;
 
   const features = getFeatures(tier);
+  const tierLabel = subscriptionTierLabel(tier);
   const ctaLabel = getCtaLabel(tier.id, currentTierId, tier.sort_order, currentSortOrder);
 
   return (
@@ -95,7 +99,7 @@ export function SubscriptionTierCard({
       ) : null}
 
       <CardHeader className="text-center">
-        <CardTitle className="text-lg">{tier.name}</CardTitle>
+        <CardTitle className="text-lg">{tierLabel}</CardTitle>
         <div className="mt-2">
           <span className="text-3xl font-bold">{formatCents(monthlyEquivalent)}</span>
           <span className="text-sm text-muted-foreground">/mo</span>
@@ -103,6 +107,13 @@ export function SubscriptionTierCard({
         {billingInterval === BILLING_INTERVAL.ANNUAL ? (
           <p className="mt-1 text-xs text-muted-foreground">
             {formatCents(priceCents)} billed annually
+          </p>
+        ) : null}
+        {priceCents > 0 ? (
+          <p className="mt-2 text-xs text-muted-foreground">
+            {formatCents(priceCents)}{' '}
+            {billingInterval === BILLING_INTERVAL.ANNUAL ? 'per year' : 'per month'}.{' '}
+            {SUBSCRIPTION_RENEWAL_DISCLOSURE}
           </p>
         ) : null}
       </CardHeader>
@@ -113,7 +124,7 @@ export function SubscriptionTierCard({
             <li key={feature.label} className="flex items-center gap-2 text-sm">
               {feature.included ? (
                 <Check
-                  className="h-4 w-4 shrink-0 text-emerald-500"
+                  className="h-4 w-4 shrink-0 text-trust-high"
                   aria-hidden="true"
                 />
               ) : (
@@ -140,7 +151,7 @@ export function SubscriptionTierCard({
           variant={isCurrent ? 'outline' : 'default'}
           disabled={isCurrent}
           onClick={() => { onSelect(tier.id); }}
-          aria-label={`${ctaLabel} - ${tier.name}`}
+          aria-label={`${ctaLabel} - ${tierLabel}`}
         >
           {ctaLabel}
         </Button>

@@ -51,6 +51,7 @@ export function MarketRangeDisplay({ range, className }: MarketRangeDisplayProps
         <div className="relative h-3 w-full overflow-hidden rounded-full bg-muted">
           <div className="absolute inset-0 rounded-full bg-gradient-to-r from-green-400 via-yellow-400 to-red-400" />
           <div
+            role="img"
             className="absolute top-0 h-full w-0.5 bg-foreground"
             style={{ left: `${String(medianPosition)}%` }}
             aria-label={`Median price at ${formatCents(median_cents)}`}

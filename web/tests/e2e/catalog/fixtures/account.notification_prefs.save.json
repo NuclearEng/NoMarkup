@@ -1,0 +1,12 @@
+{
+  "method": "PUT",
+  "path": "/api/v1/notifications/preferences",
+  "status": 200,
+  "contentType": "application/json",
+  "body": {
+    "preferences": [],
+    "global_push_enabled": true,
+    "global_email_enabled": true,
+    "global_sms_enabled": false
+  }
+}

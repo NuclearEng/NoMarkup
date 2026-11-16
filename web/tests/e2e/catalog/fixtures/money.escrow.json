@@ -1,0 +1,9 @@
+{
+  "method": "POST",
+  "path": "/api/v1/payments/{id}/process",
+  "status": 404,
+  "contentType": "application/json",
+  "body": {
+    "error": "not found"
+  }
+}

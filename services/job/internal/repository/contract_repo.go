@@ -11,13 +11,89 @@ import (
 	"github.com/nomarkup/nomarkup/services/job/internal/domain"
 )
 
+// liveContractForJob returns the id of the job's existing LIVE contract, or ""
+// when there is none. The WHERE clause mirrors uq_contracts_live_job's
+// predicate (migration 078) so this sees exactly the rows the unique index
+// treats as live.
+//
+// When the live contract belongs to a different bid than wantBidID, it returns
+// domain.ErrJobAlreadyContracted instead of an id — awarding a second bid on an
+// already-contracted job is a conflict, not a retry.
+func liveContractForJob(ctx context.Context, tx pgx.Tx, jobID, wantBidID string) (string, error) {
+	var existingID, existingBidID string
+	err := tx.QueryRow(ctx, `
+		SELECT id, bid_id
+		  FROM contracts
+		 WHERE job_id = $1
+		   AND deleted_at IS NULL
+		   AND status NOT IN ('cancelled', 'voided')
+		 LIMIT 1`, jobID).Scan(&existingID, &existingBidID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("create contract lookup live contract: %w", err)
+	}
+	if existingBidID != wantBidID {
+		return "", fmt.Errorf("create contract for job %s (bid %s): existing live contract %s is for bid %s: %w",
+			jobID, wantBidID, existingID, existingBidID, domain.ErrJobAlreadyContracted)
+	}
+	return existingID, nil
+}
+
 // CreateContract inserts a contract and its milestones in a transaction.
+//
+// Idempotent per bid. Migration 078 added uq_contracts_live_job — a partial
+// UNIQUE index on contracts(job_id) WHERE deleted_at IS NULL AND status NOT IN
+// ('cancelled','voided') — so a job can carry at most one LIVE contract. The
+// documented award-failure recovery path tells the caller to re-invoke this
+// endpoint (gateway/internal/handler/bid.go), and against a bare INSERT that
+// retry now raises a raw 23505 that surfaces as a 500. A predictable condition
+// must never be a 500 (CLAUDE.md §15), so the retry is resolved here:
+//
+//   - a live contract exists for the SAME bid → return it unchanged. The retry
+//     is a no-op success, which is what a recovery path wants: the caller gets
+//     the contract it was trying to create either way, and no second escrow
+//     lifecycle is started.
+//   - a live contract exists for a DIFFERENT bid → domain.ErrJobAlreadyContracted.
+//     This is not a retry, it is an attempt to award a second provider on a job
+//     that is already contracted. Returning the other bid's contract would be
+//     an outright wrong answer, so it gets its own typed sentinel for the
+//     gateway to map to 409 Conflict.
+//
+// Concurrency: the job row is locked FOR UPDATE before the check, which
+// serialises concurrent awards of the same job — the same pattern
+// CloseListingAuction uses against listing_orders' UNIQUE(listing_id). The
+// ON CONFLICT DO NOTHING clause below is the backstop for anything that still
+// slips past the lock (e.g. a contract created by a path that does not take
+// it), so a 23505 can never escape as a 500.
 func (r *PostgresRepository) CreateContract(ctx context.Context, contract *domain.Contract, milestones []domain.MilestoneInput) (*domain.Contract, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("create contract begin tx: %w", err)
 	}
 	defer tx.Rollback(ctx)
+
+	// Serialise concurrent awards for this job. A missing job is left to the
+	// INSERT's FK to reject; this lock only orders the racers.
+	var lockedJobID string
+	err = tx.QueryRow(ctx, `SELECT id FROM jobs WHERE id = $1 FOR UPDATE`, contract.JobID).Scan(&lockedJobID)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return nil, fmt.Errorf("create contract lock job: %w", err)
+	}
+
+	// Already contracted? Resolve the retry before spending a contract number.
+	existingID, err := liveContractForJob(ctx, tx, contract.JobID, contract.BidID)
+	if err != nil {
+		return nil, err
+	}
+	if existingID != "" {
+		// Read-only path; release the lock without writing anything.
+		if err := tx.Commit(ctx); err != nil {
+			return nil, fmt.Errorf("create contract commit existing lookup: %w", err)
+		}
+		return r.GetContract(ctx, existingID)
+	}
 
 	// Generate contract number using sequence: NM-YYYY-NNNNN
 	var seqVal int64
@@ -29,6 +105,10 @@ func (r *PostgresRepository) CreateContract(ctx context.Context, contract *domai
 
 	var contractID string
 	var createdAt, updatedAt time.Time
+	// The ON CONFLICT target restates uq_contracts_live_job's predicate exactly
+	// so Postgres infers that index as the arbiter. DO NOTHING (rather than
+	// letting the constraint raise) turns the race into an empty result set,
+	// handled just below.
 	err = tx.QueryRow(ctx, `
 		INSERT INTO contracts (
 			contract_number, job_id, customer_id, provider_id, bid_id,
@@ -41,12 +121,34 @@ func (r *PostgresRepository) CreateContract(ctx context.Context, contract *domai
 			$10, $11, $12,
 			$13, ''
 		)
+		ON CONFLICT (job_id)
+			WHERE deleted_at IS NULL AND status NOT IN ('cancelled', 'voided')
+			DO NOTHING
 		RETURNING id, created_at, updated_at`,
 		contractNumber, contract.JobID, contract.CustomerID, contract.ProviderID, contract.BidID,
 		contract.AmountCents, contract.PaymentTiming, contract.TermsJSON, contract.ScheduleJSON,
 		contract.Status, contract.CustomerAccepted, contract.ProviderAccepted,
 		contract.AcceptanceDeadline,
 	).Scan(&contractID, &createdAt, &updatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		// DO NOTHING fired: another transaction created the live contract
+		// between our lock and this insert. Resolve it the same way as the
+		// pre-check so the outcome does not depend on who won the race.
+		raced, lookupErr := liveContractForJob(ctx, tx, contract.JobID, contract.BidID)
+		if lookupErr != nil {
+			return nil, lookupErr
+		}
+		if raced == "" {
+			// No live contract, yet the unique index still rejected the row —
+			// the predicate and this query have diverged. Fail loudly rather
+			// than silently dropping a contract on the floor.
+			return nil, fmt.Errorf("create contract insert: conflict on uq_contracts_live_job but no live contract found for job %s", contract.JobID)
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return nil, fmt.Errorf("create contract commit raced lookup: %w", err)
+		}
+		return r.GetContract(ctx, raced)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("create contract insert: %w", err)
 	}
@@ -124,6 +226,13 @@ func (r *PostgresRepository) GetContract(ctx context.Context, contractID string)
 		return nil, fmt.Errorf("get contract change orders: %w", err)
 	}
 	c.ChangeOrders = changeOrders
+
+	// Load optional recurring config (FR-18). Missing row is normal for one-shot jobs.
+	if rec, err := r.GetRecurringConfigByContract(ctx, contractID); err == nil {
+		c.Recurring = rec
+	} else if !errors.Is(err, domain.ErrRecurringNotFound) {
+		return nil, fmt.Errorf("get contract recurring: %w", err)
+	}
 
 	return &c, nil
 }
@@ -219,7 +328,7 @@ func (r *PostgresRepository) StartWork(ctx context.Context, contractID string) (
 
 // ListContracts lists contracts for a user with optional status filter and pagination.
 func (r *PostgresRepository) ListContracts(ctx context.Context, userID string, statusFilter *string, page, pageSize int) ([]*domain.Contract, *domain.Pagination, error) {
-	where := "(c.customer_id = $1 OR c.provider_id = $1)"
+	where := "(c.customer_id = $1 OR c.provider_id = $1) AND c.deleted_at IS NULL"
 	args := []interface{}{userID}
 	argIdx := 2
 
@@ -421,8 +530,18 @@ func (r *PostgresRepository) RequestRevision(ctx context.Context, milestoneID st
 
 // MarkComplete marks a contract as completed.
 func (r *PostgresRepository) MarkComplete(ctx context.Context, contractID string) (*domain.Contract, error) {
+	// The provider marking work complete is the FIRST half of a two-party
+	// completion handshake, not the terminal transition. It stamps
+	// completed_at but deliberately keeps status = 'active' so the customer's
+	// "Approve Completion / Request Revision" step is still reachable. The
+	// frontend (CompletionFlow) keys "awaiting customer approval" off
+	// (status == 'active' && completed_at != null); flipping straight to
+	// 'completed' here made ApproveCompletion (which requires an active
+	// contract) return 422 and hid the customer's approval UI entirely.
+	// Customer approval (or the 7-day auto-release) is what flips status to
+	// 'completed'. Re-stamping is idempotent on an already-marked contract.
 	tag, err := r.pool.Exec(ctx, `
-		UPDATE contracts SET status = 'completed', completed_at = now(), updated_at = now()
+		UPDATE contracts SET completed_at = now(), updated_at = now()
 		WHERE id = $1 AND status = 'active'`, contractID)
 	if err != nil {
 		return nil, fmt.Errorf("mark complete: %w", err)
@@ -516,9 +635,17 @@ func (r *PostgresRepository) UpdateJobStatus(ctx context.Context, jobID string, 
 	return nil
 }
 
-// GetContractsAwaitingApproval returns contracts where the provider marked complete
-// and the completed_at timestamp is older than the specified duration.
-// This supports the auto-release scheduled job for Slice 8.
+// GetContractsAwaitingApproval returns contracts the auto-release cron should
+// process:
+//
+//  1. Provider marked complete, customer never approved, older than olderThan
+//     (status active + completed_at set — the half-open handshake).
+//  2. Customer already approved (status completed) but a services payment is
+//     still in escrow — the gateway used to complete-then-fail-soft, so these
+//     rows never re-entered the 7-day active-only query.
+//
+// Disputed/cancelled are excluded. The completed branch has no age cutoff:
+// the customer already confirmed; money should not sit held.
 func (r *PostgresRepository) GetContractsAwaitingApproval(ctx context.Context, olderThan time.Duration) ([]domain.Contract, error) {
 	cutoff := time.Now().Add(-olderThan)
 	rows, err := r.pool.Query(ctx, `
@@ -528,7 +655,16 @@ func (r *PostgresRepository) GetContractsAwaitingApproval(ctx context.Context, o
 		       acceptance_deadline, accepted_at, started_at, completed_at,
 		       cancelled_at, created_at, updated_at
 		FROM contracts
-		WHERE status = 'completed' AND completed_at IS NOT NULL AND completed_at <= $1`, cutoff)
+		WHERE deleted_at IS NULL
+		  AND (
+		    (status = 'active' AND completed_at IS NOT NULL AND completed_at <= $1)
+		    OR
+		    (status = 'completed' AND EXISTS (
+		       SELECT 1 FROM payments p
+		        WHERE p.contract_id = contracts.id
+		          AND p.status = 'escrow'
+		    ))
+		  )`, cutoff)
 	if err != nil {
 		return nil, fmt.Errorf("get contracts awaiting approval: %w", err)
 	}
@@ -626,6 +762,143 @@ func (r *PostgresRepository) getContractChangeOrders(ctx context.Context, contra
 		orders = append(orders, o)
 	}
 	return orders, nil
+}
+
+// --- Change Order Repository Methods ---
+
+// CreateChangeOrder inserts a new change order in 'proposed' status. The
+// change_orders.changes_json column is NOT NULL; this minimal change-order flow
+// carries only a description + amount delta, so we persist an empty object.
+func (r *PostgresRepository) CreateChangeOrder(ctx context.Context, order *domain.ChangeOrder) (*domain.ChangeOrder, error) {
+	var id string
+	err := r.pool.QueryRow(ctx, `
+		INSERT INTO change_orders (
+			contract_id, proposed_by, description, changes_json,
+			amount_delta_cents, status
+		) VALUES ($1, $2, $3, '{}'::jsonb, $4, 'proposed')
+		RETURNING id`,
+		order.ContractID, order.ProposedBy, order.Description, order.AmountDeltaCents,
+	).Scan(&id)
+	if err != nil {
+		return nil, fmt.Errorf("create change order insert: %w", err)
+	}
+	return r.GetChangeOrder(ctx, id)
+}
+
+// GetChangeOrder retrieves a single change order by ID.
+func (r *PostgresRepository) GetChangeOrder(ctx context.Context, changeOrderID string) (*domain.ChangeOrder, error) {
+	var o domain.ChangeOrder
+	err := r.pool.QueryRow(ctx, `
+		SELECT id, contract_id, proposed_by, description,
+		       changes_json, amount_delta_cents, status,
+		       accepted_at, rejected_at, created_at, updated_at
+		FROM change_orders
+		WHERE id = $1`, changeOrderID).Scan(
+		&o.ID, &o.ContractID, &o.ProposedBy, &o.Description,
+		&o.ChangesJSON, &o.AmountDeltaCents, &o.Status,
+		&o.AcceptedAt, &o.RejectedAt, &o.CreatedAt, &o.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, domain.ErrChangeOrderNotFound
+		}
+		return nil, fmt.Errorf("get change order: %w", err)
+	}
+	return &o, nil
+}
+
+// AcceptChangeOrder atomically flips a proposed change order to 'accepted' and
+// applies the amount delta to the contract amount and (if the contract has a
+// single milestone) that milestone's amount. The status guard in the UPDATE
+// ... WHERE status = 'proposed' makes this idempotent: a second accept affects
+// zero rows and returns ErrChangeOrderNotPending, so the delta can never be
+// applied twice. All writes share one transaction.
+func (r *PostgresRepository) AcceptChangeOrder(ctx context.Context, changeOrderID string) (*domain.ChangeOrder, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("accept change order begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	// Flip status only if still proposed; capture the delta + contract atomically.
+	var contractID string
+	var delta int64
+	err = tx.QueryRow(ctx, `
+		UPDATE change_orders
+		SET status = 'accepted', accepted_at = now(), updated_at = now()
+		WHERE id = $1 AND status = 'proposed'
+		RETURNING contract_id, amount_delta_cents`,
+		changeOrderID).Scan(&contractID, &delta)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// Either the change order does not exist or it is not pending.
+			var exists bool
+			_ = r.pool.QueryRow(ctx,
+				`SELECT EXISTS(SELECT 1 FROM change_orders WHERE id = $1)`, changeOrderID).Scan(&exists)
+			if !exists {
+				return nil, domain.ErrChangeOrderNotFound
+			}
+			return nil, domain.ErrChangeOrderNotPending
+		}
+		return nil, fmt.Errorf("accept change order update: %w", err)
+	}
+
+	// Apply the delta to the contract amount.
+	_, err = tx.Exec(ctx, `
+		UPDATE contracts SET amount_cents = amount_cents + $1, updated_at = now()
+		WHERE id = $2`, delta, contractID)
+	if err != nil {
+		return nil, fmt.Errorf("accept change order contract amount: %w", err)
+	}
+
+	// Keep milestone amounts reconciled with the contract amount. When the
+	// contract has exactly one milestone (the default single "Complete work"
+	// milestone), the milestone total must equal the contract amount, so we
+	// apply the delta there too. For multi-milestone contracts we leave the
+	// existing milestone splits untouched — re-splitting is out of scope for the
+	// amount-delta flow and would require explicit per-milestone instructions.
+	var milestoneCount int
+	if err := tx.QueryRow(ctx,
+		`SELECT count(*) FROM milestones WHERE contract_id = $1`, contractID).Scan(&milestoneCount); err != nil {
+		return nil, fmt.Errorf("accept change order milestone count: %w", err)
+	}
+	if milestoneCount == 1 {
+		_, err = tx.Exec(ctx, `
+			UPDATE milestones SET amount_cents = amount_cents + $1, updated_at = now()
+			WHERE contract_id = $2`, delta, contractID)
+		if err != nil {
+			return nil, fmt.Errorf("accept change order milestone amount: %w", err)
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("accept change order commit: %w", err)
+	}
+
+	return r.GetChangeOrder(ctx, changeOrderID)
+}
+
+// RejectChangeOrder marks a proposed change order rejected. No money moves. The
+// status guard makes a double-reject (or reject-after-accept) a no-op that
+// surfaces as ErrChangeOrderNotPending.
+func (r *PostgresRepository) RejectChangeOrder(ctx context.Context, changeOrderID string) (*domain.ChangeOrder, error) {
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE change_orders
+		SET status = 'rejected', rejected_at = now(), updated_at = now()
+		WHERE id = $1 AND status = 'proposed'`, changeOrderID)
+	if err != nil {
+		return nil, fmt.Errorf("reject change order update: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		var exists bool
+		_ = r.pool.QueryRow(ctx,
+			`SELECT EXISTS(SELECT 1 FROM change_orders WHERE id = $1)`, changeOrderID).Scan(&exists)
+		if !exists {
+			return nil, domain.ErrChangeOrderNotFound
+		}
+		return nil, domain.ErrChangeOrderNotPending
+	}
+	return r.GetChangeOrder(ctx, changeOrderID)
 }
 
 // --- Dispute Repository Methods ---

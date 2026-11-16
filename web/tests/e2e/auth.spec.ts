@@ -141,11 +141,18 @@ test.describe('Authentication flows', () => {
     test('sign in button meets minimum touch target', async ({ page }) => {
       await page.goto('/login');
       const button = page.getByRole('button', { name: /sign in/i });
-      const box = await button.boundingBox();
-      expect(box).not.toBeNull();
-      if (box) {
-        expect(box.height).toBeGreaterThanOrEqual(44);
-      }
+      // Measuring immediately after goto was flaky: boundingBox could sample
+      // mid-render (stylesheet/hydration not settled) and read a transient
+      // height. Wait for the button to be visible — toBeVisible auto-retries
+      // until layout is real — then poll the box until it meets the target.
+      await expect(button).toBeVisible();
+      await expect(async () => {
+        const box = await button.boundingBox();
+        expect(box).not.toBeNull();
+        if (box) {
+          expect(box.height).toBeGreaterThanOrEqual(44);
+        }
+      }).toPass({ timeout: 10_000 });
     });
   });
 });

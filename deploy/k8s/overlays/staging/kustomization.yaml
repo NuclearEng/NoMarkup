@@ -1,14 +1,56 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
+# Staging isolation is namespace-only (`nomarkup-staging` vs production
+# `nomarkup`). Do NOT set namePrefix here: base Deployments hardcode
+# in-cluster Service DNS (`user:50051`, `job:50052`, …) and ConfigMap
+# literals use `http://meilisearch:7700` / `http://otel-collector:4317`.
+# Kustomize rewrites object nameReferences (ingress backends, envFrom
+# configMapRef) under a prefix, but not those string hostnames — pods
+# would fail to resolve peers (OPS-20).
 namespace: nomarkup-staging
-
-namePrefix: staging-
 
 resources:
   - ../../base
 
+# Image pinning — staging deploys an explicit tag, never floating `:latest`.
+# `v0.1.0` is the placeholder release; CI stamps the real release tag at
+# deploy time via `kustomize edit set image ghcr.io/nomarkup/<name>:<tag>`
+# (deploy.yml is a gated placeholder today — it no-ops unless the
+# DEPLOY_PROVISIONED repo variable is "true").
+images:
+  - name: ghcr.io/nomarkup/gateway
+    newTag: v0.1.0
+  - name: ghcr.io/nomarkup/web
+    newTag: v0.1.0
+  - name: ghcr.io/nomarkup/user
+    newTag: v0.1.0
+  - name: ghcr.io/nomarkup/job
+    newTag: v0.1.0
+  - name: ghcr.io/nomarkup/payment
+    newTag: v0.1.0
+  - name: ghcr.io/nomarkup/chat
+    newTag: v0.1.0
+  - name: ghcr.io/nomarkup/notification
+    newTag: v0.1.0
+  - name: ghcr.io/nomarkup/bidding
+    newTag: v0.1.0
+  - name: ghcr.io/nomarkup/fraud
+    newTag: v0.1.0
+  - name: ghcr.io/nomarkup/imaging
+    newTag: v0.1.0
+  - name: ghcr.io/nomarkup/pricing
+    newTag: v0.1.0
+  - name: ghcr.io/nomarkup/trust
+    newTag: v0.1.0
+  - name: ghcr.io/nomarkup/underwriting
+    newTag: v0.1.0
+
 patches:
+  # OPS-09 — dual-export backend → optional in-cluster Tempo (monitoring ns).
+  # Requires `kubectl apply -k deploy/monitoring` so tempo:4318 exists; until
+  # then collector stays Ready (debug exporter) while otlphttp retries.
+  - path: otel-backend-patch.yaml
   # Gateway: 1 replica in staging
   - target:
       kind: Deployment
@@ -90,11 +132,41 @@ patches:
       - op: replace
         path: /spec/replicas
         value: 1
+  - target:
+      kind: Deployment
+      name: pricing
+    patch: |
+      - op: replace
+        path: /spec/replicas
+        value: 1
+  - target:
+      kind: Deployment
+      name: underwriting
+    patch: |
+      - op: replace
+        path: /spec/replicas
+        value: 1
 
 configMapGenerator:
   - name: nomarkup-config
     literals:
       - ENVIRONMENT=staging
       - LOG_LEVEL=debug
+      - APP_VERSION=v0.1.0
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
       - MEILISEARCH_URL=http://meilisearch:7700
+      # Audit S2 — mandatory env vars (services fail-closed without these).
+      # JWT issuer/audience pin the JWT validator to this environment so a
+      # token minted for production cannot be accepted in staging.
+      - JWT_ISSUER=https://auth.staging.no-markup.com
+      - JWT_AUDIENCE=nomarkup-staging
+      # CSWSH defense — only these origins may upgrade to a WebSocket.
+      - WS_ALLOWED_ORIGINS=https://staging.no-markup.com,https://app.staging.no-markup.com
+      # XFF trust boundary — only requests from these CIDRs may set the
+      # X-Forwarded-For header that the rate limiter / audit log trusts.
+      - TRUSTED_PROXIES=10.0.0.0/8
+      # Apple OAuth aud (bundle id). Google client ID is NOT in this ConfigMap:
+      # it is provisioned into nomarkup-secrets (see SECRETS.md +
+      # externalsecret.sample.yaml) and injected via gateway envFrom secretRef.
+      # Never invent a real Google client id/secret in-repo (OPS-08).
+      - APPLE_CLIENT_ID=com.nomarkup.app.staging

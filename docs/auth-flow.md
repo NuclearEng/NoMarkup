@@ -1438,7 +1438,7 @@ for i, code := range setupSession.BackupCodes {
 ```sql
 UPDATE users
 SET mfa_enabled = true,
-    mfa_secret = $1,   -- Encrypted at rest (AES-256-GCM with key from KMS)
+    mfa_secret = $1,   -- Encrypted at rest (XSalsa20-Poly1305 nacl/secretbox; ENCRYPTION_KEY)
     mfa_backup_codes = $2,  -- Array of SHA-256 hashes
     updated_at = NOW()
 WHERE id = $3;
@@ -1499,7 +1499,7 @@ For TOTP:
 ```go
 var mfaSecret string
 db.QueryRow("SELECT mfa_secret FROM users WHERE id = $1", session.UserID).Scan(&mfaSecret)
-decryptedSecret := decrypt(mfaSecret) // AES-256-GCM
+decryptedSecret := decrypt(mfaSecret) // nacl/secretbox DecryptStringOrPassthrough
 
 valid := totp.Validate(code, decryptedSecret, totp.ValidateOpts{Period: 30, Skew: 1, Digits: 6})
 if !valid {
@@ -2130,7 +2130,7 @@ These cookies contain NO secrets. They are hints for the middleware to avoid unn
 | `APPLE_PRIVATE_KEY`       | Apple private key (PEM, ES256)               | `-----BEGIN EC PRIVATE KEY-----`  |
 | `RECAPTCHA_SECRET_KEY`    | Google reCAPTCHA v3 secret key               | `6Le...`                          |
 | `RECAPTCHA_SITE_KEY`      | Google reCAPTCHA v3 site key (frontend)      | `6Le...`                          |
-| `MFA_ENCRYPTION_KEY`      | AES-256-GCM key for encrypting TOTP secrets  | 32-byte base64                    |
+| `ENCRYPTION_KEY`          | secretbox key for MFA secret + other PII     | 32-byte key material (see crypto) |
 | `DATABASE_URL`            | PostgreSQL connection string                 | `postgres://user:pass@host/db`    |
 | `REDIS_URL`               | Redis connection string                      | `redis://host:6379/0`             |
 | `SMS_PROVIDER_API_KEY`    | Twilio or similar API key                    | `SK...`                           |

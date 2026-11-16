@@ -21,7 +21,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useUpdateProfile } from '@/hooks/useProfile';
-import { profileSchema, type ProfileFormValues } from '@/lib/validations';
+import { profileSchema, type ProfileFormValues } from '@/lib/schemas/profile';
 import type { User } from '@/types';
 
 const US_TIMEZONES = [
@@ -46,7 +46,7 @@ export function ProfileForm({ user, onCancel, onSuccess }: ProfileFormProps) {
     resolver: zodResolver(profileSchema),
     defaultValues: {
       displayName: user.displayName,
-      phone: '',
+      phone: user.phone ?? '',
       timezone: 'America/New_York',
       avatarUrl: user.avatarUrl ?? '',
     },

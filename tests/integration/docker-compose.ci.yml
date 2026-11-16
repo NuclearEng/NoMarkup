@@ -1,0 +1,35 @@
+# CI-only Compose overlay for the Tier-1 full-stack security suite.
+#
+# Used by .github/workflows/ci.yml -> `fullstack-security-test`, layered on top
+# of the repo-root docker-compose.yml:
+#
+#   docker compose -f docker-compose.yml -f tests/integration/docker-compose.ci.yml ...
+#
+# (the workflow sets COMPOSE_FILE so every `docker compose` call picks both up;
+# the project directory stays the repo root because that is the first file's
+# directory, so all relative build contexts still resolve).
+#
+# It changes exactly two things, both on the gateway, and both required for the
+# suite to run at all. Neither belongs in the dev stack:
+#
+#  1. ENVIRONMENT — gateway/internal/config/config.go:59-66 makes this REQUIRED
+#     with no default ("an unset, misspelled, or 'prod'-valued variable silently
+#     relaxed all of them at once"), and gateway/cmd/server/main.go:61-65 exits 1
+#     when Load() fails. The repo-root docker-compose.yml gateway service does
+#     NOT set ENVIRONMENT, so `docker compose up gateway` cannot currently boot.
+#     Setting it here keeps this CI-coverage change out of docker-compose.yml;
+#     the compose file itself should still be fixed separately.
+#
+#  2. RATE_LIMIT_AUTH — TierAuth is 5 requests / 15 min per IP and deliberately
+#     does NOT get the dev 10x multiplier (gateway/internal/middleware/
+#     ratelimit.go:313-318, defaultAuthLimit = 5). /auth/login and
+#     /auth/register are both TierAuth (router.go:216-218). The Tier-1 suite
+#     performs ~8 logins plus a registration from a single source IP, so the
+#     production limit would 429 the tests instead of exercising them. The
+#     limiter still runs — only its budget is raised, and only for this
+#     ephemeral CI stack.
+services:
+  gateway:
+    environment:
+      ENVIRONMENT: "development"
+      RATE_LIMIT_AUTH: "1000"

@@ -1,0 +1,9 @@
+{
+  "method": "POST",
+  "path": "/api/v1/listings",
+  "status": 400,
+  "contentType": "application/json",
+  "body": {
+    "error": "invalid request body"
+  }
+}

@@ -41,14 +41,46 @@ func (s *PaymentService) GenerateInvoice(ctx context.Context, contractID string)
 	// Generate invoice number from contract ID.
 	invoiceNum := "INV-" + strings.ToUpper(contractID[:8])
 
-	// Compute payment totals.
+	// Compute payment totals from RECORDED payments (the actual money that has
+	// moved). totalPaid only counts settled/in-escrow payments.
 	var totalPaid, totalPlatformFee, totalGuaranteeFee, totalProviderPayout int64
+	var hasRecordedFees bool
 	for _, p := range payments {
 		if p.Status == "completed" || p.Status == "released" || p.Status == "escrow" {
 			totalPaid += p.AmountCents
 			totalPlatformFee += p.PlatformFeeCents
 			totalGuaranteeFee += p.GuaranteeFeeCents
 			totalProviderPayout += p.ProviderPayoutCents
+			hasRecordedFees = true
+		}
+	}
+
+	// The fee breakdown shown on the invoice. Prefer the ACTUAL recorded
+	// breakdown when a payment exists. Otherwise (unpaid contract) fall back to
+	// the PROJECTED breakdown computed from the active fee config, so the
+	// customer/provider can see exactly what the fees will be before paying —
+	// rather than a misleading all-zero summary.
+	platformFeeCents := totalPlatformFee
+	guaranteeFeeCents := totalGuaranteeFee
+	providerPayoutCents := totalProviderPayout
+	var leadGenFeeCents int64
+	feesAreProjected := false
+
+	if !hasRecordedFees && contract.AmountCents > 0 {
+		// Project from the active (default) fee config. The same CalculateFees
+		// logic used at payment time, so projected matches what will be charged.
+		// ContractDetail carries no category, so we use the default config.
+		if breakdown, feeErr := s.CalculateFees(ctx, contract.AmountCents, nil); feeErr != nil {
+			slog.Warn("failed to project fees for unpaid invoice; showing config-free fallback",
+				"contract_id", contractID,
+				"error", feeErr,
+			)
+		} else {
+			platformFeeCents = breakdown.PlatformFeeCents
+			guaranteeFeeCents = breakdown.GuaranteeFeeCents
+			providerPayoutCents = breakdown.ProviderPayoutCents
+			leadGenFeeCents = breakdown.LeadGenFeeCents
+			feesAreProjected = true
 		}
 	}
 
@@ -107,6 +139,33 @@ func (s *PaymentService) GenerateInvoice(ctx context.Context, contractID string)
 		outstanding = 0
 	}
 
+	// Payment status stamp.
+	statusStamp := `<div class="stamp paid">Paid</div>`
+	if outstanding > 0 {
+		statusStamp = `<div class="stamp due">Balance Due</div>`
+	}
+
+	// Optional lead-gen fee line (only when it applies to this contract).
+	var leadGenRowHTML string
+	if leadGenFeeCents > 0 {
+		leadGenRowHTML = fmt.Sprintf(`
+    <div class="summary-item">
+      <span class="label">Lead-Gen Fee</span>
+      <span class="value">%s</span>
+    </div>`, formatCentsToDollars(leadGenFeeCents))
+	}
+
+	// When the contract is unpaid, the fee figures are projected from the active
+	// fee config (not yet charged). Make that explicit so the numbers aren't
+	// mistaken for settled amounts.
+	var feeNoteHTML string
+	if feesAreProjected {
+		feeNoteHTML = `
+    <div style="font-size: 12px; color: #888; margin-top: 8px;">
+      Platform, guarantee, and payout figures are projected from the current fee schedule and apply once this contract is paid.
+    </div>`
+	}
+
 	html := fmt.Sprintf(`<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -143,20 +202,33 @@ func (s *PaymentService) GenerateInvoice(ctx context.Context, contractID string)
   .status-active, .status-approved { background: #dbeafe; color: #1e40af; }
   .status-pending { background: #fef3c7; color: #92400e; }
   .status-cancelled { background: #fee2e2; color: #991b1b; }
-  .footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #e5e5e5; font-size: 12px; color: #888; }
-  @media print { body { padding: 20px; } }
+  .footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #e5e5e5; font-size: 12px; color: #888; line-height: 1.6; }
+  .brand { display: flex; align-items: baseline; gap: 2px; font-size: 22px; font-weight: 800; letter-spacing: -0.02em; }
+  .brand .mark { color: #c9a84c; }
+  .tagline { font-size: 12px; color: #888; margin-top: 2px; }
+  .stamp { display: inline-block; margin-top: 10px; padding: 4px 12px; border-radius: 6px; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; border: 2px solid; }
+  .stamp.paid { color: #166534; border-color: #16653433; background: #dcfce7; }
+  .stamp.due { color: #991b1b; border-color: #991b1b33; background: #fee2e2; }
+  @page { size: A4; margin: 18mm; }
+  @media print {
+    body { padding: 0; max-width: none; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .section, .summary, table tr { break-inside: avoid; }
+  }
 </style>
 </head>
 <body>
 <div class="header">
   <div>
-    <h1>Invoice</h1>
+    <div class="brand">No<span class="mark">Markup</span></div>
+    <div class="tagline">Service Marketplace · Escrow-secured payments</div>
+    <h1 style="margin-top:14px;">Invoice</h1>
     <div style="font-size: 14px; color: #666; margin-top: 4px;">%s</div>
   </div>
   <div class="invoice-meta">
     <div class="invoice-num">%s</div>
     <div class="date">Contract Date: %s</div>
     <div class="date">Generated: %s</div>
+    %s
   </div>
 </div>
 
@@ -216,7 +288,7 @@ func (s *PaymentService) GenerateInvoice(ctx context.Context, contractID string)
     <div class="summary-item">
       <span class="label">Guarantee Fee</span>
       <span class="value">%s</span>
-    </div>
+    </div>%s
     <div class="summary-item">
       <span class="label">Provider Payout</span>
       <span class="value">%s</span>
@@ -228,29 +300,32 @@ func (s *PaymentService) GenerateInvoice(ctx context.Context, contractID string)
     <div class="summary-item total">
       <span class="label">Outstanding</span>
       <span class="value">%s</span>
-    </div>
+    </div>%s
   </div>
 </div>
 
 <div class="footer">
-  <p>Contract: %s | Payment Terms: %s</p>
-  <p>Generated by NoMarkup Inc.</p>
+  <p>Contract %s · Payment terms: %s · Funds held in escrow and released on completion.</p>
+  <p>Paid securely through NoMarkup. Questions? billing@nomarkup.com</p>
+  <p>NoMarkup Inc. · This invoice was generated electronically and is valid without signature.</p>
 </div>
 </body>
 </html>`,
 		invoiceNum,
 		htmlEscape(contract.JobTitle),
-		invoiceNum, contractDate, generatedDate,
+		invoiceNum, contractDate, generatedDate, statusStamp,
 		htmlEscape(contract.CustomerName),
 		htmlEscape(contract.ProviderName),
 		lineItemsHTML.String(),
 		paymentsHTML.String(),
 		formatCentsToDollars(contract.AmountCents),
-		formatCentsToDollars(totalPlatformFee),
-		formatCentsToDollars(totalGuaranteeFee),
-		formatCentsToDollars(totalProviderPayout),
+		formatCentsToDollars(platformFeeCents),
+		formatCentsToDollars(guaranteeFeeCents),
+		leadGenRowHTML,
+		formatCentsToDollars(providerPayoutCents),
 		formatCentsToDollars(totalPaid),
 		formatCentsToDollars(outstanding),
+		feeNoteHTML,
 		contract.ContractNumber, contract.PaymentTiming,
 	)
 

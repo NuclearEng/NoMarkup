@@ -1,27 +1,36 @@
 'use client';
 
-import { CreditCard, Plus, Trash2 } from 'lucide-react';
+import { CreditCard, Plus, Star, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 
 import { AddPaymentMethodForm } from '@/components/payments/AddPaymentMethodForm';
+import { StripeOnboarding } from '@/components/payments/StripeOnboarding';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
-  useCreateStripeAccount,
   useDeletePaymentMethod,
   usePaymentMethods,
+  useSetDefaultPaymentMethod,
   useStripeAccountStatus,
 } from '@/hooks/usePayments';
+import { useAuthStore } from '@/stores/auth-store';
+import { USER_ROLE } from '@/types';
 import { useQueryClient } from '@tanstack/react-query';
 
 export default function PaymentMethodsPage() {
   const queryClient = useQueryClient();
+  const user = useAuthStore((s) => s.user);
+  // The Stripe Connect payout account is provider-only. Gate the status query
+  // (and the payout section below) on the provider role so customers — who only
+  // have saved cards for paying — never hit the provider-only endpoint and get
+  // a guaranteed 403.
+  const isProvider = user?.roles.includes(USER_ROLE.PROVIDER) ?? false;
   const { data: methodsData, isLoading, isError } = usePaymentMethods();
   const deleteMethod = useDeletePaymentMethod();
-  const stripeStatus = useStripeAccountStatus();
-  const createStripeAccount = useCreateStripeAccount();
+  const setDefaultMethod = useSetDefaultPaymentMethod();
+  const stripeStatus = useStripeAccountStatus({ enabled: isProvider });
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
 
@@ -50,7 +59,9 @@ export default function PaymentMethodsPage() {
             Payment Methods
           </h1>
           <p className="mt-1 text-zinc-300">
-            Manage your payment methods and payout settings
+            {isProvider
+              ? 'Manage your payment methods and payout settings'
+              : 'Manage your saved payment methods'}
           </p>
         </div>
         {!showAddForm ? (
@@ -104,6 +115,15 @@ export default function PaymentMethodsPage() {
               <p className="text-zinc-300">
                 No payment methods saved yet.
               </p>
+              {/* Why an empty list matters here, not just that it's empty:
+                  auction wins are charged off-session, so a buyer with no
+                  card on file wins the item and then owes money with no way
+                  for us to collect until they come back and pay manually. */}
+              <p className="mx-auto mt-2 max-w-md text-sm text-zinc-400">
+                Save a card before bidding. When you win an auction we charge
+                the card on file automatically — without one, your win sits
+                unpaid until you come back and pay it from the order page.
+              </p>
             </div>
           ) : (
             <div className="space-y-3">
@@ -129,23 +149,40 @@ export default function PaymentMethodsPage() {
                       <Badge variant="secondary">Default</Badge>
                     ) : null}
                   </div>
-                  <Button
-                    variant={
-                      deletingId === method.id ? 'destructive' : 'ghost'
-                    }
-                    size="sm"
-                    className="min-h-[44px] min-w-[44px]"
-                    onClick={() => {
-                      handleDelete(method.id);
-                    }}
-                    aria-label={
-                      deletingId === method.id
-                        ? `Confirm delete card ending ${method.last_four}`
-                        : `Delete card ending ${method.last_four}`
-                    }
-                  >
-                    <Trash2 className="h-4 w-4" aria-hidden="true" />
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    {!method.is_default ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="min-h-[44px] min-w-[44px]"
+                        disabled={setDefaultMethod.isPending}
+                        onClick={() => {
+                          void setDefaultMethod.mutateAsync(method.id);
+                        }}
+                        aria-label={`Set card ending ${method.last_four} as default`}
+                      >
+                        <Star className="h-4 w-4" aria-hidden="true" />
+                        Set as default
+                      </Button>
+                    ) : null}
+                    <Button
+                      variant={
+                        deletingId === method.id ? 'destructive' : 'ghost'
+                      }
+                      size="sm"
+                      className="min-h-[44px] min-w-[44px]"
+                      onClick={() => {
+                        handleDelete(method.id);
+                      }}
+                      aria-label={
+                        deletingId === method.id
+                          ? `Confirm delete card ending ${method.last_four}`
+                          : `Delete card ending ${method.last_four}`
+                      }
+                    >
+                      <Trash2 className="h-4 w-4" aria-hidden="true" />
+                    </Button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -153,67 +190,27 @@ export default function PaymentMethodsPage() {
         </CardContent>
       </Card>
 
-      <div className="glass-divider" role="separator" />
-
-      {/* Stripe Connect Status (for providers) */}
-      <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
-        <CardHeader>
-          <CardTitle className="gold-text text-lg">Provider Payouts</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {stripeStatus.isLoading ? (
-            <Skeleton className="h-16 w-full rounded-lg" />
-          ) : stripeStatus.isError ? (
+      {/* Provider payout (Stripe Connect) — providers only. Customers don't
+          have a payout account, so the section is hidden for them entirely and
+          the provider-only status endpoint is never called (no 403). */}
+      {isProvider ? (
+        <>
+          <div className="glass-divider" role="separator" />
+          <div className="space-y-2">
+            <h2 className="gold-text text-lg font-semibold">Provider Payouts</h2>
             <p className="text-sm text-zinc-300">
-              Payout settings are only available for provider accounts.
+              Connect or resume Stripe Connect so you can receive payouts for completed jobs.
             </p>
-          ) : stripeStatus.data ? (
-            <div className="space-y-3">
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-medium">Account Status:</span>
-                <Badge
-                  variant={
-                    stripeStatus.data.charges_enabled
-                      ? 'default'
-                      : 'secondary'
-                  }
-                >
-                  {stripeStatus.data.charges_enabled
-                    ? 'Active'
-                    : 'Setup Required'}
-                </Badge>
-              </div>
-              {!stripeStatus.data.charges_enabled ? (
-                <p className="text-sm text-zinc-300">
-                  Complete your Stripe account setup to receive payouts for
-                  completed jobs.
-                </p>
-              ) : (
-                <p className="text-sm text-zinc-300">
-                  Your Stripe account is connected and ready to receive payouts.
-                </p>
-              )}
-            </div>
-          ) : (
-            <div className="space-y-3">
-              <p className="text-sm text-zinc-300">
-                Connect a Stripe account to receive payouts for completed jobs.
+            {/* Full onboarding surface (create + embedded resume) — not create-only. */}
+            <StripeOnboarding />
+            {stripeStatus.isError ? (
+              <p className="text-sm text-zinc-400">
+                Could not load Connect status. Try again from the card above.
               </p>
-              <Button
-                className="min-h-[44px]"
-                onClick={() => {
-                  void createStripeAccount.mutateAsync();
-                }}
-                disabled={createStripeAccount.isPending}
-              >
-                {createStripeAccount.isPending
-                  ? 'Setting up...'
-                  : 'Set Up Payouts'}
-              </Button>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+            ) : null}
+          </div>
+        </>
+      ) : null}
     </div>
   );
 }

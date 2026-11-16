@@ -1,27 +1,34 @@
 package handler
 
 import (
-	"encoding/json"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	paymentv1 "github.com/nomarkup/nomarkup/proto/payment/v1"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/nomarkup/nomarkup/gateway/internal/cache"
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 )
 
 // AdminPaymentsHandler handles admin payment management endpoints.
 type AdminPaymentsHandler struct {
 	paymentClient paymentv1.PaymentServiceClient
+	// db + cacheClient dual-gate lead_gen fee_config toggles against the
+	// feature_flags row (SEC-GATE-03 / R6.2). Optional in unit tests.
+	db          *pgxpool.Pool
+	cacheClient *cache.Client
 }
 
 // NewAdminPaymentsHandler creates a new AdminPaymentsHandler.
-func NewAdminPaymentsHandler(paymentClient paymentv1.PaymentServiceClient) *AdminPaymentsHandler {
-	return &AdminPaymentsHandler{paymentClient: paymentClient}
+// db and cacheClient may be nil (tests); production should pass both so
+// lead_gen cannot be enabled via fee_config while the product flag is off.
+func NewAdminPaymentsHandler(paymentClient paymentv1.PaymentServiceClient, db *pgxpool.Pool, cacheClient *cache.Client) *AdminPaymentsHandler {
+	return &AdminPaymentsHandler{paymentClient: paymentClient, db: db, cacheClient: cacheClient}
 }
 
 // ListPayments handles GET /api/v1/admin/payments.
@@ -94,8 +101,8 @@ func (h *AdminPaymentsHandler) ListPayments(w http.ResponseWriter, r *http.Reque
 // GetPaymentDetails handles GET /api/v1/admin/payments/{id}.
 func (h *AdminPaymentsHandler) GetPaymentDetails(w http.ResponseWriter, r *http.Request) {
 	paymentID := chi.URLParam(r, "id")
-	if paymentID == "" {
-		writeError(w, http.StatusBadRequest, "payment id required")
+	if !isValidUUID(paymentID) {
+		writeError(w, http.StatusBadRequest, "invalid payment id")
 		return
 	}
 
@@ -119,6 +126,8 @@ func (h *AdminPaymentsHandler) GetPaymentDetails(w http.ResponseWriter, r *http.
 			"provider_payout_cents": resp.GetBreakdown().GetProviderPayoutCents(),
 			"fee_percentage":        resp.GetBreakdown().GetFeePercentage(),
 			"guarantee_percentage":  resp.GetBreakdown().GetGuaranteePercentage(),
+			"lead_gen_fee_cents":    resp.GetBreakdown().GetLeadGenFeeCents(),
+			"lead_gen_percentage":   resp.GetBreakdown().GetLeadGenPercentage(),
 		}
 	}
 	if resp.GetStripePaymentIntentId() != "" {
@@ -143,29 +152,26 @@ func (h *AdminPaymentsHandler) UpdateFeeConfig(w http.ResponseWriter, r *http.Re
 	}
 
 	var body struct {
-		CategoryID          *string  `json:"category_id"`
-		FeePercentage       float64  `json:"fee_percentage"`
-		GuaranteePercentage float64  `json:"guarantee_percentage"`
-		MinFeeCents         int64    `json:"min_fee_cents"`
-		MaxFeeCents         *int64   `json:"max_fee_cents"`
+		CategoryID          *string `json:"category_id"`
+		FeePercentage       float64 `json:"fee_percentage"`
+		GuaranteePercentage float64 `json:"guarantee_percentage"`
+		MinFeeCents         int64   `json:"min_fee_cents"`
+		MaxFeeCents         *int64  `json:"max_fee_cents"`
+		LeadGenEnabled      bool    `json:"lead_gen_enabled"`
+		LeadGenPercentage   float64 `json:"lead_gen_percentage"`
+		LeadGenMinFeeCents  int64   `json:"lead_gen_min_fee_cents"`
+		LeadGenMaxFeeCents  *int64  `json:"lead_gen_max_fee_cents"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &body) {
 		return
 	}
 
-	grpcReq := &paymentv1.AdminUpdateFeeConfigRequest{
-		AdminId:             claims.UserID,
-		FeePercentage:       body.FeePercentage,
-		GuaranteePercentage: body.GuaranteePercentage,
-		MinFeeCents:         body.MinFeeCents,
+	if !h.allowLeadGenFeeConfig(w, r, body.LeadGenEnabled) {
+		return
 	}
-	if body.CategoryID != nil {
-		grpcReq.CategoryId = body.CategoryID
-	}
-	if body.MaxFeeCents != nil {
-		grpcReq.MaxFeeCents = body.MaxFeeCents
-	}
+
+	grpcReq := buildFeeConfigUpdateReq(claims.UserID, body.CategoryID, body.FeePercentage, body.GuaranteePercentage, body.MinFeeCents, body.MaxFeeCents,
+		body.LeadGenEnabled, body.LeadGenPercentage, body.LeadGenMinFeeCents, body.LeadGenMaxFeeCents)
 
 	resp, err := h.paymentClient.AdminUpdateFeeConfig(r.Context(), grpcReq)
 	if err != nil {
@@ -173,17 +179,9 @@ func (h *AdminPaymentsHandler) UpdateFeeConfig(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	result := map[string]interface{}{}
-	if cfg := resp.GetConfig(); cfg != nil {
-		result["config"] = map[string]interface{}{
-			"fee_percentage":       cfg.GetFeePercentage(),
-			"guarantee_percentage": cfg.GetGuaranteePercentage(),
-			"min_fee_cents":        cfg.GetMinFeeCents(),
-			"max_fee_cents":        cfg.GetMaxFeeCents(),
-		}
-	}
-
-	writeJSON(w, http.StatusOK, result)
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"config": feeConfigToJSON(resp.GetConfig()),
+	})
 }
 
 // GetFeeConfig handles GET /api/v1/admin/payments/fee-config.
@@ -202,10 +200,14 @@ func (h *AdminPaymentsHandler) GetFeeConfig(w http.ResponseWriter, r *http.Reque
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"fee_percentage":       resp.GetFeePercentage(),
-		"guarantee_percentage": resp.GetGuaranteePercentage(),
-		"min_fee_cents":        resp.GetMinFeeCents(),
-		"max_fee_cents":        resp.GetMaxFeeCents(),
+		"fee_percentage":         resp.GetFeePercentage(),
+		"guarantee_percentage":   resp.GetGuaranteePercentage(),
+		"min_fee_cents":          resp.GetMinFeeCents(),
+		"max_fee_cents":          resp.GetMaxFeeCents(),
+		"lead_gen_enabled":       resp.GetLeadGenEnabled(),
+		"lead_gen_percentage":    resp.GetLeadGenPercentage(),
+		"lead_gen_min_fee_cents": resp.GetLeadGenMinFeeCents(),
+		"lead_gen_max_fee_cents": resp.GetLeadGenMaxFeeCents(),
 	})
 }
 
@@ -223,24 +225,21 @@ func (h *AdminPaymentsHandler) UpdateFeeConfigNested(w http.ResponseWriter, r *h
 		GuaranteePercentage float64 `json:"guarantee_percentage"`
 		MinFeeCents         int64   `json:"min_fee_cents"`
 		MaxFeeCents         *int64  `json:"max_fee_cents"`
+		LeadGenEnabled      bool    `json:"lead_gen_enabled"`
+		LeadGenPercentage   float64 `json:"lead_gen_percentage"`
+		LeadGenMinFeeCents  int64   `json:"lead_gen_min_fee_cents"`
+		LeadGenMaxFeeCents  *int64  `json:"lead_gen_max_fee_cents"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &body) {
 		return
 	}
 
-	grpcReq := &paymentv1.AdminUpdateFeeConfigRequest{
-		AdminId:             claims.UserID,
-		FeePercentage:       body.FeePercentage,
-		GuaranteePercentage: body.GuaranteePercentage,
-		MinFeeCents:         body.MinFeeCents,
+	if !h.allowLeadGenFeeConfig(w, r, body.LeadGenEnabled) {
+		return
 	}
-	if body.CategoryID != nil {
-		grpcReq.CategoryId = body.CategoryID
-	}
-	if body.MaxFeeCents != nil {
-		grpcReq.MaxFeeCents = body.MaxFeeCents
-	}
+
+	grpcReq := buildFeeConfigUpdateReq(claims.UserID, body.CategoryID, body.FeePercentage, body.GuaranteePercentage, body.MinFeeCents, body.MaxFeeCents,
+		body.LeadGenEnabled, body.LeadGenPercentage, body.LeadGenMinFeeCents, body.LeadGenMaxFeeCents)
 
 	resp, err := h.paymentClient.AdminUpdateFeeConfig(r.Context(), grpcReq)
 	if err != nil {
@@ -248,17 +247,181 @@ func (h *AdminPaymentsHandler) UpdateFeeConfigNested(w http.ResponseWriter, r *h
 		return
 	}
 
-	result := map[string]interface{}{}
-	if cfg := resp.GetConfig(); cfg != nil {
-		result["config"] = map[string]interface{}{
-			"fee_percentage":       cfg.GetFeePercentage(),
-			"guarantee_percentage": cfg.GetGuaranteePercentage(),
-			"min_fee_cents":        cfg.GetMinFeeCents(),
-			"max_fee_cents":        cfg.GetMaxFeeCents(),
-		}
-	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"config": feeConfigToJSON(resp.GetConfig()),
+	})
+}
 
-	writeJSON(w, http.StatusOK, result)
+func customFeeToJSON(f *paymentv1.CustomFee) map[string]interface{} {
+	if f == nil {
+		return map[string]interface{}{}
+	}
+	return map[string]interface{}{
+		"id":         f.GetId(),
+		"name":       f.GetName(),
+		"rate_bps":   f.GetRateBps(),
+		"active":     f.GetActive(),
+		"created_at": formatTimestamp(f.GetCreatedAt()),
+		"updated_at": formatTimestamp(f.GetUpdatedAt()),
+	}
+}
+
+// ListCustomFees handles GET /api/v1/admin/custom-fees.
+func (h *AdminPaymentsHandler) ListCustomFees(w http.ResponseWriter, r *http.Request) {
+	resp, err := h.paymentClient.AdminListCustomFees(r.Context(), &paymentv1.AdminListCustomFeesRequest{})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+	fees := make([]map[string]interface{}, 0, len(resp.GetFees()))
+	for _, f := range resp.GetFees() {
+		fees = append(fees, customFeeToJSON(f))
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"fees": fees})
+}
+
+// CreateCustomFee handles POST /api/v1/admin/custom-fees.
+func (h *AdminPaymentsHandler) CreateCustomFee(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+	var body struct {
+		Name    string `json:"name"`
+		RateBps int32  `json:"rate_bps"`
+	}
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	resp, err := h.paymentClient.AdminCreateCustomFee(r.Context(), &paymentv1.AdminCreateCustomFeeRequest{
+		AdminId: claims.UserID,
+		Name:    body.Name,
+		RateBps: body.RateBps,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]interface{}{"fee": customFeeToJSON(resp.GetFee())})
+}
+
+// UpdateCustomFee handles PATCH /api/v1/admin/custom-fees/{id}.
+func (h *AdminPaymentsHandler) UpdateCustomFee(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+	id := chi.URLParam(r, "id")
+	if !isValidUUID(id) {
+		writeError(w, http.StatusBadRequest, "invalid custom fee id")
+		return
+	}
+	var body struct {
+		Name    *string `json:"name"`
+		RateBps *int32  `json:"rate_bps"`
+		Active  *bool   `json:"active"`
+	}
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	grpcReq := &paymentv1.AdminUpdateCustomFeeRequest{
+		AdminId: claims.UserID,
+		Id:      id,
+		Name:    body.Name,
+		RateBps: body.RateBps,
+		Active:  body.Active,
+	}
+	resp, err := h.paymentClient.AdminUpdateCustomFee(r.Context(), grpcReq)
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"fee": customFeeToJSON(resp.GetFee())})
+}
+
+// DeleteCustomFee handles DELETE /api/v1/admin/custom-fees/{id} (soft-deactivate).
+func (h *AdminPaymentsHandler) DeleteCustomFee(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+	id := chi.URLParam(r, "id")
+	if !isValidUUID(id) {
+		writeError(w, http.StatusBadRequest, "invalid custom fee id")
+		return
+	}
+	resp, err := h.paymentClient.AdminDeactivateCustomFee(r.Context(), &paymentv1.AdminDeactivateCustomFeeRequest{
+		AdminId: claims.UserID,
+		Id:      id,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"deactivated": resp.GetDeactivated()})
+}
+
+// allowLeadGenFeeConfig dual-gates fee_config lead_gen_enabled against the
+// lead_gen feature flag (SEC-GATE-03 / R6.2). Enabling the fee while the
+// product flag is off is rejected with 503 so admin fee knobs cannot re-open
+// a regulated rail. Disabling the fee (leadGenEnabled=false) is always OK.
+// Returns false when the response has already been written.
+func (h *AdminPaymentsHandler) allowLeadGenFeeConfig(w http.ResponseWriter, r *http.Request, leadGenEnabled bool) bool {
+	if !leadGenEnabled {
+		return true
+	}
+	if middleware.IsFeatureDisabled(r.Context(), h.db, h.cacheClient, "lead_gen") {
+		writeError(w, http.StatusServiceUnavailable, "lead_gen feature is currently unavailable; enable the lead_gen flag before setting lead_gen_enabled on fee config")
+		return false
+	}
+	return true
+}
+
+// buildFeeConfigUpdateReq assembles the gRPC AdminUpdateFeeConfigRequest from
+// decoded JSON fields, including the additive lead-gen fee fields.
+func buildFeeConfigUpdateReq(adminID string, categoryID *string, feePct, guaranteePct float64, minFee int64, maxFee *int64, leadGenEnabled bool, leadGenPct float64, leadGenMin int64, leadGenMax *int64) *paymentv1.AdminUpdateFeeConfigRequest {
+	grpcReq := &paymentv1.AdminUpdateFeeConfigRequest{
+		AdminId:             adminID,
+		FeePercentage:       feePct,
+		GuaranteePercentage: guaranteePct,
+		MinFeeCents:         minFee,
+		LeadGenEnabled:      leadGenEnabled,
+		LeadGenPercentage:   leadGenPct,
+		LeadGenMinFeeCents:  leadGenMin,
+	}
+	// Treat a blank category as "default config" (no override). The form sends
+	// category_id="" when the optional field is left blank; forwarding that would
+	// push an empty string into the UUID column downstream (a 500).
+	if categoryID != nil && *categoryID != "" {
+		grpcReq.CategoryId = categoryID
+	}
+	if maxFee != nil {
+		grpcReq.MaxFeeCents = maxFee
+	}
+	if leadGenMax != nil {
+		grpcReq.LeadGenMaxFeeCents = leadGenMax
+	}
+	return grpcReq
+}
+
+// feeConfigToJSON maps a GetFeeConfigResponse onto a JSON map including lead-gen.
+func feeConfigToJSON(cfg *paymentv1.GetFeeConfigResponse) map[string]interface{} {
+	if cfg == nil {
+		return map[string]interface{}{}
+	}
+	return map[string]interface{}{
+		"fee_percentage":         cfg.GetFeePercentage(),
+		"guarantee_percentage":   cfg.GetGuaranteePercentage(),
+		"min_fee_cents":          cfg.GetMinFeeCents(),
+		"max_fee_cents":          cfg.GetMaxFeeCents(),
+		"lead_gen_enabled":       cfg.GetLeadGenEnabled(),
+		"lead_gen_percentage":    cfg.GetLeadGenPercentage(),
+		"lead_gen_min_fee_cents": cfg.GetLeadGenMinFeeCents(),
+		"lead_gen_max_fee_cents": cfg.GetLeadGenMaxFeeCents(),
+	}
 }
 
 // GetRevenueReport handles GET /api/v1/admin/revenue.
@@ -292,11 +455,11 @@ func (h *AdminPaymentsHandler) GetRevenueReport(w http.ResponseWriter, r *http.R
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"data_points":               dataPoints,
-		"total_gmv_cents":           resp.GetTotalGmvCents(),
-		"total_revenue_cents":       resp.GetTotalRevenueCents(),
+		"data_points":                dataPoints,
+		"total_gmv_cents":            resp.GetTotalGmvCents(),
+		"total_revenue_cents":        resp.GetTotalRevenueCents(),
 		"total_guarantee_fund_cents": resp.GetTotalGuaranteeFundCents(),
-		"effective_take_rate":       resp.GetEffectiveTakeRate(),
+		"effective_take_rate":        resp.GetEffectiveTakeRate(),
 	})
 }
 
@@ -310,15 +473,15 @@ func adminPaymentToJSON(p *paymentv1.Payment) map[string]interface{} {
 	}
 	return map[string]interface{}{
 		"id":                    p.GetId(),
-		"contract_id":          p.GetContractId(),
-		"customer_id":          p.GetCustomerId(),
-		"provider_id":          p.GetProviderId(),
-		"amount_cents":         p.GetAmountCents(),
-		"platform_fee_cents":   p.GetPlatformFeeCents(),
-		"guarantee_fee_cents":  p.GetGuaranteeFeeCents(),
+		"contract_id":           p.GetContractId(),
+		"customer_id":           p.GetCustomerId(),
+		"provider_id":           p.GetProviderId(),
+		"amount_cents":          p.GetAmountCents(),
+		"platform_fee_cents":    p.GetPlatformFeeCents(),
+		"guarantee_fee_cents":   p.GetGuaranteeFeeCents(),
 		"provider_payout_cents": p.GetProviderPayoutCents(),
-		"status":               protoEnumToString(p.GetStatus().String(), "PAYMENT_STATUS_"),
-		"created_at":           formatTimestamp(p.GetCreatedAt()),
+		"status":                protoEnumToString(p.GetStatus().String(), "PAYMENT_STATUS_"),
+		"created_at":            formatTimestamp(p.GetCreatedAt()),
 	}
 }
 

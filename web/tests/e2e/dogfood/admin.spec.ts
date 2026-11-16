@@ -2,7 +2,6 @@ import { test } from '@playwright/test';
 
 import {
   expect,
-  expectHasHeadings,
   expectNotErrorPage,
   expectPageLoaded,
   loginAs,
@@ -77,13 +76,9 @@ test.describe('Admin: User Management', () => {
     const searchInput = page.getByPlaceholder(/Search by name or email/i);
     await expect(searchInput).toBeVisible({ timeout: 10_000 });
 
-    // Status filter
-    const statusFilter = page.getByLabel(/Filter by status/i);
-    expect(await statusFilter.count()).toBeGreaterThanOrEqual(1);
-
-    // Role filter
-    const roleFilter = page.getByLabel(/Filter by role/i);
-    expect(await roleFilter.count()).toBeGreaterThanOrEqual(1);
+    // Status + role filters (visible, not count >= 1)
+    await expect(page.getByLabel(/Filter by status/i).first()).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByLabel(/Filter by role/i).first()).toBeVisible({ timeout: 10_000 });
 
     // Data table should have rows or show empty state
     await expectTableOrEmpty(page);
@@ -109,18 +104,26 @@ test.describe('Admin: User Management', () => {
     await expectPageLoaded(page, /User Management/i);
     await page.waitForTimeout(2_000);
 
-    // Check for action buttons (may not exist if no users in table)
+    // Seeded stack must render the users table (or a real empty state) — never
+    // `expect(true)` as a vacuous pass (QA-07).
+    await expectTableOrEmpty(page);
+
     const table = page.locator('table');
-    if ((await table.count()) > 0) {
-      const rows = table.first().locator('tbody tr');
-      if ((await rows.count()) > 0) {
-        const suspendBtns = page.getByRole('button', { name: /Suspend/i });
-        const banBtns = page.getByRole('button', { name: /Ban/i });
-        expect((await suspendBtns.count()) > 0 || (await banBtns.count()) > 0).toBeTruthy();
-      }
+    if ((await table.count()) === 0) {
+      return; // empty-state path already asserted above
     }
-    // If no table/rows, that's acceptable
-    expect(true).toBeTruthy();
+    const rows = table.first().locator('tbody tr');
+    const rowCount = await rows.count();
+    if (rowCount === 0) {
+      return;
+    }
+    // Seed users exist → moderation actions must be on the row.
+    await expect(
+      page
+        .getByRole('button', { name: /Suspend/i })
+        .or(page.getByRole('button', { name: /Ban/i }))
+        .first(),
+    ).toBeVisible({ timeout: 10_000 });
   });
 });
 
@@ -129,9 +132,20 @@ test.describe('Admin: User Detail', () => {
     await loginAs(page, 'admin');
     await navigateTo(page, '/admin/users/00000000-0000-0000-0000-000000000002', 'admin');
 
-    await expectHasHeadings(page);
     await expectNotErrorPage(page);
-    expect(await page.getByRole('heading').count()).toBeGreaterThanOrEqual(1);
+    // Seed customer: display name or email as h1, plus profile chrome / actions
+    await expect(
+      page
+        .getByRole('heading', { name: /Jane Customer|customer@nomarkup\.com|User Detail/i })
+        .first(),
+    ).toBeVisible({ timeout: 15_000 });
+    await expect(
+      page
+        .getByText(/customer@nomarkup\.com/i)
+        .or(page.getByText(/User Profile/i))
+        .or(page.getByRole('button', { name: /Suspend|Ban/i }))
+        .first(),
+    ).toBeVisible({ timeout: 15_000 });
   });
 });
 
@@ -140,7 +154,7 @@ test.describe('Admin: Job Management', () => {
     await loginAs(page, 'admin');
     await navigateTo(page, '/admin/jobs', 'admin');
 
-    await expectHasHeadings(page);
+    await expectPageLoaded(page, /Job Management/i);
     await expectNotErrorPage(page);
     await page.waitForTimeout(2_000);
 
@@ -153,12 +167,13 @@ test.describe('Admin: Dispute Management', () => {
     await loginAs(page, 'admin');
     await navigateTo(page, '/admin/disputes', 'admin');
 
-    await expectHasHeadings(page);
+    await expectPageLoaded(page, /Dispute Management/i);
     await expectNotErrorPage(page);
 
     // Status filter dropdown should exist
-    const statusFilter = page.getByRole('combobox').or(page.locator('select'));
-    expect(await statusFilter.count()).toBeGreaterThanOrEqual(1);
+    await expect(page.getByRole('combobox').or(page.locator('select')).first()).toBeVisible({
+      timeout: 10_000,
+    });
 
     await expectTableOrEmpty(page);
   });
@@ -169,40 +184,36 @@ test.describe('Admin: Payment Administration', () => {
     await loginAs(page, 'admin');
     await navigateTo(page, '/admin/payments', 'admin');
 
-    await expectHasHeadings(page);
+    await expectPageLoaded(page, /Payment Administration/i);
     await expectNotErrorPage(page);
     await page.waitForTimeout(2_000);
 
-    // Revenue summary cards
-    const revenueTerms = ['GMV', 'Revenue', 'Guarantee', 'Take Rate'];
-    let foundCount = 0;
-    for (const term of revenueTerms) {
-      if ((await page.getByText(term, { exact: false }).count()) > 0) {
-        foundCount++;
-      }
-    }
-    expect(foundCount).toBeGreaterThanOrEqual(2);
+    // Revenue summary cards — require at least two known labels
+    const revenueTerms = ['GMV', 'Revenue', 'Guarantee', 'Take Rate'] as const;
+    const visible = await Promise.all(
+      revenueTerms.map(async (term) =>
+        page.getByText(term, { exact: false }).first().isVisible().catch(() => false),
+      ),
+    );
+    const foundCount = visible.filter(Boolean).length;
+    expect(foundCount, 'payment admin must show revenue summary labels').toBeGreaterThanOrEqual(2);
 
-    // Fee configuration form (check for numeric inputs)
-    const feeInputs = page.locator('input[type="number"]');
-    expect(await feeInputs.count()).toBeGreaterThanOrEqual(1);
+    // Fee configuration form (numeric inputs must be visible)
+    await expect(page.locator('input[type="number"]').first()).toBeVisible({ timeout: 15_000 });
   });
 
   test('fee percentage input accepts numeric values', async ({ page }) => {
     await loginAs(page, 'admin');
     await navigateTo(page, '/admin/payments', 'admin');
-    await expectHasHeadings(page);
+    await expectPageLoaded(page, /Payment Administration/i);
     await page.waitForTimeout(2_000);
 
-    // Find fee percentage input and fill it
+    // Fee form is required on this page.
+    // Do not vacuous-pass when missing (QA-07).
     const feeInputs = page.locator('input[type="number"]');
-    if ((await feeInputs.count()) > 0) {
-      await feeInputs.first().fill('10.0');
-      expect(await feeInputs.first().inputValue()).toBe('10.0');
-    } else {
-      // Fee config section may not be visible — acceptable
-      expect(true).toBeTruthy();
-    }
+    await expect(feeInputs.first()).toBeVisible({ timeout: 15_000 });
+    await feeInputs.first().fill('10.0');
+    await expect(feeInputs.first()).toHaveValue('10.0');
   });
 });
 
@@ -211,9 +222,9 @@ test.describe('Admin: Verification Queue', () => {
     await loginAs(page, 'admin');
     await navigateTo(page, '/admin/verification', 'admin');
 
-    await expectHasHeadings(page);
+    await expectPageLoaded(page, /Verification Queue/i);
     await expectNotErrorPage(page);
-    expect(await page.getByRole('heading').count()).toBeGreaterThanOrEqual(1);
+    await expectTableOrEmpty(page);
   });
 });
 
@@ -222,9 +233,16 @@ test.describe('Admin: Reviews', () => {
     await loginAs(page, 'admin');
     await navigateTo(page, '/admin/reviews', 'admin');
 
-    await expectHasHeadings(page);
+    await expectPageLoaded(page, /Flagged Reviews/i);
     await expectNotErrorPage(page);
-    expect(await page.getByRole('heading').count()).toBeGreaterThanOrEqual(1);
+    await expect(
+      page
+        .getByLabel(/Filter flags by status|Filter.*status/i)
+        .or(page.getByRole('combobox'))
+        .or(page.locator('table'))
+        .or(page.getByText(/no .* found|no results|no .* yet|queue is empty/i))
+        .first(),
+    ).toBeVisible({ timeout: 15_000 });
   });
 });
 
@@ -233,9 +251,14 @@ test.describe('Admin: Fraud Detection', () => {
     await loginAs(page, 'admin');
     await navigateTo(page, '/admin/fraud', 'admin');
 
-    await expectHasHeadings(page);
+    await expectPageLoaded(page, /Fraud Detection/i);
     await expectNotErrorPage(page);
-    expect(await page.getByRole('heading').count()).toBeGreaterThanOrEqual(1);
+    await expect(
+      page
+        .getByRole('heading', { name: /Fraud Alerts/i })
+        .or(page.getByText(/Open Alerts|Critical Alerts|Open Signals/i))
+        .first(),
+    ).toBeVisible({ timeout: 15_000 });
   });
 });
 
@@ -244,9 +267,13 @@ test.describe('Admin: Platform Settings', () => {
     await loginAs(page, 'admin');
     await navigateTo(page, '/admin/platform', 'admin');
 
-    await expectHasHeadings(page);
+    await expectPageLoaded(page, /Platform Analytics/i);
     await expectNotErrorPage(page);
-    expect(await page.getByRole('heading').count()).toBeGreaterThanOrEqual(1);
+    await expect(
+      page
+        .getByText(/Total Users|Jobs Posted|Total GMV|Avg Bids per Job/i)
+        .first(),
+    ).toBeVisible({ timeout: 15_000 });
   });
 });
 
@@ -255,9 +282,11 @@ test.describe('Admin: Taxonomy', () => {
     await loginAs(page, 'admin');
     await navigateTo(page, '/admin/taxonomy', 'admin');
 
-    await expectHasHeadings(page);
+    await expectPageLoaded(page, /Service Taxonomy/i);
     await expectNotErrorPage(page);
-    expect(await page.getByRole('heading').count()).toBeGreaterThanOrEqual(1);
+    await expect(
+      page.getByText(/Categories|Subcategories|Service types|service types/i).first(),
+    ).toBeVisible({ timeout: 15_000 });
   });
 });
 
@@ -266,9 +295,9 @@ test.describe('Admin: Guarantee Claims', () => {
     await loginAs(page, 'admin');
     await navigateTo(page, '/admin/guarantee', 'admin');
 
-    await expectHasHeadings(page);
+    await expectPageLoaded(page, /Guarantee Claims/i);
     await expectNotErrorPage(page);
-    expect(await page.getByRole('heading').count()).toBeGreaterThanOrEqual(1);
+    await expectTableOrEmpty(page);
   });
 });
 
@@ -277,9 +306,15 @@ test.describe('Admin: Challenges', () => {
     await loginAs(page, 'admin');
     await navigateTo(page, '/admin/challenges', 'admin');
 
-    await expectHasHeadings(page);
+    await expectPageLoaded(page, /Challenge Management/i);
     await expectNotErrorPage(page);
-    expect(await page.getByRole('heading').count()).toBeGreaterThanOrEqual(1);
+    await expect(
+      page
+        .getByText(/Create and manage provider challenges|seasonal events/i)
+        .or(page.getByRole('button', { name: /Create|Add|New/i }))
+        .or(page.getByRole('tab'))
+        .first(),
+    ).toBeVisible({ timeout: 15_000 });
   });
 });
 
@@ -288,9 +323,9 @@ test.describe('Admin: Advances', () => {
     await loginAs(page, 'admin');
     await navigateTo(page, '/admin/advances', 'admin');
 
-    await expectHasHeadings(page);
+    await expectPageLoaded(page, /Working Capital Advances/i);
     await expectNotErrorPage(page);
-    expect(await page.getByRole('heading').count()).toBeGreaterThanOrEqual(1);
+    await expectTableOrEmpty(page);
   });
 });
 
@@ -304,7 +339,6 @@ test.describe('Admin: Regular Page Access', () => {
       page.getByRole('heading', { name: /Good (morning|afternoon|evening)/i, level: 1 }),
     ).toBeVisible({ timeout: 15_000 });
     await expectNotErrorPage(page);
-    expect(await page.getByRole('heading').count()).toBeGreaterThanOrEqual(1);
   });
 
   test('admin can access /profile', async ({ page }) => {
@@ -313,15 +347,19 @@ test.describe('Admin: Regular Page Access', () => {
 
     await expectPageLoaded(page, /My Profile/i);
     await expectNotErrorPage(page);
-    expect(await page.getByRole('heading').count()).toBeGreaterThanOrEqual(1);
+    await expect(page.getByText(/admin@nomarkup\.com/i).first()).toBeVisible({
+      timeout: 10_000,
+    });
   });
 
   test('admin can access /jobs', async ({ page }) => {
     await loginAs(page, 'admin');
     await navigateTo(page, '/jobs', 'admin');
 
-    await expectHasHeadings(page);
+    await expectPageLoaded(page, /Find\s+Jobs/i);
     await expectNotErrorPage(page);
-    expect(await page.getByRole('heading').count()).toBeGreaterThanOrEqual(1);
+    await expect(
+      page.getByPlaceholder(/search|find/i).or(page.getByRole('combobox')).first(),
+    ).toBeVisible({ timeout: 10_000 });
   });
 });

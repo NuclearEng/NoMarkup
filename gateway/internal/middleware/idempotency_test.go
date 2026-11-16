@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"net/http"
@@ -107,10 +108,18 @@ func TestIdempotency_DELETE_passes_without_key(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rec.Code)
 }
 
-func TestIdempotency_POST_with_key_proceeds_no_cache(t *testing.T) {
+func TestIdempotency_NoStore_RefusesMoneyMutation(t *testing.T) {
 	t.Parallel()
 
-	// nil cache — key accepted, handler runs, no caching.
+	// This test previously asserted the OPPOSITE: with a nil cache the handler
+	// ran anyway and the response was simply not cached. That is fail-open on
+	// a money path — the caller is required to send an Idempotency-Key, is
+	// therefore entitled to assume the call is safe to retry, and the
+	// guarantee is silently absent. A retried payment then charges twice, and
+	// the customer discovers it rather than we do.
+	//
+	// 503 with Retry-After is the right answer: a retry is safe, a duplicate
+	// charge is not.
 	mw := RequireIdempotencyKey(nil)
 	handler := mw(jsonHandler(http.StatusCreated, `{"id":"pay_1"}`))
 
@@ -120,9 +129,24 @@ func TestIdempotency_POST_with_key_proceeds_no_cache(t *testing.T) {
 
 	handler.ServeHTTP(rec, req)
 
-	assert.Equal(t, http.StatusCreated, rec.Code)
-	assert.Contains(t, rec.Body.String(), "pay_1")
-	assert.Empty(t, rec.Header().Get("X-Idempotency-Replayed"))
+	assert.Equal(t, http.StatusServiceUnavailable, rec.Code)
+	assert.NotContains(t, rec.Body.String(), "pay_1", "the handler must not have run")
+	assert.NotEmpty(t, rec.Header().Get("Retry-After"), "client needs to know it may retry")
+}
+
+// Safe methods and unguarded routes must be unaffected — the refusal is
+// deliberately narrow to routes that already demand an Idempotency-Key.
+func TestIdempotency_NoStore_LeavesSafeMethodsAlone(t *testing.T) {
+	t.Parallel()
+
+	mw := RequireIdempotencyKey(nil)
+	handler := mw(jsonHandler(http.StatusOK, `{"ok":true}`))
+
+	for _, method := range []string{http.MethodGet, http.MethodDelete} {
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequest(method, "/api/v1/payments", nil))
+		assert.Equal(t, http.StatusOK, rec.Code, "%s must pass through", method)
+	}
 }
 
 func TestIdempotency_cached_response_replayed(t *testing.T) {
@@ -165,6 +189,53 @@ func TestIdempotency_cached_response_replayed(t *testing.T) {
 	assert.Equal(t, 1, callCount, "handler should NOT have been called again")
 }
 
+// TestIdempotency_sameKeyReplaysJobBidPath is the money-adjacent place-bid
+// shape: POST /jobs/{id}/bids with a sticky Idempotency-Key must not re-enter
+// the handler on replay (handler + durable SQL still guard if Redis is cold).
+func TestIdempotency_sameKeyReplaysJobBidPath(t *testing.T) {
+	cacheClient := testCacheClient(t)
+
+	idempotencyKey := uniqueKey(t)
+	mw := RequireIdempotencyKey(cacheClient)
+
+	callCount := 0
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"id":"bid_1","amount_cents":5000,"status":"active"}`))
+	})
+	handler := mw(inner)
+
+	path := "/api/v1/jobs/11111111-1111-1111-1111-111111111111/bids"
+	req1 := httptest.NewRequest(http.MethodPost, path, nil)
+	req1.Header.Set(idempotencyKeyHeader, idempotencyKey)
+	req1 = req1.WithContext(context.WithValue(req1.Context(), ClaimsContextKey, &Claims{
+		UserID: "provider-1",
+		Email:  "p@example.com",
+		Roles:  []string{"provider"},
+	}))
+	rec1 := httptest.NewRecorder()
+	handler.ServeHTTP(rec1, req1)
+	assert.Equal(t, http.StatusCreated, rec1.Code)
+	assert.Empty(t, rec1.Header().Get("X-Idempotency-Replayed"))
+	require.Equal(t, 1, callCount)
+
+	req2 := httptest.NewRequest(http.MethodPost, path, nil)
+	req2.Header.Set(idempotencyKeyHeader, idempotencyKey)
+	req2 = req2.WithContext(context.WithValue(req2.Context(), ClaimsContextKey, &Claims{
+		UserID: "provider-1",
+		Email:  "p@example.com",
+		Roles:  []string{"provider"},
+	}))
+	rec2 := httptest.NewRecorder()
+	handler.ServeHTTP(rec2, req2)
+	assert.Equal(t, http.StatusCreated, rec2.Code)
+	assert.Equal(t, "true", rec2.Header().Get("X-Idempotency-Replayed"))
+	assert.Contains(t, rec2.Body.String(), `"id":"bid_1"`)
+	assert.Equal(t, 1, callCount, "same Idempotency-Key must not re-enter place-bid handler")
+}
+
 func TestIdempotency_different_keys_produce_different_responses(t *testing.T) {
 	cacheClient := testCacheClient(t)
 
@@ -203,4 +274,231 @@ func TestIdempotency_different_keys_produce_different_responses(t *testing.T) {
 	assert.Equal(t, http.StatusCreated, rec2.Code)
 	assert.Contains(t, rec2.Body.String(), `"id":"pay_2"`)
 	assert.Equal(t, 2, requestNum, "handler should have been called twice for different keys")
+}
+
+// withUser returns a copy of req carrying authenticated claims for userID.
+func withUser(req *http.Request, userID string) *http.Request {
+	return req.WithContext(
+		context.WithValue(req.Context(), ClaimsContextKey, &Claims{UserID: userID}),
+	)
+}
+
+// TestIdempotency_keyIsScopedPerUser is the regression guard for a
+// cross-account response leak.
+//
+// The cache key used to be the client-supplied Idempotency-Key alone, so the
+// namespace was global: the full cached response body was replayed for 24h to
+// whoever presented that key next. POST /api/v1/payments returns a Stripe
+// client_secret, so a collision handed one user a live PaymentIntent secret
+// belonging to another. The first-party web client mints a random UUID, but the
+// API is public and any third-party client picks its own key.
+func TestIdempotency_keyIsScopedPerUser(t *testing.T) {
+	cacheClient := testCacheClient(t)
+
+	sharedKey := uniqueKey(t)
+	mw := RequireIdempotencyKey(cacheClient)
+
+	var serving string
+	inner := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"client_secret":"secret_for_` + serving + `"}`))
+	})
+	handler := mw(inner)
+
+	// Alice posts with the shared key.
+	serving = "alice"
+	rec1 := httptest.NewRecorder()
+	req1 := withUser(httptest.NewRequest(http.MethodPost, "/api/v1/payments", nil), "alice")
+	req1.Header.Set(idempotencyKeyHeader, sharedKey)
+	handler.ServeHTTP(rec1, req1)
+	require.Equal(t, http.StatusCreated, rec1.Code)
+	require.Contains(t, rec1.Body.String(), "secret_for_alice")
+
+	// Bob presents the SAME key on the SAME route. He must reach the handler
+	// and get his own response — never Alice's cached body.
+	serving = "bob"
+	rec2 := httptest.NewRecorder()
+	req2 := withUser(httptest.NewRequest(http.MethodPost, "/api/v1/payments", nil), "bob")
+	req2.Header.Set(idempotencyKeyHeader, sharedKey)
+	handler.ServeHTTP(rec2, req2)
+
+	assert.Contains(t, rec2.Body.String(), "secret_for_bob")
+	assert.NotContains(t, rec2.Body.String(), "secret_for_alice",
+		"Bob must never receive Alice's cached client_secret")
+	assert.Empty(t, rec2.Header().Get("X-Idempotency-Replayed"),
+		"Bob's request is not a replay — it is a different caller")
+}
+
+// A genuine retry by the SAME user on the SAME route must still replay, or the
+// middleware would stop doing its job.
+func TestIdempotency_sameUserSameRouteStillReplays(t *testing.T) {
+	cacheClient := testCacheClient(t)
+
+	key := uniqueKey(t)
+	mw := RequireIdempotencyKey(cacheClient)
+
+	calls := 0
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"id":"pay_1"}`))
+	}))
+
+	for i := 0; i < 2; i++ {
+		rec := httptest.NewRecorder()
+		req := withUser(httptest.NewRequest(http.MethodPost, "/api/v1/payments", nil), "alice")
+		req.Header.Set(idempotencyKeyHeader, key)
+		handler.ServeHTTP(rec, req)
+		assert.Equal(t, http.StatusCreated, rec.Code)
+	}
+	assert.Equal(t, 1, calls, "the retry must be served from cache, not re-executed")
+}
+
+// The same user reusing one key across DIFFERENT routes must not have a
+// /payments response replayed for a /subscriptions call.
+func TestIdempotency_keyIsScopedPerRoute(t *testing.T) {
+	cacheClient := testCacheClient(t)
+
+	key := uniqueKey(t)
+	mw := RequireIdempotencyKey(cacheClient)
+
+	var serving string
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"route":"` + serving + `"}`))
+	}))
+
+	serving = "payments"
+	rec1 := httptest.NewRecorder()
+	req1 := withUser(httptest.NewRequest(http.MethodPost, "/api/v1/payments", nil), "alice")
+	req1.Header.Set(idempotencyKeyHeader, key)
+	handler.ServeHTTP(rec1, req1)
+	require.Contains(t, rec1.Body.String(), "payments")
+
+	serving = "subscriptions"
+	rec2 := httptest.NewRecorder()
+	req2 := withUser(httptest.NewRequest(http.MethodPost, "/api/v1/subscriptions", nil), "alice")
+	req2.Header.Set(idempotencyKeyHeader, key)
+	handler.ServeHTTP(rec2, req2)
+
+	assert.Contains(t, rec2.Body.String(), "subscriptions",
+		"a different route must not replay the previous route's response")
+}
+
+
+// Transient failures must not be sticky. Caching a 5xx under the client's
+// Idempotency-Key for 24h traps retries on the error instead of re-attempting
+// the mutation once the underlying service recovers.
+func TestIdempotency_doesNotCache5xx(t *testing.T) {
+	cacheClient := testCacheClient(t)
+
+	key := uniqueKey(t)
+	mw := RequireIdempotencyKey(cacheClient)
+
+	callCount := 0
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		callCount++
+		if callCount == 1 {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`{"error":"upstream unavailable"}`))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"id":"pay_recovered"}`))
+	}))
+
+	// First attempt: transient 500 — must reach the handler and must not stick.
+	rec1 := httptest.NewRecorder()
+	req1 := httptest.NewRequest(http.MethodPost, "/api/v1/payments", nil)
+	req1.Header.Set(idempotencyKeyHeader, key)
+	handler.ServeHTTP(rec1, req1)
+	require.Equal(t, http.StatusInternalServerError, rec1.Code)
+	assert.Empty(t, rec1.Header().Get("X-Idempotency-Replayed"))
+
+	// Retry with the same key: handler must re-execute and succeed.
+	rec2 := httptest.NewRecorder()
+	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/payments", nil)
+	req2.Header.Set(idempotencyKeyHeader, key)
+	handler.ServeHTTP(rec2, req2)
+	assert.Equal(t, http.StatusCreated, rec2.Code)
+	assert.Contains(t, rec2.Body.String(), "pay_recovered")
+	assert.Empty(t, rec2.Header().Get("X-Idempotency-Replayed"))
+	assert.Equal(t, 2, callCount, "5xx responses must not be cached for replay")
+}
+
+// 429 / 503 are also transient and must not pin the client for the full TTL.
+func TestIdempotency_doesNotCache429Or503(t *testing.T) {
+	cacheClient := testCacheClient(t)
+
+	for _, status := range []int{http.StatusTooManyRequests, http.StatusServiceUnavailable} {
+		status := status
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			key := uniqueKey(t)
+			mw := RequireIdempotencyKey(cacheClient)
+
+			callCount := 0
+			handler := mw(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				callCount++
+				if callCount == 1 {
+					w.WriteHeader(status)
+					_, _ = w.Write([]byte(`{"error":"try later"}`))
+					return
+				}
+				w.WriteHeader(http.StatusCreated)
+				_, _ = w.Write([]byte(`{"id":"pay_ok"}`))
+			}))
+
+			rec1 := httptest.NewRecorder()
+			req1 := httptest.NewRequest(http.MethodPost, "/api/v1/payments", nil)
+			req1.Header.Set(idempotencyKeyHeader, key)
+			handler.ServeHTTP(rec1, req1)
+			require.Equal(t, status, rec1.Code)
+
+			rec2 := httptest.NewRecorder()
+			req2 := httptest.NewRequest(http.MethodPost, "/api/v1/payments", nil)
+			req2.Header.Set(idempotencyKeyHeader, key)
+			handler.ServeHTTP(rec2, req2)
+			assert.Equal(t, http.StatusCreated, rec2.Code)
+			assert.Equal(t, 2, callCount, "status %d must not be cached", status)
+		})
+	}
+}
+
+// Successful 2xx responses remain sticky so true retries do not re-execute.
+func TestIdempotency_caches2xxOnly(t *testing.T) {
+	cacheClient := testCacheClient(t)
+
+	key := uniqueKey(t)
+	mw := RequireIdempotencyKey(cacheClient)
+
+	callCount := 0
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		callCount++
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":"pay_ok"}`))
+	}))
+
+	for i := 0; i < 2; i++ {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/payments", nil)
+		req.Header.Set(idempotencyKeyHeader, key)
+		handler.ServeHTTP(rec, req)
+		assert.Equal(t, http.StatusOK, rec.Code)
+	}
+	assert.Equal(t, 1, callCount)
+}
+
+func TestIsIdempotencyCacheable(t *testing.T) {
+	t.Parallel()
+	assert.True(t, isIdempotencyCacheable(200))
+	assert.True(t, isIdempotencyCacheable(201))
+	assert.True(t, isIdempotencyCacheable(204))
+	assert.False(t, isIdempotencyCacheable(400))
+	assert.False(t, isIdempotencyCacheable(409))
+	assert.False(t, isIdempotencyCacheable(429))
+	assert.False(t, isIdempotencyCacheable(500))
+	assert.False(t, isIdempotencyCacheable(503))
 }

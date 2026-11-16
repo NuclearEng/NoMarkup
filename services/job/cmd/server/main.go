@@ -7,11 +7,14 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/extra/redisotel/v9"
+	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
@@ -20,16 +23,27 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
 	grpclib "google.golang.org/grpc"
+	"google.golang.org/grpc/health"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 
+	analyticsv1 "github.com/nomarkup/nomarkup/proto/analytics/v1"
+	contractv1 "github.com/nomarkup/nomarkup/proto/contract/v1"
+	jobv1 "github.com/nomarkup/nomarkup/proto/job/v1"
+	reviewv1 "github.com/nomarkup/nomarkup/proto/review/v1"
+	"github.com/nomarkup/nomarkup/services/job/internal/client"
+	"github.com/nomarkup/nomarkup/services/job/internal/config"
+	"github.com/nomarkup/nomarkup/services/job/internal/crypto"
+	"github.com/nomarkup/nomarkup/services/job/internal/domain"
 	grpcserver "github.com/nomarkup/nomarkup/services/job/internal/grpc"
+	"github.com/nomarkup/nomarkup/services/job/internal/observability"
 	"github.com/nomarkup/nomarkup/services/job/internal/repository"
 	"github.com/nomarkup/nomarkup/services/job/internal/service"
 )
 
 func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+	logger := slog.New(observability.NewContextHandler(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
-	}))
+	})))
 	slog.SetDefault(logger)
 
 	port := os.Getenv("JOB_SERVICE_PORT")
@@ -69,7 +83,7 @@ func main() {
 
 	// Connect to PostgreSQL.
 	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, databaseURL)
+	pool, err := observability.NewPGXPool(ctx, databaseURL)
 	if err != nil {
 		slog.Error("failed to connect to database", "error", err)
 		os.Exit(1)
@@ -90,24 +104,107 @@ func main() {
 	}
 	slog.Info("connected to database")
 
-	// Optional Meilisearch integration.
-	meiliHost := os.Getenv("MEILISEARCH_HOST")
+	// Meilisearch integration: optional in dev, required in production.
+	// MEILISEARCH_URL is canonical; MEILISEARCH_HOST is a deprecated
+	// fallback (resolved + normalized in internal/config). In production
+	// (ENVIRONMENT=production, supplied by the k8s configmap) a missing URL
+	// is a startup error — booting green with search silently dead is
+	// fail-open, and §15 says fail closed.
+	meiliURL := config.ResolveMeilisearchURL()
 	meiliKey := os.Getenv("MEILISEARCH_API_KEY")
+	if meiliURL == "" {
+		if os.Getenv("ENVIRONMENT") == "production" {
+			slog.Error("MEILISEARCH_URL is required in production (search would be silently disabled)")
+			os.Exit(1)
+		}
+		slog.Info("MEILISEARCH_URL not set, search disabled")
+	}
+
+	// Trust-tiered search ranking (MOVE B2): a higher seller/provider trust tier
+	// becomes a modest, explainable ranking signal. Behind the TRUST_RANKING
+	// flag, default OFF (fail closed → current ordering unchanged).
+	trustRanking := envBool("TRUST_RANKING", false)
 
 	var searchEngine *service.SearchEngine
-	if meiliHost != "" {
-		se, err := service.NewSearchEngine(meiliHost, meiliKey)
+	var listingSearchEngine *service.ListingSearchEngine
+	if meiliURL != "" {
+		se, err := service.NewSearchEngine(meiliURL, meiliKey)
 		if err != nil {
 			slog.Warn("failed to initialize search engine, continuing without search", "error", err)
 		} else {
 			searchEngine = se
-			slog.Info("connected to meilisearch", "host", meiliHost)
+			slog.Info("connected to meilisearch", "url", meiliURL)
 		}
+		// Listings index is independent of jobs. Failure to configure
+		// either does not stop the service from booting.
+		lse, err := service.NewListingSearchEngine(meiliURL, meiliKey)
+		if err != nil {
+			slog.Warn("failed to initialize listing search engine, continuing without listing search", "error", err)
+		} else {
+			// Apply the trust-ranking mode BEFORE first index use so the ranking
+			// rules + sortable attributes are configured for the chosen mode.
+			lse.SetTrustRanking(trustRanking)
+			if trustRanking {
+				if err := lse.ConfigureIndex(); err != nil {
+					slog.Error("failed to re-configure listings index for trust ranking", "error", err)
+				}
+			}
+			listingSearchEngine = lse
+			slog.Info("listings search index ready", "url", meiliURL, "trust_ranking", trustRanking)
+		}
+	}
+	// Build the PII cipher (libsodium-compatible nacl/secretbox). It protects
+	// jobs.service_address — a CUSTOMER HOME address — and the exact service
+	// point in jobs.service_location_encrypted (migration 104). Outside
+	// development a missing or invalid ENCRYPTION_KEY is fatal; in development
+	// crypto.FromEnv generates an ephemeral key and logs a WARN. See CLAUDE.md §6.
+	cipher, err := crypto.FromEnv()
+	if err != nil {
+		slog.Error("failed to initialize PII cipher", "error", err)
+		os.Exit(1)
 	}
 
 	// Wire up dependencies.
-	repo := repository.NewPostgresRepository(pool)
+	repo := repository.NewPostgresRepository(pool, cipher)
 	jobService := service.NewJobService(repo, searchEngine)
+
+	// Wire up ListingService with the listings Meilisearch indexer. The
+	// gateway currently bypasses this service for read traffic (see
+	// gateway/internal/handler/listings.go) but the service hooks fire
+	// from any gRPC writes and from the reindex-listings CLI backfill.
+	listingRepo := repository.NewListingPostgresRepository(pool)
+	listingHydrate := buildListingHydrator(pool, trustRanking)
+	listingService := service.NewListingService(listingRepo).WithSearch(listingSearchEngine, listingHydrate)
+
+	// Optional Redis client — auction-close notification seam (auction_won /
+	// auction_expired) + ARC-16 durable Meilisearch reindex retry queue.
+	// Search is fail-soft (not money): without REDIS_URL, in-process 3-shot
+	// retries still run and exhaustion dead-letters with a pageable metric.
+	// Wire it only if REDIS_URL is set.
+	var searchRetryQ *service.SearchRetryQueue
+	if redisURL := os.Getenv("REDIS_URL"); redisURL != "" {
+		if opt, perr := redis.ParseURL(redisURL); perr != nil {
+			slog.Warn("redis: invalid REDIS_URL, auction notifications + search durable retry disabled", "error", perr)
+		} else {
+			rdb := redis.NewClient(opt)
+			defer func() { _ = rdb.Close() }()
+			if err := redisotel.InstrumentTracing(rdb); err != nil {
+				slog.Warn("redis tracing instrumentation failed", "error", err)
+			}
+			listingService = listingService.WithRedis(rdb)
+			slog.Info("auction-close: redis notification seam enabled")
+
+			// ARC-16: durable search reindex queue (jobs + listings share one ZSET).
+			searchRetryQ = service.NewSearchRetryQueue(rdb).
+				WithJobHandlers(repo, searchEngine).
+				WithListingHandlers(listingRepo, listingSearchEngine, listingHydrate)
+			jobService = jobService.WithSearchRetryQueue(searchRetryQ)
+			listingService = listingService.WithSearchRetryQueue(searchRetryQ)
+			slog.Info("search durable retry queue enabled (ARC-16)")
+		}
+	} else {
+		slog.Info("REDIS_URL unset: search durable retry disabled (in-process retries + dead-letter metric only)")
+	}
 
 	// Wire up provider matching engine.
 	matchingService := service.NewMatchingService(repo)
@@ -116,17 +213,70 @@ func main() {
 
 	srv := grpcserver.NewServer(jobService)
 
+	// Optional Rust Fair-Price engine client. The connection is lazy, so a down
+	// engine never blocks startup — GetFairPrice fails soft (has_data=false).
+	// Wire it only if PRICING_ENGINE_ADDR is set.
+	var pricingEngine service.PricingEngine
+	if pricingAddr := os.Getenv("PRICING_ENGINE_ADDR"); pricingAddr != "" {
+		pc, perr := client.NewPricingClient(pricingAddr)
+		if perr != nil {
+			slog.Warn("fair-price: failed to init pricing engine client, GetFairPrice will return no data", "error", perr)
+		} else {
+			defer func() { _ = pc.Close() }()
+			pricingEngine = pc
+			slog.Info("fair-price: pricing engine client enabled", "addr", pricingAddr)
+		}
+	} else {
+		slog.Info("fair-price: PRICING_ENGINE_ADDR not set, GetFairPrice will return no data")
+	}
+
 	// Wire up contract service (shares same repo/pool).
+	// FR-5.4 residual: on award, apply chat-accepted local terms that were
+	// consented pre-contract (terms_accepted with no live contract at Accept).
+	// Fail-soft inside CreateContractFromAward — never blocks award.
 	contractService := service.NewContractService(repo, repo)
+	contractService.SetPendingLocalTermsApplier(service.NewPGPendingLocalTermsApplier(pool))
+
+	// 7-day auto-approve releases services escrow as a System actor. The
+	// connection is lazy (same as the pricing engine). Unset in production
+	// would complete contracts without paying the provider — fail closed.
+	if paymentAddr := os.Getenv("PAYMENT_SERVICE_ADDR"); paymentAddr != "" {
+		pc, perr := client.NewPaymentClient(paymentAddr)
+		if perr != nil {
+			slog.Error("failed to init payment client for contract auto-release", "error", perr)
+			if os.Getenv("ENVIRONMENT") == "production" {
+				os.Exit(1)
+			}
+			slog.Warn("auto-release: payment client disabled; 7-day sweep will complete contracts without releasing escrow")
+		} else {
+			defer func() { _ = pc.Close() }()
+			contractService.SetEscrowReleaser(pc)
+			slog.Info("auto-release: payment client enabled", "addr", paymentAddr)
+		}
+	} else if os.Getenv("ENVIRONMENT") == "production" {
+		slog.Error("PAYMENT_SERVICE_ADDR is required in production (7-day auto-approve would skip escrow release)")
+		os.Exit(1)
+	} else {
+		slog.Warn("PAYMENT_SERVICE_ADDR not set; 7-day auto-approve will complete contracts without releasing escrow")
+	}
+
 	contractSrv := grpcserver.NewContractServer(contractService)
 
 	// Wire up review service (shares same repo/pool).
 	reviewService := service.NewReviewService(repo, repo)
 	reviewSrv := grpcserver.NewReviewServer(reviewService)
 
-	// Wire up analytics service (shares same repo/pool).
+	// Wire up analytics service (shares same repo/pool). The Fair-Price engine
+	// client is optional; if absent, GetFairPrice fails soft.
 	analyticsService := service.NewAnalyticsService(repo)
+	if pricingEngine != nil {
+		analyticsService = analyticsService.WithPricingEngine(pricingEngine)
+	}
 	analyticsSrv := grpcserver.NewAnalyticsServer(analyticsService)
+
+	// The GetFairPrice RPC lives on JobService but is powered by the analytics
+	// service; wire it onto the job server.
+	srv = srv.WithAnalytics(analyticsService)
 
 	// Start gRPC server.
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%s", port))
@@ -135,18 +285,121 @@ func main() {
 		os.Exit(1)
 	}
 
-	s := grpclib.NewServer(
+	serverOpts := []grpclib.ServerOption{
 		grpclib.StatsHandler(otelgrpc.NewServerHandler()),
-		grpclib.ChainUnaryInterceptor(loggingUnaryInterceptor),
-		grpclib.ChainStreamInterceptor(loggingStreamInterceptor),
-	)
+		// RequestID first (it seeds the context both the recovery and logging
+		// interceptors read), then recovery — outside logging so a panic in
+		// either the logging interceptor or the handler is contained (RES-03).
+		grpclib.ChainUnaryInterceptor(observability.RequestIDUnaryInterceptor, recoveryUnaryInterceptor, loggingUnaryInterceptor),
+		grpclib.ChainStreamInterceptor(observability.RequestIDStreamInterceptor, recoveryStreamInterceptor, loggingStreamInterceptor),
+		grpclib.KeepaliveEnforcementPolicy(grpcKeepaliveEnforcement()),
+		grpclib.KeepaliveParams(grpcKeepaliveParams()),
+	}
+	var errMTLS error
+	serverOpts, errMTLS = meshServerOptions(serverOpts)
+	if errMTLS != nil {
+		slog.Error("failed to configure gRPC server mTLS", "error", errMTLS)
+		os.Exit(1)
+	}
+	s := grpclib.NewServer(serverOpts...)
 	grpcserver.Register(s, srv)
 	grpcserver.RegisterContract(s, contractSrv)
 	grpcserver.RegisterReview(s, reviewSrv)
 	grpcserver.RegisterAnalytics(s, analyticsSrv)
 
+	// Standard gRPC health service (grpc.health.v1.Health). REQUIRED — the
+	// Kubernetes deployment (deploy/k8s/base/job/deployment.yaml) uses native
+	// gRPC liveness/readiness probes, and kubelet queries the EMPTY service
+	// name. Without this registration every probe returns UNIMPLEMENTED,
+	// readiness never passes and liveness restarts the pod (CrashLoopBackOff).
+	// Do not delete as "unused" — the only caller is kubelet.
+	healthSrv := health.NewServer()
+	healthpb.RegisterHealthServer(s, healthSrv)
+	healthSrv.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
+	for _, name := range []string{
+		jobv1.JobService_ServiceDesc.ServiceName,
+		contractv1.ContractService_ServiceDesc.ServiceName,
+		reviewv1.ReviewService_ServiceDesc.ServiceName,
+		analyticsv1.AnalyticsService_ServiceDesc.ServiceName,
+	} {
+		healthSrv.SetServingStatus(name, healthpb.HealthCheckResponse_SERVING)
+	}
+
 	sigCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	// Observability HTTP server (healthz / readyz / metrics) on a separate port.
+	startObservabilityServer(sigCtx, "job-service", port, pool)
+
+	// Goods-marketplace auction-close worker. Periodically resolves auctions
+	// past their deadline that are still active: highest qualifying bidder wins
+	// (escrow order created) or the listing expires with no sale. Mirrors the
+	// payment service's marketplace auto-release cron. Tied to sigCtx so it
+	// stops cleanly on shutdown. Interval/delay/batch are env-tunable.
+	runAuctionCloseCron(
+		sigCtx,
+		listingService,
+		envDuration("AUCTION_CLOSE_INTERVAL", 30*time.Second),
+		envDuration("AUCTION_CLOSE_INITIAL_DELAY", 15*time.Second),
+		envInt("AUCTION_CLOSE_BATCH", 100),
+	)
+
+	// Services escrow: 7-day auto-approve of provider-marked-complete
+	// contracts the customer never confirmed. Releases held escrow as
+	// System, then finalises contract + job. Tied to sigCtx like the
+	// auction worker.
+	runAutoReleaseCompletedContractsCron(
+		sigCtx,
+		contractService,
+		envDuration("CONTRACT_AUTO_RELEASE_INTERVAL", time.Hour),
+		envDuration("CONTRACT_AUTO_RELEASE_INITIAL_DELAY", 2*time.Minute),
+	)
+
+	// Bid-bond safety net: release stranded authorized bonds on terminal
+	// listings and cancel abandoned pending SetupIntents (handoff C11 residual).
+	runBidBondSweepCron(
+		sigCtx,
+		listingService,
+		envDuration("BID_BOND_SWEEP_INTERVAL", 5*time.Minute),
+		envDuration("BID_BOND_SWEEP_INITIAL_DELAY", 45*time.Second),
+		envDuration("BID_BOND_PENDING_MAX_AGE", 24*time.Hour),
+		envInt("BID_BOND_SWEEP_BATCH", 200),
+	)
+
+	// Fair Price Index refresher. `fair_price_index` is a materialized view: it
+	// is a snapshot that never updates itself, and nothing in the tree refreshed
+	// it, so the public pricing endpoint served an empty list on every database
+	// built from the migration chain. Hourly by default, advisory-locked so a
+	// multi-replica deployment refreshes once per interval rather than once per
+	// pod. Tied to sigCtx so it drains on shutdown like the auction worker.
+	service.RunFairPriceRefreshCron(
+		sigCtx,
+		service.NewFairPriceRefresher(pool, envDuration("FAIR_PRICE_REFRESH_MIN_INTERVAL", 30*time.Minute)),
+		envDuration("FAIR_PRICE_REFRESH_INTERVAL", time.Hour),
+		envDuration("FAIR_PRICE_REFRESH_INITIAL_DELAY", 30*time.Second),
+	)
+
+	// FR-16.7 discovery: scan recurring_configs.next_retry_at (migration 113)
+	// and log due rows. Real CreatePayment + off-session attempt-N is gateway
+	// ProcessDueRecurringPaymentRetries (job mesh has no payment client).
+	service.RunRecurringPaymentRetryCron(
+		sigCtx,
+		service.NewRecurringPaymentRetryWorker(pool),
+		envDuration("RECURRING_PAYMENT_RETRY_INTERVAL", time.Hour),
+		envDuration("RECURRING_PAYMENT_RETRY_INITIAL_DELAY", 45*time.Second),
+		envInt("RECURRING_PAYMENT_RETRY_BATCH", 100),
+	)
+
+	// ARC-16: durable Meilisearch reindex worker. Claims due tasks from the
+	// Redis ZSET every 30s (default), re-fetches entity state from Postgres,
+	// and re-applies index/remove. No-ops when REDIS_URL was unset.
+	service.RunSearchRetryCron(
+		sigCtx,
+		searchRetryQ,
+		envDuration("SEARCH_RETRY_INTERVAL", 30*time.Second),
+		envDuration("SEARCH_RETRY_INITIAL_DELAY", 20*time.Second),
+		int64(envInt("SEARCH_RETRY_BATCH", 50)),
+	)
 
 	go func() {
 		slog.Info("job service starting", "port", port)
@@ -158,6 +411,10 @@ func main() {
 
 	<-sigCtx.Done()
 	slog.Info("shutting down job service")
+	// Flip every health status to NOT_SERVING *before* draining so the k8s
+	// readiness probe pulls this pod out of rotation while in-flight RPCs
+	// finish.
+	healthSrv.Shutdown()
 	s.GracefulStop()
 	slog.Info("job service stopped")
 }
@@ -222,6 +479,61 @@ func loggingUnaryInterceptor(ctx context.Context, req interface{}, info *grpclib
 	return resp, err
 }
 
+// buildListingHydrator returns a closure that joins service_categories +
+// reads the optional condition column to enrich Meilisearch documents.
+// The category JOIN is single-row, so the cost is negligible per index op.
+//
+// Schema note: the `condition` column is added by Agent H in migration 040.
+// We probe via information_schema once at startup; if absent we omit it.
+func buildListingHydrator(pool *pgxpool.Pool, trustRanking bool) service.ListingHydrator {
+	hasCondition := false
+	{
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		var exists bool
+		_ = pool.QueryRow(ctx, `
+			SELECT EXISTS (
+				SELECT 1 FROM information_schema.columns
+				 WHERE table_name = 'listings' AND column_name = 'condition'
+			)`).Scan(&exists)
+		hasCondition = exists
+	}
+	return func(ctx context.Context, l *domain.Listing) service.ListingExtraFields {
+		var extras service.ListingExtraFields
+		if pool == nil || l == nil {
+			return extras
+		}
+		// service_categories JOIN.
+		_ = pool.QueryRow(ctx, `
+			SELECT COALESCE(name,''), COALESCE(slug,'')
+			  FROM service_categories WHERE id = $1`, l.CategoryID,
+		).Scan(&extras.CategoryName, &extras.CategorySlug)
+		// Optional condition column.
+		if hasCondition {
+			var cond string
+			if err := pool.QueryRow(ctx, `
+				SELECT COALESCE(condition,'') FROM listings WHERE id = $1`, l.ID,
+			).Scan(&cond); err == nil {
+				extras.Condition = cond
+			}
+		}
+		// Trust-tiered ranking (MOVE B2): read the seller's provider trust tier
+		// from trust_scores so the indexer can emit a numeric trust_rank. Only
+		// when the flag is on (skip the lookup otherwise). Fail-soft: a missing
+		// row / error leaves TrustTier empty → trust_rank 0 → no boost.
+		if trustRanking && l.SellerID != "" {
+			var tier string
+			if err := pool.QueryRow(ctx, `
+				SELECT tier FROM trust_scores
+				 WHERE user_id = $1 AND role = 'provider'`, l.SellerID,
+			).Scan(&tier); err == nil {
+				extras.TrustTier = tier
+			}
+		}
+		return extras
+	}
+}
+
 // loggingStreamInterceptor logs every streaming gRPC call with method name, duration, and any error.
 func loggingStreamInterceptor(srv interface{}, ss grpclib.ServerStream, info *grpclib.StreamServerInfo, handler grpclib.StreamHandler) error {
 	start := time.Now()
@@ -240,4 +552,19 @@ func loggingStreamInterceptor(srv interface{}, ss grpclib.ServerStream, info *gr
 		)
 	}
 	return err
+}
+
+// envBool reads a boolean feature-flag env var. Recognizes 1/true/t/yes/on
+// (case-insensitive) as true; everything else (including unset) returns def.
+// Used to gate optional behavior fail-closed at startup.
+func envBool(key string, def bool) bool {
+	v := strings.TrimSpace(strings.ToLower(os.Getenv(key)))
+	switch v {
+	case "":
+		return def
+	case "1", "true", "t", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }

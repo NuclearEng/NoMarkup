@@ -1,0 +1,15 @@
+{
+  "method": "GET",
+  "path": "/api/v1/admin/flags",
+  "status": 200,
+  "contentType": "application/json",
+  "body": {
+    "flags": [
+      {
+        "key": "marketplace_offers",
+        "enabled": true,
+        "rollout_percent": 100
+      }
+    ]
+  }
+}

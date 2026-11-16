@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 
-import { api } from '@/lib/api';
+import { api, getApiErrorMessage, idempotencyHeader } from '@/lib/api';
 import type {
   AdminDisputesResponse,
   AdminFlaggedReviewsResponse,
@@ -12,11 +13,20 @@ import type {
   AdminUser,
   AdminUsersResponse,
   CategoryMetricsResponse,
+  CreateCustomFeeInput,
+  CreatePlatformBankAccountInput,
+  CustomFee,
+  CustomFeesResponse,
   Dispute,
   FeeConfig,
+  FeeConfigSummary,
+  UpdateCustomFeeInput,
   GrowthMetrics,
+  Market,
   Payment,
   PaginationResponse,
+  PlatformBankAccount,
+  PlatformBankingResponse,
   PlatformMetrics,
   RevenueReport,
   VerificationDocument,
@@ -41,12 +51,18 @@ const adminKeys = {
   payment: (id: string) => [...adminKeys.all, 'payments', id] as const,
   revenue: (startDate?: string, endDate?: string, groupBy?: string) =>
     [...adminKeys.all, 'revenue', startDate, endDate, groupBy] as const,
+  feeConfig: (categoryId?: string) =>
+    [...adminKeys.all, 'fee-config', categoryId] as const,
+  customFees: () => [...adminKeys.all, 'custom-fees'] as const,
   platformMetrics: (startDate?: string, endDate?: string) =>
     [...adminKeys.all, 'platform', 'metrics', startDate, endDate] as const,
   growthMetrics: (startDate?: string, endDate?: string, groupBy?: string) =>
     [...adminKeys.all, 'platform', 'growth', startDate, endDate, groupBy] as const,
   categoryMetrics: (startDate?: string, endDate?: string) =>
     [...adminKeys.all, 'platform', 'categories', startDate, endDate] as const,
+  banking: () => [...adminKeys.all, 'banking'] as const,
+  flags: () => [...adminKeys.all, 'flags'] as const,
+  insurers: () => [...adminKeys.all, 'insurers'] as const,
 };
 
 // ─── Helper to build query strings ───────────────────
@@ -132,12 +148,15 @@ export function useVerificationQueue(page?: number, pageSize?: number) {
 export function useReviewDocument() {
   const queryClient = useQueryClient();
   return useMutation({
+    // Gateway returns { status: string } — the document body isn't echoed back.
+    // The page only needs to invalidate the queue on success, so we don't need
+    // the full document here.
     mutationFn: (variables: {
       documentId: string;
       approved: boolean;
       rejection_reason?: string;
     }) =>
-      api.post<{ document: VerificationDocument }>(
+      api.post<{ status: string }>(
         `/api/v1/admin/verification/${variables.documentId}/review`,
         {
           approved: variables.approved,
@@ -225,6 +244,9 @@ export function useAdminDispute(disputeId: string) {
 export function useResolveDispute() {
   const queryClient = useQueryClient();
   return useMutation({
+    // The admin form has a checkbox (`guarantee_claim: boolean`) but the
+    // gateway/contract service expects a `guarantee_outcome` string. Map the
+    // boolean to "approved" / empty so the backend records the outcome.
     mutationFn: (variables: {
       disputeId: string;
       resolution_type: string;
@@ -236,7 +258,7 @@ export function useResolveDispute() {
         resolution_type: variables.resolution_type,
         resolution_notes: variables.resolution_notes,
         refund_amount_cents: variables.refund_amount_cents,
-        guarantee_claim: variables.guarantee_claim,
+        guarantee_outcome: variables.guarantee_claim ? 'approved' : '',
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({
@@ -336,12 +358,114 @@ export function useRevenueReport(startDate?: string, endDate?: string, groupBy?:
   });
 }
 
+// useFeeConfig reads the currently ACTIVE fee configuration (GET, read-only) so
+// the admin can see the live rates at a glance. Percentages come back as 0..1
+// fractions and bounds as integer cents — the consuming UI formats them. An
+// optional categoryId fetches a category override; default (no arg) is the
+// platform-wide config.
+export function useFeeConfig(categoryId?: string) {
+  const query = buildQuery({ category_id: categoryId });
+  return useQuery({
+    queryKey: adminKeys.feeConfig(categoryId),
+    queryFn: () =>
+      api.get<FeeConfigSummary>(`/api/v1/admin/payments/fee-config${query}`),
+  });
+}
+
 export function useUpdateFeeConfig() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (config: FeeConfig) => api.put<FeeConfig>('/api/v1/admin/fees', config),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: adminKeys.all });
+    },
+  });
+}
+
+export function useCustomFees() {
+  return useQuery({
+    queryKey: adminKeys.customFees(),
+    queryFn: () => api.get<CustomFeesResponse>('/api/v1/admin/custom-fees'),
+  });
+}
+
+export function useCreateCustomFee() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateCustomFeeInput) =>
+      api.post<{ fee: CustomFee }>('/api/v1/admin/custom-fees', input),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: adminKeys.customFees() });
+    },
+  });
+}
+
+export function useUpdateCustomFee() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...input }: UpdateCustomFeeInput & { id: string }) =>
+      api.patch<{ fee: CustomFee }>(`/api/v1/admin/custom-fees/${id}`, input),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: adminKeys.customFees() });
+    },
+  });
+}
+
+export function useDeleteCustomFee() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      api.delete<{ deactivated: boolean }>(`/api/v1/admin/custom-fees/${id}`),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: adminKeys.customFees() });
+    },
+  });
+}
+
+// ─── Platform Banking ─────────────────────────────────
+//
+// The platform payout bank account — where all collected fees route. Admin
+// only. Raw account/routing numbers are tokenized client-side with Stripe.js;
+// only the resulting bank-account token (btok_...) ever reaches our backend.
+
+export function usePlatformBanking() {
+  return useQuery({
+    queryKey: adminKeys.banking(),
+    queryFn: () => api.get<PlatformBankingResponse>('/api/v1/admin/banking'),
+  });
+}
+
+export function useSetPlatformBankAccount() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreatePlatformBankAccountInput) =>
+      // Idempotent — guards against double-submits creating duplicate accounts.
+      api.post<{ account: PlatformBankAccount }>(
+        '/api/v1/admin/banking',
+        input,
+        idempotencyHeader(),
+      ),
+    onSuccess: () => {
+      toast.success('Platform bank account saved');
+      void queryClient.invalidateQueries({ queryKey: adminKeys.banking() });
+    },
+    onError: (err) => {
+      toast.error(getApiErrorMessage(err, 'Failed to save bank account'));
+    },
+  });
+}
+
+export function useDeletePlatformBankAccount() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (accountId: string) =>
+      api.delete<{ deleted: boolean }>(`/api/v1/admin/banking/${accountId}`),
+    onSuccess: () => {
+      toast.success('Platform bank account removed');
+      void queryClient.invalidateQueries({ queryKey: adminKeys.banking() });
+    },
+    onError: (err) => {
+      toast.error(getApiErrorMessage(err, 'Failed to remove bank account'));
     },
   });
 }
@@ -381,5 +505,533 @@ export function useCategoryMetrics(startDate?: string, endDate?: string) {
     queryKey: adminKeys.categoryMetrics(startDate, endDate),
     queryFn: () =>
       api.get<CategoryMetricsResponse>(`/api/v1/admin/platform/categories${query}`),
+  });
+}
+
+// ─── Marketplace listings (goods) ─────────────────────
+//
+// The marketplace admin surface is pgx-direct (no gRPC); response shapes
+// are inlined here rather than exported from /types so each consumer can
+// see the JSON contract at a glance.
+
+export interface AdminListing {
+  id: string;
+  title: string;
+  seller_id: string;
+  seller_email: string;
+  status: string;
+  is_hidden: boolean;
+  hidden_reason?: string | null;
+  starting_price_cents: number;
+  current_bid_cents?: number | null;
+  bid_count: number;
+  open_report_count: number;
+  auction_ends_at: string;
+  created_at: string;
+}
+
+export interface AdminListingsResponse {
+  listings: AdminListing[];
+  pagination: { page: number; page_size: number; total: number };
+}
+
+export function useAdminListings(params?: {
+  q?: string;
+  status?: string;
+  seller_id?: string;
+  hidden?: 'true' | 'false';
+  page?: number;
+  page_size?: number;
+}) {
+  const query = buildQuery({
+    q: params?.q,
+    status: params?.status,
+    seller_id: params?.seller_id,
+    hidden: params?.hidden,
+    page: params?.page,
+    page_size: params?.page_size,
+  });
+  return useQuery({
+    queryKey: ['admin', 'listings', params],
+    queryFn: () => api.get<AdminListingsResponse>(`/api/v1/admin/listings${query}`),
+  });
+}
+
+export function useSuspendListing() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { listingId: string; reason: string }) =>
+      api.post(`/api/v1/admin/listings/${vars.listingId}/suspend`, { reason: vars.reason }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'listings'] });
+    },
+  });
+}
+
+export function useReactivateListing() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { listingId: string }) =>
+      api.post(`/api/v1/admin/listings/${vars.listingId}/reactivate`, {}),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'listings'] });
+    },
+  });
+}
+
+export function useCancelListing() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { listingId: string; reason: string }) =>
+      api.post(`/api/v1/admin/listings/${vars.listingId}/cancel`, { reason: vars.reason }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'listings'] });
+    },
+  });
+}
+
+// ─── Goods reports ────────────────────────────────────
+
+export interface AdminReport {
+  id: string;
+  listing_id: string;
+  listing_title: string;
+  reporter_id?: string | null;
+  reporter_email?: string | null;
+  reason: string;
+  description: string;
+  status: string;
+  resolution?: string | null;
+  created_at: string;
+  reviewed_at?: string | null;
+}
+
+export interface AdminReportsResponse {
+  reports: AdminReport[];
+  pagination: { page: number; page_size: number; total: number };
+}
+
+export function useAdminReports(params?: {
+  status?: string;
+  listing_id?: string;
+  page?: number;
+  page_size?: number;
+}) {
+  const query = buildQuery({
+    status: params?.status,
+    listing_id: params?.listing_id,
+    page: params?.page,
+    page_size: params?.page_size,
+  });
+  return useQuery({
+    queryKey: ['admin', 'goods-reports', params],
+    queryFn: () => api.get<AdminReportsResponse>(`/api/v1/admin/goods-reports${query}`),
+  });
+}
+
+export function useResolveReport() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { reportId: string; action: 'dismiss' | 'actioned' | 'review'; notes: string }) =>
+      api.post(`/api/v1/admin/goods-reports/${vars.reportId}/resolve`, {
+        action: vars.action,
+        notes: vars.notes,
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'goods-reports'] });
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'listings'] });
+    },
+  });
+}
+
+// ─── Job reports ──────────────────────────────────────
+
+export interface AdminJobReport {
+  id: string;
+  job_id: string;
+  job_title: string;
+  reporter_id?: string | null;
+  reporter_email?: string | null;
+  reason: string;
+  description: string;
+  status: string;
+  resolution?: string | null;
+  created_at: string;
+  reviewed_at?: string | null;
+}
+
+export interface AdminJobReportsResponse {
+  reports: AdminJobReport[];
+  pagination: { page: number; page_size: number; total: number };
+}
+
+export function useAdminJobReports(params?: {
+  status?: string;
+  job_id?: string;
+  page?: number;
+  page_size?: number;
+}) {
+  const query = buildQuery({
+    status: params?.status,
+    job_id: params?.job_id,
+    page: params?.page,
+    page_size: params?.page_size,
+  });
+  return useQuery({
+    queryKey: ['admin', 'job-reports', params],
+    queryFn: () => api.get<AdminJobReportsResponse>(`/api/v1/admin/job-reports${query}`),
+  });
+}
+
+export function useResolveJobReport() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { reportId: string; action: 'dismiss' | 'actioned' | 'review'; notes: string }) =>
+      api.post(`/api/v1/admin/job-reports/${vars.reportId}/resolve`, {
+        action: vars.action,
+        notes: vars.notes,
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'job-reports'] });
+      void queryClient.invalidateQueries({ queryKey: [...adminKeys.all, 'jobs'] });
+    },
+  });
+}
+
+// ─── User & message abuse reports ─────────────────────
+
+export interface AdminUserReport {
+  id: string;
+  reporter_id: string;
+  reporter_email?: string | null;
+  reported_user_id: string;
+  reported_user_email?: string | null;
+  channel_id?: string | null;
+  message_id?: string | null;
+  reason: string;
+  description: string;
+  status: string;
+  resolution?: string | null;
+  created_at: string;
+  reviewed_at?: string | null;
+}
+
+export interface AdminUserReportsResponse {
+  reports: AdminUserReport[];
+  pagination: { page: number; page_size: number; total: number };
+}
+
+export function useAdminUserReports(params?: {
+  status?: string;
+  reported_user_id?: string;
+  page?: number;
+  page_size?: number;
+}) {
+  const query = buildQuery({
+    status: params?.status,
+    reported_user_id: params?.reported_user_id,
+    page: params?.page,
+    page_size: params?.page_size,
+  });
+  return useQuery({
+    queryKey: ['admin', 'user-reports', params],
+    queryFn: () => api.get<AdminUserReportsResponse>(`/api/v1/admin/user-reports${query}`),
+  });
+}
+
+export function useResolveUserReport() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { reportId: string; action: 'dismiss' | 'actioned' | 'review'; notes: string }) =>
+      api.post(`/api/v1/admin/user-reports/${vars.reportId}/resolve`, {
+        action: vars.action,
+        notes: vars.notes,
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'user-reports'] });
+    },
+  });
+}
+
+// ─── Markets (rollout) ────────────────────────────────
+//
+// The market catalog (cities/regions) admin surface. Launching a market sets
+// is_active=true, making it publicly browseable; pulling back sets it false.
+// On any change we invalidate BOTH the admin catalog (['admin','markets']) and
+// the public selector cache (['markets'] — see useMarkets.ts) so the live
+// MarketSelector reflects the change immediately.
+
+export function useAdminMarkets() {
+  return useQuery({
+    queryKey: ['admin', 'markets'],
+    queryFn: () => api.get<{ markets: Market[] }>('/api/v1/admin/markets'),
+  });
+}
+
+export interface SetMarketsActiveInput {
+  /** Explicit market slugs to target. */
+  slugs?: string[];
+  /** 2-letter US state code (region) to target in bulk. */
+  region_code?: string;
+  /** Country to target in bulk. */
+  country?: 'US' | 'MX';
+  /** true launches the selected markets, false pulls them back. */
+  active: boolean;
+}
+
+export function useSetMarketsActive() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: SetMarketsActiveInput) =>
+      api.post<{ updated: number; active: boolean }>(
+        '/api/v1/admin/markets/activate',
+        input,
+      ),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'markets'] });
+      void queryClient.invalidateQueries({ queryKey: ['markets'] });
+    },
+  });
+}
+
+// ─── Goods disputes ───────────────────────────────────
+
+export interface AdminGoodsDispute {
+  id: string;
+  listing_order_id: string;
+  listing_id: string;
+  listing_title: string;
+  opened_by: string;
+  opened_by_email: string;
+  dispute_type: string;
+  description: string;
+  status: string;
+  amount_cents: number;
+  refund_to_buyer_cents?: number | null;
+  transfer_to_seller_cents?: number | null;
+  created_at: string;
+  resolved_at?: string | null;
+}
+
+export function useAdminGoodsDisputes(params?: {
+  status?: string;
+  page?: number;
+  page_size?: number;
+}) {
+  const query = buildQuery({
+    status: params?.status,
+    page: params?.page,
+    page_size: params?.page_size,
+  });
+  return useQuery({
+    queryKey: ['admin', 'goods-disputes', params],
+    queryFn: () =>
+      api.get<{
+        disputes: AdminGoodsDispute[];
+        pagination: { page: number; page_size: number; total: number };
+      }>(`/api/v1/admin/disputes/goods${query}`),
+  });
+}
+
+export function useResolveGoodsDispute() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: {
+      disputeId: string;
+      resolution: 'refund_full' | 'refund_partial' | 'release_to_seller' | 'no_action';
+      refund_to_buyer_cents?: number;
+      transfer_to_seller_cents?: number;
+      notes: string;
+    }) =>
+      api.post(`/api/v1/admin/disputes/goods/${vars.disputeId}/resolve`, {
+        resolution: vars.resolution,
+        refund_to_buyer_cents: vars.refund_to_buyer_cents ?? 0,
+        transfer_to_seller_cents: vars.transfer_to_seller_cents ?? 0,
+        notes: vars.notes,
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'goods-disputes'] });
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'listings'] });
+    },
+  });
+}
+
+// ─── Feature flags ────────────────────────────────────
+//
+// Gateway-level flags stored directly in PostgreSQL (no gRPC service). The
+// list endpoint returns full metadata for the admin dashboard (including ARC-10
+// rollout_percent + binary_only). Update flips enabled and optionally sticky %
+// cohort. Money/regulated keys reject partial % (1–99) server-side. Success
+// invalidates both the admin list and the public `/api/v1/flags` map.
+
+export interface AdminFeatureFlag {
+  key: string;
+  enabled: boolean;
+  description: string;
+  /** Sticky 0–100 cohort when enabled; money/regulated keys must stay 0 or 100. */
+  rollout_percent: number;
+  /** True for money/regulated keys — partial % is rejected by the API. */
+  binary_only: boolean;
+  updated_at: string;
+}
+
+export interface AdminFeatureFlagsResponse {
+  flags: AdminFeatureFlag[];
+}
+
+/** Body for PUT /api/v1/admin/flags/{key}. Omit rollout_percent to leave it unchanged. */
+export interface UpdateFeatureFlagInput {
+  key: string;
+  enabled: boolean;
+  rollout_percent?: number;
+}
+
+export interface UpdateFeatureFlagResponse {
+  key: string;
+  enabled: boolean;
+  rollout_percent: number;
+  binary_only: boolean;
+}
+
+export function useAdminFlags() {
+  return useQuery({
+    queryKey: adminKeys.flags(),
+    queryFn: () => api.get<AdminFeatureFlagsResponse>('/api/v1/admin/flags'),
+  });
+}
+
+/** Toggle enabled and/or set sticky rollout_percent (non-money flags). */
+export function useToggleFlag() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: UpdateFeatureFlagInput) => {
+      const body: { enabled: boolean; rollout_percent?: number } = {
+        enabled: vars.enabled,
+      };
+      if (vars.rollout_percent !== undefined) {
+        body.rollout_percent = vars.rollout_percent;
+      }
+      return api.put<UpdateFeatureFlagResponse>(
+        `/api/v1/admin/flags/${vars.key}`,
+        body,
+      );
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: adminKeys.flags() });
+      // The public flag map (useFeatureFlags) is now stale — refresh it so the
+      // live UI reflects the toggle without a hard reload.
+      void queryClient.invalidateQueries({ queryKey: ['feature-flags'] });
+    },
+  });
+}
+
+// ─── Insurers (competitive insurance marketplace) ─────
+//
+// Admin onboarding + approval surface for the competitive insurance
+// marketplace. Insurers are onboarded with a rate card (one row per product
+// type), then approved/suspended by an admin. Rates are stored as integer
+// basis points (1% = 100 bps) and premiums as integer cents — the UI formats
+// them. This is a pgx-direct admin surface; response shapes are inlined here
+// so each consumer sees the JSON contract at a glance.
+
+export const INSURER_STATUS = {
+  PENDING: 'pending',
+  APPROVED: 'approved',
+  SUSPENDED: 'suspended',
+} as const;
+
+export type InsurerStatus = (typeof INSURER_STATUS)[keyof typeof INSURER_STATUS];
+
+// Values must match what carriers offer (insurer_products, migration 063) + the
+// per-job insurance taxonomy, so admin-created products are queryable by the
+// quote fan-out. 'workmanship'/'completion' previously did NOT match the seeded
+// 'workmanship_warranty'/'completion_guarantee'.
+export const INSURANCE_PRODUCT_TYPE = {
+  PROPERTY_DAMAGE: 'property_damage',
+  WORKMANSHIP: 'workmanship_warranty',
+  COMPLETION: 'completion_guarantee',
+  LIABILITY: 'liability',
+} as const;
+
+export type InsuranceProductType =
+  (typeof INSURANCE_PRODUCT_TYPE)[keyof typeof INSURANCE_PRODUCT_TYPE];
+
+export interface InsurerProduct {
+  id: string;
+  product_type: InsuranceProductType;
+  base_rate_bps: number;
+  min_premium_cents: number;
+  active: boolean;
+}
+
+export interface Insurer {
+  id: string;
+  name: string;
+  slug: string;
+  status: InsurerStatus;
+  products: InsurerProduct[];
+  created_at: string;
+}
+
+export interface AdminInsurersResponse {
+  insurers: Insurer[];
+}
+
+/** A single rate-card row in the onboarding payload (no id/active yet). */
+export interface OnboardInsurerProduct {
+  product_type: InsuranceProductType;
+  base_rate_bps: number;
+  min_premium_cents: number;
+}
+
+export interface OnboardInsurerInput {
+  name: string;
+  slug: string;
+  products: OnboardInsurerProduct[];
+}
+
+export interface UpdateInsurerInput {
+  id: string;
+  status?: InsurerStatus;
+  products?: OnboardInsurerProduct[];
+}
+
+export function useAdminInsurers() {
+  return useQuery({
+    queryKey: adminKeys.insurers(),
+    queryFn: () => api.get<AdminInsurersResponse>('/api/v1/admin/insurers'),
+  });
+}
+
+export function useOnboardInsurer() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    // The gateway reads the rate card under `rate_card` (createInsurerRequest);
+    // sending `products` silently drops every row, onboarding a carrier that can
+    // never quote. Map the UI's `products` to the wire field here.
+    mutationFn: ({ products, ...rest }: OnboardInsurerInput) =>
+      api.post<{ insurer: Insurer }>('/api/v1/admin/insurers', {
+        ...rest,
+        rate_card: products,
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: adminKeys.insurers() });
+    },
+  });
+}
+
+export function useUpdateInsurer() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    // Same wire-field mapping as onboarding: the gateway upserts the rate card
+    // from `rate_card`, not `products`.
+    mutationFn: ({ id, products, ...rest }: UpdateInsurerInput) =>
+      api.put<{ insurer: Insurer }>(`/api/v1/admin/insurers/${id}`, {
+        ...rest,
+        ...(products ? { rate_card: products } : {}),
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: adminKeys.insurers() });
+    },
   });
 }

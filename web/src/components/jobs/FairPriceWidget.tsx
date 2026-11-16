@@ -15,15 +15,18 @@ function getBidPositionColor(
   highCents: number,
 ): string {
   if (!lowestBidCents) return 'text-zinc-400';
-  if (lowestBidCents < medianCents) return 'text-emerald-400';
-  if (lowestBidCents <= highCents) return 'text-amber-400';
-  return 'text-red-400';
+  if (lowestBidCents < medianCents) return 'text-bid-winning';
+  if (lowestBidCents <= highCents) return 'text-trust-medium';
+  return 'text-destructive';
 }
 
 export function FairPriceWidget({ categoryId, currentLowestBidCents }: FairPriceWidgetProps) {
   const { data: marketRange } = useMarketRange(categoryId);
 
-  if (!marketRange || marketRange.data_points < 3) {
+  // Render nothing when there's no computed market data yet (has_data === false),
+  // the request is still loading, or the sample is too small to be meaningful.
+  // This is the normal empty state for a fresh category — not an error.
+  if (!marketRange || !marketRange.has_data || marketRange.data_points < 3) {
     return null;
   }
 
@@ -49,7 +52,7 @@ export function FairPriceWidget({ categoryId, currentLowestBidCents }: FairPrice
     >
       <div className="flex items-center justify-between">
         <span className="text-xs text-zinc-500">Fair market</span>
-        <span className={`text-xs font-semibold tabular-nums ${priceColor}`}>
+        <span className={`font-mono text-xs font-semibold tabular-nums tracking-tight ${priceColor}`}>
           {formatCents(low_cents)} – {formatCents(high_cents)}
         </span>
       </div>
@@ -60,7 +63,7 @@ export function FairPriceWidget({ categoryId, currentLowestBidCents }: FairPrice
         role="presentation"
         aria-hidden="true"
       >
-        <div className="absolute inset-0 rounded-full bg-gradient-to-r from-emerald-500/40 via-amber-500/40 to-red-500/40" />
+        <div className="absolute inset-0 rounded-full bg-gradient-to-r from-bid-winning/40 via-trust-medium/40 to-destructive/40" />
         {indicatorPercent !== null ? (
           <div
             className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 h-2.5 w-2.5 rounded-full bg-white border border-zinc-800 shadow"
@@ -71,7 +74,7 @@ export function FairPriceWidget({ categoryId, currentLowestBidCents }: FairPrice
 
       <p className="text-[10px] text-zinc-600">
         Based on {String(data_points)} local job{data_points !== 1 ? 's' : ''} · Median:{' '}
-        {formatCents(median_cents)}
+        <span className="font-mono tabular-nums tracking-tight">{formatCents(median_cents)}</span>
       </p>
     </div>
   );

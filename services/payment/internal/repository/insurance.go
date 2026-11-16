@@ -378,17 +378,35 @@ func (r *PostgresRepository) AdminListInsuranceClaims(ctx context.Context, statu
 }
 
 func (r *PostgresRepository) UpdateInsuranceClaimReview(ctx context.Context, id string, status string, approvedAmountCents *int64, assessorNotes string, denialReason string, reviewerID string) error {
+	// Status-guarded transition: only a claim still in a reviewable state
+	// (filed / under_review / appealed) may be approved or denied. This makes
+	// the review atomic against a concurrent (or retried) admin approval — two
+	// callers that both passed the service-layer status read are serialized
+	// here: the first flips the row, the second affects ZERO rows and gets a
+	// clean ErrClaimNotReviewable (422), so it never reaches the second Stripe
+	// payout transfer. The deterministic idempotency key on the transfer is the
+	// final backstop; this guard is the front-line one that mirrors the
+	// dispute/change-order/BNPL exactly-once pattern and fails fast.
 	tag, err := r.pool.Exec(ctx, `
 		UPDATE insurance_claims
 		SET status = $2, approved_amount_cents = $3, assessor_notes = $4,
 		    denial_reason = $5, reviewed_by = $6, reviewed_at = now(), updated_at = now()
-		WHERE id = $1`,
+		WHERE id = $1
+		  AND status IN ('filed', 'under_review', 'appealed')`,
 		id, status, approvedAmountCents, assessorNotes, denialReason, reviewerID)
 	if err != nil {
 		return fmt.Errorf("update insurance claim review: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("update insurance claim review: %w", domain.ErrInsuranceClaimNotFound)
+		// Distinguish a missing claim from one that has already left the
+		// reviewable state (the lost race). Either way no row was transitioned.
+		var exists bool
+		_ = r.pool.QueryRow(ctx,
+			`SELECT EXISTS(SELECT 1 FROM insurance_claims WHERE id = $1)`, id).Scan(&exists)
+		if !exists {
+			return fmt.Errorf("update insurance claim review: %w", domain.ErrInsuranceClaimNotFound)
+		}
+		return fmt.Errorf("update insurance claim review: %w", domain.ErrClaimNotReviewable)
 	}
 	return nil
 }
@@ -406,6 +424,33 @@ func (r *PostgresRepository) UpdateInsuranceClaimPayout(ctx context.Context, id 
 		return fmt.Errorf("update insurance claim payout: %w", domain.ErrInsuranceClaimNotFound)
 	}
 	return nil
+}
+
+// --- Contracts (read-only projection) ---
+
+// GetContractForInsurance loads the minimal contract fields the insurance flow
+// needs to verify ownership and derive the premium server-side. The category
+// slug is best-effort (NULL/empty when the job's category has no slug or the
+// join misses) — the premium calc treats an empty slug as the default 1.0x
+// risk multiplier, so a missing slug never fails the purchase.
+func (r *PostgresRepository) GetContractForInsurance(ctx context.Context, contractID string) (*domain.ContractForInsurance, error) {
+	c := &domain.ContractForInsurance{}
+	err := r.pool.QueryRow(ctx, `
+		SELECT c.id, c.customer_id, c.provider_id, c.amount_cents, c.status,
+		       COALESCE(sc.slug, '')
+		FROM contracts c
+		JOIN jobs j ON j.id = c.job_id
+		LEFT JOIN service_categories sc ON sc.id = j.category_id
+		WHERE c.id = $1 AND c.deleted_at IS NULL`, contractID).Scan(
+		&c.ID, &c.CustomerID, &c.ProviderID, &c.AmountCents, &c.Status, &c.CategorySlug,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("get contract for insurance: %w", domain.ErrInsuranceContractNotFound)
+		}
+		return nil, fmt.Errorf("get contract for insurance: %w", err)
+	}
+	return c, nil
 }
 
 // --- Sequences ---

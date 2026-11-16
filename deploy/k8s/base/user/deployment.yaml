@@ -19,9 +19,15 @@ spec:
         app.kubernetes.io/part-of: nomarkup
       annotations:
         prometheus.io/scrape: "true"
-        prometheus.io/port: "50051"
+        prometheus.io/port: "51051"
         prometheus.io/path: "/metrics"
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: user
           image: ghcr.io/nomarkup/user:latest
@@ -30,28 +36,84 @@ spec:
             - name: grpc
               containerPort: 50051
               protocol: TCP
+            - name: metrics
+              containerPort: 51051
+              protocol: TCP
           env:
             - name: USER_SERVICE_PORT
               value: "50051"
+            - name: METRICS_PORT
+              value: "51051"
+            # RS256 keypair. The code reads FILE PATHS, not the PEM contents,
+            # so both keys are projected from nomarkup-secrets as files by the
+            # jwt-keys volume below. The user service is the only component
+            # that holds the signing key — it mints tokens; everyone else only
+            # verifies.
+            - name: JWT_PRIVATE_KEY_PATH
+              value: "/etc/nomarkup/jwt/private.pem"
+            - name: JWT_PUBLIC_KEY_PATH
+              value: "/etc/nomarkup/jwt/public.pem"
+            # REQUIRED. The user service refuses to start outside development
+            # without this: registration must be able to send a verification
+            # email, and deriving "skip verification" from a nil notification
+            # client meant an unset value silently marked every new account
+            # email_verified=true. It was previously set on the gateway
+            # deployment only, so this service never saw it.
+            - name: NOTIFICATION_SERVICE_ADDR
+              value: "notification:50059"
+            # GDPR Stripe customer / Connect account delete (payment owns stripe-go).
+            - name: PAYMENT_SERVICE_ADDR
+              value: "payment:50054"
+            # GDPR S3 object delete (imaging owns the bucket and key layout).
+            - name: IMAGING_SERVICE_ADDR
+              value: "imaging:50058"
+            # Base for the links in verification / password-reset emails.
+            # Without it the service defaults to http://localhost:3000 and
+            # emits unusable links.
+            - name: BASE_URL
+              value: "https://no-markup.com"
+            - name: APP_VERSION
+              valueFrom:
+                configMapKeyRef:
+                  name: nomarkup-config
+                  key: APP_VERSION
+                  optional: true
           envFrom:
             - configMapRef:
                 name: nomarkup-config
             - secretRef:
                 name: nomarkup-secrets
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          # Probes hit the observability HTTP port (SERVICE_PORT+1000), not gRPC.
+          # gRPC health is process-only SERVING-at-boot and never reflects DB/Redis.
+          # /healthz is dependency-independent (no restart storms on blips).
+          # /readyz pings Postgres + Redis (1s) and 503s so the pod leaves endpoints.
           livenessProbe:
-            grpc:
-              port: 50051
+            httpGet:
+              path: /healthz
+              port: metrics
             initialDelaySeconds: 10
             periodSeconds: 15
             timeoutSeconds: 5
             failureThreshold: 3
           readinessProbe:
-            grpc:
-              port: 50051
+            httpGet:
+              path: /readyz
+              port: metrics
             initialDelaySeconds: 5
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 3
+          volumeMounts:
+            - name: jwt-keys
+              mountPath: /etc/nomarkup/jwt
+              readOnly: true
           resources:
             requests:
               memory: "128Mi"
@@ -59,3 +121,13 @@ spec:
             limits:
               memory: "512Mi"
               cpu: "500m"
+      volumes:
+        - name: jwt-keys
+          secret:
+            secretName: nomarkup-secrets
+            defaultMode: 0400
+            items:
+              - key: JWT_PRIVATE_KEY
+                path: private.pem
+              - key: JWT_PUBLIC_KEY
+                path: public.pem

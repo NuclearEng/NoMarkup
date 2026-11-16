@@ -6,7 +6,6 @@ import { useRef, useState } from 'react';
 import { Camera, CheckCircle2, ImagePlus, Loader2, UploadCloud } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
 import { useMarkComplete } from '@/hooks/useContracts';
 import { useUploadCompletionPhoto } from '@/hooks/useWorkspace';
 
@@ -111,7 +110,7 @@ export function CompletionPhotos({ contractId, className }: CompletionPhotosProp
                   accept="image/*"
                   className="sr-only"
                   aria-label={`Upload ${slot.label.toLowerCase()} photo`}
-                  onChange={(e) => handleFileChange(e, slot.phase)}
+                  onChange={(e) => { handleFileChange(e, slot.phase); }}
                 />
 
                 {/* Tap/click target */}
@@ -186,7 +185,7 @@ export function CompletionPhotos({ contractId, className }: CompletionPhotosProp
 
         <Button
           className="min-h-[44px] w-full"
-          onClick={() => markComplete.mutate(contractId)}
+          onClick={() => { markComplete.mutate(contractId); }}
           disabled={!canMarkComplete || isMarkingComplete}
           aria-label={
             canMarkComplete

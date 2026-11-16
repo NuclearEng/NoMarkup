@@ -37,12 +37,12 @@ pub struct ReviewDataPoint {
 
 /// Compute exponential decay weight for a review given its age.
 ///
-/// Formula: weight = max(min_weight, 2^(-age / half_life))
+/// Formula: weight = `max(min_weight`, 2^(-age / `half_life`))
 ///
 /// This gives:
 /// - age = 0: weight = 1.0
-/// - age = half_life: weight = 0.5
-/// - age = 2 * half_life: weight = 0.25
+/// - age = `half_life`: weight = 0.5
+/// - age = 2 * `half_life`: weight = 0.25
 /// - etc.
 ///
 /// Returns a value in `[min_weight, 1.0]`.
@@ -51,8 +51,7 @@ pub fn decay_weight(age_days: f64, config: &DecayConfig) -> f64 {
     if age_days <= 0.0 {
         return 1.0;
     }
-    if !age_days.is_finite() || !config.half_life_days.is_finite() || config.half_life_days <= 0.0
-    {
+    if !age_days.is_finite() || !config.half_life_days.is_finite() || config.half_life_days <= 0.0 {
         return config.min_weight;
     }
 
@@ -142,7 +141,7 @@ pub fn compute_feedback_score(input: &FeedbackInput) -> f64 {
     // Bayesian confidence: blend toward 0.5 (neutral) when reviews are few.
     // After ~10 reviews, confidence is ~0.91. After 20, ~0.95.
     let confidence = bayesian_confidence(input.total_reviews);
-    let base_score = 0.5 * (1.0 - confidence) + normalized * confidence;
+    let base_score = 0.5f64.mul_add(1.0 - confidence, normalized * confidence);
 
     // Rating trend bonus/penalty (capped at +/- 0.05).
     let trend_adjustment = (input.rating_trend * 0.025).clamp(-0.05, 0.05);
@@ -253,20 +252,22 @@ pub fn compute_volume_score(input: &VolumeInput) -> f64 {
     };
 
     // Completion rate: direct mapping (already 0-1).
+    // A non-finite rate (e.g., 0.0/0.0 when the user has no contracts) means
+    // we have no signal at all — treat it as 0.0 so users with zero history
+    // do NOT receive a perfect completion score and have their trust inflated.
     let completion_component = if input.completion_rate.is_finite() {
         input.completion_rate.clamp(0.0, 1.0)
     } else {
-        1.0 // No data means no failures
+        0.0 // No data: do not award a perfect score
     };
 
     // Response time: inverse linear. 0h = 1.0, 24h+ = 0.0.
-    let response_component = if input.avg_response_time_hours <= 0.0
-        || !input.avg_response_time_hours.is_finite()
-    {
-        0.5 // Unknown: neutral
-    } else {
-        (1.0 - input.avg_response_time_hours / 24.0).clamp(0.0, 1.0)
-    };
+    let response_component =
+        if input.avg_response_time_hours <= 0.0 || !input.avg_response_time_hours.is_finite() {
+            0.5 // Unknown: neutral
+        } else {
+            (1.0 - input.avg_response_time_hours / 24.0).clamp(0.0, 1.0)
+        };
 
     let score = jobs_component * 0.40
         + recency_component * 0.20
@@ -374,8 +375,13 @@ pub const WEIGHT_FRAUD: f64 = 0.20;
 /// If inputs are outside range, the output is clamped.
 #[must_use]
 pub fn composite_score(feedback: f64, volume: f64, risk: f64, fraud: f64) -> f64 {
-    let raw =
-        feedback * WEIGHT_FEEDBACK + volume * WEIGHT_VOLUME + risk * WEIGHT_RISK + fraud * WEIGHT_FRAUD;
+    let raw = fraud.mul_add(
+        WEIGHT_FRAUD,
+        risk.mul_add(
+            WEIGHT_RISK,
+            feedback.mul_add(WEIGHT_FEEDBACK, volume * WEIGHT_VOLUME),
+        ),
+    );
     raw.clamp(0.0, 1.0)
 }
 
@@ -386,6 +392,11 @@ pub fn composite_score(feedback: f64, volume: f64, risk: f64, fraud: f64) -> f64
 /// - MEDIUM: 26-50
 /// - HIGH:   51-75
 /// - ELITE:  76-100
+///
+// Lib/test/bench surface: the binary persists the numeric overall score and the
+// DB derives the tier label, so this Rust-side classifier is exercised only by
+// the unit tests, proptests, and benches — unused in the `bin` target.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScoreTier {
     Low,
@@ -394,6 +405,7 @@ pub enum ScoreTier {
     Elite,
 }
 
+#[allow(dead_code)]
 impl ScoreTier {
     /// Determine the tier from a 0-100 score.
     #[must_use]
@@ -551,10 +563,7 @@ mod tests {
         ];
         let avg = recency_weighted_average(&reviews, &config).unwrap();
         // Should be very close to 5.0 since the old review has negligible weight.
-        assert!(
-            avg > 4.5,
-            "expected avg close to 5.0, got {avg}"
-        );
+        assert!(avg > 4.5, "expected avg close to 5.0, got {avg}");
     }
 
     #[test]
@@ -645,7 +654,7 @@ mod tests {
         };
         let with_disputes = FeedbackInput {
             disputes_lost: 3,
-            ..base.clone()
+            ..base
         };
         let score_base = compute_feedback_score(&base);
         let score_disputes = compute_feedback_score(&with_disputes);
@@ -684,6 +693,25 @@ mod tests {
     }
 
     #[test]
+    fn feedback_zero_ratings_gives_neutral_not_perfect() {
+        // total_reviews = 0 must return the neutral prior, not inflate the score.
+        let input = FeedbackInput {
+            average_rating: 0.0,
+            weighted_average_rating: None,
+            total_reviews: 0,
+            five_star_count: 0,
+            one_star_count: 0,
+            rating_trend: 0.0,
+            disputes_lost: 0,
+        };
+        let score = compute_feedback_score(&input);
+        assert!(
+            (score - 0.5).abs() < f64::EPSILON,
+            "zero ratings must return neutral 0.5, got {score}"
+        );
+    }
+
+    #[test]
     fn feedback_positive_trend_helps() {
         let base = FeedbackInput {
             average_rating: 3.5,
@@ -696,7 +724,7 @@ mod tests {
         };
         let improving = FeedbackInput {
             rating_trend: 1.0,
-            ..base.clone()
+            ..base
         };
         assert!(
             compute_feedback_score(&improving) > compute_feedback_score(&base),
@@ -760,6 +788,48 @@ mod tests {
     }
 
     #[test]
+    fn volume_nan_completion_rate_does_not_award_perfect_score() {
+        // Reproducer for the ISSUE where a user with zero contracts
+        // (total=0 causing 0.0/0.0 = NaN) received a PERFECT completion_component
+        // of 1.0, inflating their overall trust score.
+        let input = VolumeInput {
+            total_completed: 0,
+            recent_completed: 0,
+            repeat_customers: 0,
+            completion_rate: f64::NAN,
+            avg_response_time_hours: 0.0,
+        };
+        let score = compute_volume_score(&input);
+        // With the fix, completion_component should be 0.0 (no data, no signal).
+        // Response time unknown contributes 0.10 * 0.5 = 0.05. No other dims
+        // contribute. So the total must stay well below any "perfect" level.
+        assert!(
+            score < 0.1,
+            "zero-contracts user must not get an inflated score, got {score}"
+        );
+    }
+
+    #[test]
+    fn volume_zero_completions_gets_zero_completion_component() {
+        // An explicit 0.0 completion rate is different from NaN — it means
+        // the user has contracts but none were completed. That should also
+        // NOT award any completion credit.
+        let input = VolumeInput {
+            total_completed: 0,
+            recent_completed: 0,
+            repeat_customers: 0,
+            completion_rate: 0.0,
+            avg_response_time_hours: 0.0,
+        };
+        let score = compute_volume_score(&input);
+        // Only the response time neutral prior (0.05) contributes.
+        assert!(
+            score < 0.1,
+            "zero completion rate must not give a high score, got {score}"
+        );
+    }
+
+    #[test]
     fn volume_response_time_scoring() {
         let fast = VolumeInput {
             total_completed: 10,
@@ -769,7 +839,7 @@ mod tests {
         };
         let slow = VolumeInput {
             avg_response_time_hours: 20.0,
-            ..fast.clone()
+            ..fast
         };
         assert!(
             compute_volume_score(&fast) > compute_volume_score(&slow),
@@ -985,10 +1055,7 @@ mod tests {
         assert!((bayesian_confidence(0) - 0.0).abs() < f64::EPSILON);
         assert!((bayesian_confidence(5) - 0.5).abs() < f64::EPSILON);
         let c20 = bayesian_confidence(20);
-        assert!(
-            (c20 - 0.8).abs() < f64::EPSILON,
-            "expected 0.8, got {c20}"
-        );
+        assert!((c20 - 0.8).abs() < f64::EPSILON, "expected 0.8, got {c20}");
     }
 
     #[test]
@@ -1015,6 +1082,37 @@ mod tests {
             "new user should have a middling score, got {overall}"
         );
         assert_eq!(ScoreTier::from_score(overall), ScoreTier::High);
+    }
+
+    #[test]
+    fn scenario_zero_contracts_user_not_perfect_volume() {
+        // Reproduces the original bug: when aggregation computed 0/0 for
+        // completion_rate (e.g., a brand-new user), the volume score used
+        // to include a "perfect" 1.0 completion_component worth 15% of the
+        // volume dimension. Verify the fix: volume stays low, and a user
+        // with no feedback, no volume, clean risk, clean fraud does NOT
+        // reach Elite tier.
+        let feedback = compute_feedback_score(&FeedbackInput::default());
+        let volume = compute_volume_score(&VolumeInput {
+            total_completed: 0,
+            recent_completed: 0,
+            repeat_customers: 0,
+            completion_rate: f64::NAN,
+            avg_response_time_hours: 0.0,
+        });
+        let risk = compute_risk_score(&RiskInput::default());
+        let fraud = compute_fraud_score(&FraudInput::default());
+
+        assert!(
+            volume < 0.15,
+            "volume for a zero-history user must stay small, got {volume}"
+        );
+        let overall = composite_score(feedback, volume, risk, fraud);
+        assert_ne!(
+            ScoreTier::from_score(overall),
+            ScoreTier::Elite,
+            "zero-history user must not reach Elite, got overall={overall}"
+        );
     }
 
     #[test]
@@ -1182,6 +1280,31 @@ mod tests {
                 let score = compute_volume_score(&input);
                 prop_assert!(score >= 0.0, "volume score {score} < 0");
                 prop_assert!(score <= 1.0, "volume score {score} > 1");
+            }
+
+            #[test]
+            fn volume_score_handles_nonfinite_inputs(
+                completion in proptest::num::f64::ANY,
+                response_hrs in proptest::num::f64::ANY,
+            ) {
+                // Ensure non-finite values (NaN, +INF, -INF) in floats do NOT produce
+                // inflated scores or non-finite outputs. A user with zero history
+                // and NaN completion_rate must never be awarded a perfect score.
+                let input = VolumeInput {
+                    total_completed: 0,
+                    recent_completed: 0,
+                    repeat_customers: 0,
+                    completion_rate: completion,
+                    avg_response_time_hours: response_hrs,
+                };
+                let score = compute_volume_score(&input);
+                prop_assert!(score.is_finite(), "volume score is not finite: {score}");
+                prop_assert!(score >= 0.0, "volume score {score} < 0");
+                prop_assert!(score <= 1.0, "volume score {score} > 1");
+                // With zero total_completed/recent/repeat, the score cannot
+                // approach 1.0 — the max possible contributions are
+                // completion (0.15) + response (0.10) = 0.25.
+                prop_assert!(score <= 0.25 + 1e-9, "zero-history score inflated: {score}");
             }
 
             #[test]

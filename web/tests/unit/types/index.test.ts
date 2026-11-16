@@ -343,10 +343,11 @@ describe('CHANNEL_TYPE', () => {
     expect(CHANNEL_TYPE.PRE_AWARD).toBe('pre_award');
     expect(CHANNEL_TYPE.CONTRACT).toBe('contract');
     expect(CHANNEL_TYPE.SUPPORT).toBe('support');
+    expect(CHANNEL_TYPE.INQUIRY).toBe('inquiry');
   });
 
-  it('has exactly 3 types', () => {
-    expect(Object.keys(CHANNEL_TYPE)).toHaveLength(3);
+  it('has exactly 4 types', () => {
+    expect(Object.keys(CHANNEL_TYPE)).toHaveLength(4);
   });
 
   it('produces the correct type', () => {
@@ -382,8 +383,14 @@ describe('MESSAGE_TYPE', () => {
     expect(MESSAGE_TYPE.CONTACT_SHARE).toBe('contact_share');
   });
 
-  it('has exactly 5 types', () => {
-    expect(Object.keys(MESSAGE_TYPE)).toHaveLength(5);
+  it('has the local-terms negotiation message types', () => {
+    expect(MESSAGE_TYPE.PROPOSED_TERMS).toBe('proposed_terms');
+    expect(MESSAGE_TYPE.TERMS_ACCEPTED).toBe('terms_accepted');
+    expect(MESSAGE_TYPE.TERMS_REJECTED).toBe('terms_rejected');
+  });
+
+  it('has exactly 8 types', () => {
+    expect(Object.keys(MESSAGE_TYPE)).toHaveLength(8);
   });
 
   it('produces the correct type', () => {
@@ -499,6 +506,9 @@ describe('NOTIFICATION_TYPE', () => {
     expect(NOTIFICATION_TYPE.PAYMENT_RELEASED).toBe('payment_released');
     expect(NOTIFICATION_TYPE.PAYMENT_FAILED).toBe('payment_failed');
     expect(NOTIFICATION_TYPE.PAYOUT_SENT).toBe('payout_sent');
+    expect(NOTIFICATION_TYPE.PAYMENT_AUTHENTICATION_REQUIRED).toBe(
+      'payment_authentication_required',
+    );
   });
 
   it('has expected other notifications', () => {
@@ -511,12 +521,27 @@ describe('NOTIFICATION_TYPE', () => {
     expect(NOTIFICATION_TYPE.TIER_DOWNGRADE).toBe('tier_downgrade');
   });
 
-  it('has exactly 26 notification types', () => {
-    expect(Object.keys(NOTIFICATION_TYPE)).toHaveLength(26);
+  it('has expected marketplace wishlist notification', () => {
+    expect(NOTIFICATION_TYPE.WISHLIST_MATCH).toBe('wishlist_match');
+  });
+
+  it('has expected marketplace offer / price / seller notifications', () => {
+    expect(NOTIFICATION_TYPE.OFFER_RECEIVED).toBe('offer_received');
+    expect(NOTIFICATION_TYPE.OFFER_COUNTERED).toBe('offer_countered');
+    expect(NOTIFICATION_TYPE.PRICE_DROP).toBe('price_drop');
+    expect(NOTIFICATION_TYPE.SELLER_NEW_LISTING).toBe('seller_new_listing');
+  });
+
+  it('has exactly 33 notification types', () => {
+    expect(Object.keys(NOTIFICATION_TYPE)).toHaveLength(33);
   });
 
   it('includes JOB_MATCHED (pre-matching)', () => {
     expect(NOTIFICATION_TYPE.JOB_MATCHED).toBe('job_matched');
+  });
+
+  it('includes BID_OUTBID (goods auction outbid)', () => {
+    expect(NOTIFICATION_TYPE.BID_OUTBID).toBe('bid_outbid');
   });
 
   it('produces the correct type', () => {
@@ -550,10 +575,12 @@ describe('UPLOAD_CONTEXT', () => {
     expect(UPLOAD_CONTEXT.JOB_PHOTO).toBe('job_photo');
     expect(UPLOAD_CONTEXT.DOCUMENT).toBe('document');
     expect(UPLOAD_CONTEXT.REVIEW_PHOTO).toBe('review_photo');
+    expect(UPLOAD_CONTEXT.LISTING).toBe('listing');
+    expect(UPLOAD_CONTEXT.CHAT_ATTACHMENT).toBe('chat_attachment');
   });
 
-  it('has exactly 5 contexts', () => {
-    expect(Object.keys(UPLOAD_CONTEXT)).toHaveLength(5);
+  it('has exactly 7 contexts', () => {
+    expect(Object.keys(UPLOAD_CONTEXT)).toHaveLength(7);
   });
 
   it('produces the correct type', () => {
@@ -569,10 +596,11 @@ describe('SUBSCRIPTION_STATUS', () => {
     expect(SUBSCRIPTION_STATUS.CANCELLED).toBe('cancelled');
     expect(SUBSCRIPTION_STATUS.EXPIRED).toBe('expired');
     expect(SUBSCRIPTION_STATUS.TRIALING).toBe('trialing');
+    expect(SUBSCRIPTION_STATUS.INCOMPLETE).toBe('incomplete');
   });
 
-  it('has exactly 5 statuses', () => {
-    expect(Object.keys(SUBSCRIPTION_STATUS)).toHaveLength(5);
+  it('has exactly 6 statuses', () => {
+    expect(Object.keys(SUBSCRIPTION_STATUS)).toHaveLength(6);
   });
 
   it('produces the correct type', () => {

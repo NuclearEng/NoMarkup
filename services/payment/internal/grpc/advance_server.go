@@ -7,6 +7,7 @@ import (
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	paymentv1 "github.com/nomarkup/nomarkup/proto/payment/v1"
 	"github.com/nomarkup/nomarkup/services/payment/internal/domain"
+	"github.com/nomarkup/nomarkup/services/payment/internal/service"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -146,6 +147,20 @@ func (s *Server) GetCreditLimit(ctx context.Context, req *paymentv1.GetCreditLim
 	if available < 0 {
 		available = 0
 	}
+	// Prefer the engine's available figure when present; the derived value above
+	// covers rows written before the underwriting engine existed.
+	if limit.AvailableAdvanceCents > 0 {
+		available = limit.AvailableAdvanceCents
+	}
+
+	reasons := make([]*paymentv1.CreditDecisionReason, 0, len(limit.Reasons))
+	for _, r := range limit.Reasons {
+		reasons = append(reasons, &paymentv1.CreditDecisionReason{
+			Code:         r.Code,
+			Label:        r.Label,
+			Contribution: r.Contribution,
+		})
+	}
 
 	resp := &paymentv1.GetCreditLimitResponse{
 		ProviderId:            limit.ProviderID,
@@ -156,6 +171,17 @@ func (s *Server) GetCreditLimit(ctx context.Context, req *paymentv1.GetCreditLim
 		JobsCompleted:         int32(limit.JobsCompleted),
 		TotalEarningsCents:    limit.TotalEarningsCents,
 		AvgJobValueCents:      limit.AvgJobValueCents,
+		// Underwriting-engine decision.
+		Approved:     limit.Approved,
+		Tier:         limit.Tier,
+		FeeBps:       limit.FeeBps,
+		FactorRate:   limit.FactorRate,
+		HoldbackPct:  limit.HoldbackPct,
+		BindingCap:   limit.BindingCap,
+		BindingGate:  limit.BindingGate,
+		Reasons:      reasons,
+		DecisionHash: limit.DecisionHash,
+		ModelVersion: limit.ModelVersion,
 	}
 	if limit.OnTimeRate != nil {
 		resp.OnTimeRate = *limit.OnTimeRate
@@ -174,12 +200,26 @@ func domainAdvanceToProto(a *domain.Advance) *paymentv1.Advance {
 		return nil
 	}
 
+	// Itemized for transparency: the flat origination/service portion of the
+	// STORED FeeCents (the remainder is APR interest). The invariant the gateway
+	// relies on is service_fee + interest == fee_cents, so the breakdown must be
+	// derived FROM the stored total — never by recomputing 3% of principal fresh.
+	// Recomputing diverges on legacy rows whose stored fee predates the current
+	// 3% origination model (e.g. stored fee 986 vs recomputed 3000), which would
+	// push the breakdown over the total and clamp interest to a fake 0. Cap the
+	// service portion at the stored fee so the two line items always sum to it.
+	serviceFeeCents := domain.AdvanceServiceFeeCents(a.AdvanceAmountCents)
+	if serviceFeeCents > a.FeeCents {
+		serviceFeeCents = a.FeeCents
+	}
+
 	pb := &paymentv1.Advance{
 		Id:                 a.ID,
 		ProviderId:         a.ProviderID,
 		ContractId:         a.ContractID,
 		AdvanceAmountCents: a.AdvanceAmountCents,
 		FeeCents:           a.FeeCents,
+		ServiceFeeCents:    serviceFeeCents,
 		RepaidCents:        a.RepaidCents,
 		Status:             a.Status,
 		StripeTransferId:   a.StripeTransferID,
@@ -208,8 +248,24 @@ func mapAdvanceError(err error) error {
 	switch {
 	case errors.Is(err, domain.ErrAdvanceNotFound):
 		return status.Error(codes.NotFound, "advance not found")
+	case errors.Is(err, domain.ErrAdvanceNotApproved):
+		// Concurrent or repeated disbursement of an advance another request already
+		// claimed. Predictable state-machine conflict → 422 (FailedPrecondition),
+		// never a 500. No second payout fired (the transfer is idempotency-keyed).
+		return status.Error(codes.FailedPrecondition, "advance is no longer in approved status (it may already be disbursed)")
+	case errors.Is(err, service.ErrInsufficientCredit):
+		// Over-lending guard: the request is well-formed but exceeds available
+		// credit. FailedPrecondition → gateway 422 with an actionable message.
+		return status.Error(codes.FailedPrecondition, err.Error())
 	case errors.Is(err, domain.ErrInvalidAmount):
 		return status.Error(codes.InvalidArgument, "invalid amount")
+	case errors.Is(err, domain.ErrAdvanceDeclined):
+		// Predictable underwriting decline (credit score too low) — 422, not 500.
+		return status.Error(codes.FailedPrecondition, "your business credit score is below the minimum to qualify for an advance")
+	case errors.Is(err, domain.ErrStripeAccountNotFound):
+		// Provider hasn't completed payout (Stripe Connect) onboarding — a
+		// precondition for disbursement, not a server fault. 422, not 500.
+		return status.Error(codes.FailedPrecondition, "provider has not completed Stripe payout onboarding")
 	default:
 		return status.Error(codes.Internal, "internal error")
 	}

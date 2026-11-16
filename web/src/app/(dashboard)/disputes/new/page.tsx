@@ -6,7 +6,6 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { Suspense, useCallback, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { z } from 'zod';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -28,10 +27,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { useContracts } from '@/hooks/useContracts';
 import { useFileDispute } from '@/hooks/useDisputes';
 import { useImageUpload } from '@/hooks/useImageUpload';
+import * as z from '@/lib/zod-mini';
 
 const DISPUTE_STEPS = [
   { title: 'Contract', description: 'Select the affected contract' },
@@ -49,14 +50,16 @@ const DISPUTE_REASONS = [
   { value: 'other', label: 'Other', description: 'Another issue not listed above' },
 ] as const;
 
-type DisputeReason = (typeof DISPUTE_REASONS)[number]['value'];
+type _DisputeReason = (typeof DISPUTE_REASONS)[number]['value'];
 
 const disputeSchema = z.object({
-  contractId: z.string().min(1, 'Please select a contract'),
+  contractId: z.string().check(z.minLength(1, 'Please select a contract')),
   reason: z.enum(['quality_issue', 'incomplete_work', 'no_show', 'property_damage', 'other'], {
-    required_error: 'Please select a reason',
+    error: (issue) => (issue.input === undefined ? 'Please select a reason' : undefined),
   }),
-  description: z.string().min(50, 'Description must be at least 50 characters').max(5000),
+  description: z
+    .string()
+    .check(z.minLength(50, 'Description must be at least 50 characters'), z.maxLength(5000)),
 });
 
 type DisputeFormValues = z.infer<typeof disputeSchema>;
@@ -310,8 +313,10 @@ function DisputeFormInner() {
                         aria-label="Select dispute reason"
                       >
                         {DISPUTE_REASONS.map((reason) => (
+                          // eslint-disable-next-line jsx-a11y/label-has-associated-control -- htmlFor + nested input; rule's static analyzer can't trace map()
                           <label
                             key={reason.value}
+                            htmlFor={`dispute-reason-${reason.value}`}
                             className={`flex cursor-pointer items-start gap-3 rounded-lg border p-4 transition-colors ${
                               field.value === reason.value
                                 ? 'border-primary bg-primary/5'
@@ -319,11 +324,12 @@ function DisputeFormInner() {
                             }`}
                           >
                             <input
+                              id={`dispute-reason-${reason.value}`}
                               type="radio"
                               value={reason.value}
                               checked={field.value === reason.value}
                               onChange={() => {
-                                field.onChange(reason.value as DisputeReason);
+                                field.onChange(reason.value);
                               }}
                               className="mt-0.5 h-4 w-4"
                             />
@@ -410,15 +416,15 @@ function DisputeFormInner() {
                           key={url}
                           className="group relative aspect-square overflow-hidden rounded-md border"
                         >
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          {/* Evidence preview — using img intentionally, not next/image */}
                           <img
                             src={url}
-                            alt={`Evidence photo ${String(index + 1)}`}
+                            alt={`Evidence ${String(index + 1)}`}
                             className="h-full w-full object-cover"
                           />
                           <button
                             type="button"
-                            onClick={() => removeEvidence(index)}
+                            onClick={() => { removeEvidence(index); }}
                             className="absolute top-1 right-1 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white opacity-0 transition-opacity group-hover:opacity-100 hover:bg-black/80"
                             aria-label={`Remove evidence photo ${String(index + 1)}`}
                           >
@@ -525,9 +531,19 @@ function DisputeFormInner() {
   );
 }
 
+function NewDisputeFallback() {
+  return (
+    <div className="space-y-6" role="status" aria-label="Loading dispute form">
+      <Skeleton className="h-8 w-48" />
+      <Skeleton className="h-4 w-72" />
+      <Skeleton className="h-64 w-full rounded-xl" />
+    </div>
+  );
+}
+
 export default function NewDisputePage() {
   return (
-    <Suspense fallback={<div className="flex min-h-[50vh] items-center justify-center"><div className="border-primary h-8 w-8 animate-spin rounded-full border-4 border-t-transparent" /></div>}>
+    <Suspense fallback={<NewDisputeFallback />}>
       <DisputeFormInner />
     </Suspense>
   );

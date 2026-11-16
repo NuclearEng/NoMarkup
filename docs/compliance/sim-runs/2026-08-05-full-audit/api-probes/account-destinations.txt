@@ -1,0 +1,18 @@
+# API probe 2026-08-06T05:54Z
+200 C /api/v1/users/me :: {"avatar_url":"","created_at":"2026-04-17T21:19:16Z","display_name":"QA Tester",
+200 C /api/v1/payments :: {"pagination":{"hasNext":false,"page":1,"pageSize":20,"totalCount":14,"totalPage
+200 C /api/v1/payments/methods :: {"methods":[]} 
+200 C /api/v1/me/orders :: {"orders":[{"id":"8503d291-1fff-490c-b9f5-f503d1df8816","order_id":"8503d291-1ff
+200 C /api/v1/contracts :: {"contracts":[{"acceptance_deadline":"2026-08-09T01:41:09Z","amount_cents":45000
+200 C /api/v1/me/watchlist :: {"listings":[{"id":"00000000-0000-0000-0000-000000001005","seller_id":"00000000-
+200 C /api/v1/listings/bids/mine :: {"bids":[{"bid":{"id":"c11ea33d-0aa6-4d98-8071-e1ca87012d8c","listing_id":"00000
+200 C /api/v1/bids/mine :: {"bids":[{"amount_cents":49000,"bid_history":[],"created_at":"2026-06-10T22:26:1
+200 P /api/v1/provider/offers :: {"offers":[]} 
+200 P /api/v1/providers/me/stripe/status :: {"accounts_api":"","charges_enabled":false,"dashboard":"","details_submitted":fa
+200 P /api/v1/providers/me :: {"avg_response_time_minutes":0,"bio":"hi","business_name":"Dogfood Co","cancella
+200 P /api/v1/me/seller-analytics :: {"range_days":30,"daily_revenue":[],"sell_through_rate":0.2,"avg_sale_price_cent
+200 A /api/v1/admin/flags :: {"flags":[{"binary_only":false,"description":"Provider Checkr background checks 
+200 A /api/v1/admin/disputes :: {"disputes":[{"contract_id":"00000000-0000-0000-0000-000000000301","created_at":
+200 A /api/v1/admin/users :: {"pagination":{"hasNext":true,"page":1,"pageSize":20,"totalCount":39,"totalPages
+200 A /api/v1/admin/fraud/alerts :: {"alerts":[{"aggregate_risk_level":"high","assigned_admin_id":"","auto_resolved"
+200 A /api/v1/admin/jobs :: {"jobs":[{"bid_count":0,"category_id":"db487d00-fca2-4a17-9f4a-a926b8a306da","ca

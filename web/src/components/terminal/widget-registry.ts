@@ -4,6 +4,7 @@ import {
   BarChart3,
   DollarSign,
   FileText,
+  Gauge,
   Info,
   LineChart,
   List,
@@ -124,6 +125,14 @@ export const WIDGETS: WidgetDefinition[] = [
     category: WIDGET_CATEGORY.INFO,
     defaultSize: { w: 6, h: 4 },
     minSize: { w: 4, h: 3 },
+  },
+  {
+    id: 'velocity',
+    label: 'Bid Velocity',
+    icon: Gauge,
+    category: WIDGET_CATEGORY.ACTIVITY,
+    defaultSize: { w: 3, h: 4 },
+    minSize: { w: 2, h: 3 },
   },
 ];
 

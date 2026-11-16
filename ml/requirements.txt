@@ -7,3 +7,6 @@ onnx>=1.16.0
 onnxruntime>=1.18.0
 matplotlib>=3.9.0
 jupyter>=1.0.0
+# For synthetic data + CLI
+click>=8.1
+joblib>=1.4

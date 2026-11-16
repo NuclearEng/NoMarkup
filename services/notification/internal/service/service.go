@@ -5,28 +5,72 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
+	"strconv"
+	"strings"
+	"time"
 
 	"github.com/nomarkup/nomarkup/services/notification/internal/domain"
 )
 
 // Service implements notification business logic.
 type Service struct {
-	repo      domain.NotificationRepository
-	deviceRepo domain.DeviceTokenRepository
-	email     *EmailDispatcher
-	push      *PushDispatcher
-	sms       *SMSDispatcher
+	repo          domain.NotificationRepository
+	deviceRepo    domain.DeviceTokenRepository
+	ledger        domain.SendLedgerRepository
+	email         *EmailDispatcher
+	push          *PushDispatcher
+	webPush       *WebPushDispatcher
+	sms           *SMSDispatcher
+	publicWebBase string
+	publicAPIBase string
 }
 
-// New creates a new notification service.
-func New(repo domain.NotificationRepository, deviceRepo domain.DeviceTokenRepository, email *EmailDispatcher, push *PushDispatcher, sms *SMSDispatcher) *Service {
+// New creates a new notification service. webPush may be nil — in that
+// case browser-side W3C Web Push delivery is skipped and only the FCM/APNs
+// path runs (matches pre-PWA behavior). Both dispatchers run on the same
+// notification — they target different subscriber sets. ledger backs the
+// push cooldowns (IOS-SYS.NT.1); a nil ledger disables them (fail open).
+func New(repo domain.NotificationRepository, deviceRepo domain.DeviceTokenRepository, ledger domain.SendLedgerRepository, email *EmailDispatcher, push *PushDispatcher, webPush *WebPushDispatcher, sms *SMSDispatcher) *Service {
 	return &Service{
 		repo:       repo,
 		deviceRepo: deviceRepo,
+		ledger:     ledger,
 		email:      email,
 		push:       push,
+		webPush:    webPush,
 		sms:        sms,
 	}
+}
+
+// SetPublicBases records the public web and API origins used in unsubscribe
+// links. Trailing slashes are removed. Empty values are ignored.
+func (s *Service) SetPublicBases(webBase, apiBase string) {
+	if webBase != "" {
+		s.publicWebBase = strings.TrimRight(webBase, "/")
+	}
+	if apiBase != "" {
+		s.publicAPIBase = strings.TrimRight(apiBase, "/")
+	}
+}
+
+func (s *Service) emailPublicBases() (string, string) {
+	web := strings.TrimRight(s.publicWebBase, "/")
+	api := strings.TrimRight(s.publicAPIBase, "/")
+	if web == "" {
+		web = "https://no-markup.com"
+	}
+	if api == "" {
+		api = "https://api.no-markup.com"
+	}
+	return web, api
+}
+
+func unsubscribeTargets(webBase, apiBase, token string) (pageURL, oneClickURL string) {
+	escaped := url.QueryEscape(token)
+	pageURL = webBase + "/unsubscribe?token=" + escaped
+	oneClickURL = apiBase + "/api/v1/notifications/unsubscribe?token=" + escaped
+	return pageURL, oneClickURL
 }
 
 // SendNotification checks user preferences for enabled channels (using defaults if the
@@ -46,6 +90,21 @@ func (s *Service) SendNotification(ctx context.Context, userID, notifType, title
 	channels := requestedChannels
 	if len(channels) == 0 {
 		channels = s.resolveChannels(ctx, userID, notifType)
+	} else {
+		// A caller passed explicit channels (e.g. the welcome / re-engagement
+		// / NPS schedulers, or the transactional password-reset / verification
+		// emails). Explicit channels are an intent ("this notification wants
+		// email"), NOT a license to ignore the user's preferences. Filter the
+		// requested set against any preference the user has EXPLICITLY stored
+		// for this type so a user who turned off the email channel for a
+		// retention notification stops getting emailed — matching how the
+		// nil-channel (resolveChannels) path already behaves.
+		//
+		// We only drop a channel the user has explicitly disabled for this
+		// type. Transactional channels with no stored preference pass
+		// through. Promotional push and email do not: with no preference
+		// row and no stored preference for the type, both are omitted.
+		channels = s.filterByExplicitPrefs(ctx, userID, notifType, channels)
 	}
 
 	// Ensure in_app is always included.
@@ -99,7 +158,7 @@ func (s *Service) SendNotification(ctx context.Context, userID, notifType, title
 			}
 			deliveries = append(deliveries, delivery)
 		case "push":
-			delivery := s.dispatchPush(ctx, userID, title, body, actionURL)
+			delivery := s.dispatchPush(ctx, userID, notifType, title, body, actionURL, entityType, entityID, data)
 			if delivery.Delivered {
 				notif.PushSent = true
 			}
@@ -137,10 +196,23 @@ func (s *Service) dispatchEmail(ctx context.Context, userID, notifType, title, b
 		return ChannelDelivery{Channel: "email", Delivered: false, FailureReason: "no email address available"}
 	}
 
-	htmlBody, textBody := renderEmailHTML(notifType, title, body, actionURL)
+	token, err := s.repo.IssueUnsubscribeToken(ctx, userID)
+	if err != nil || token == "" {
+		// Do not log the token or the link. The repository error can echo the
+		// inserted value, so it stays off the log line too.
+		slog.Warn("email dispatch skipped: unsubscribe token unavailable",
+			"user_id", userID,
+			"type", notifType,
+		)
+		return ChannelDelivery{Channel: "email", Delivered: false, FailureReason: "unsubscribe token unavailable"}
+	}
+
+	webBase, apiBase := s.emailPublicBases()
+	pageURL, oneClickURL := unsubscribeTargets(webBase, apiBase, token)
+	htmlBody, textBody := renderEmailHTML(notifType, title, body, actionURL, pageURL)
 
 	subject := title
-	if err := s.email.Send(ctx, email, subject, htmlBody, textBody); err != nil {
+	if err := s.email.SendWithListUnsubscribe(ctx, email, subject, htmlBody, textBody, oneClickURL); err != nil {
 		slog.Warn("email dispatch failed",
 			"user_id", userID,
 			"type", notifType,
@@ -152,43 +224,395 @@ func (s *Service) dispatchEmail(ctx context.Context, userID, notifType, title, b
 	return ChannelDelivery{Channel: "email", Delivered: true}
 }
 
-// dispatchPush sends push notifications to all of the user's registered devices.
-func (s *Service) dispatchPush(ctx context.Context, userID, title, body, actionURL string) ChannelDelivery {
+// dispatchPush sends push notifications to all of the user's registered
+// FCM/APNs devices AND every W3C Web Push subscription. The two paths
+// target disjoint subscriber sets (native app installs vs. installed
+// PWA / browser push), so we fan out to both and report success if
+// either one delivers. iOS tokens route to APNs; android/web to FCM.
+//
+// Before any dispatch the send-ledger cooldown runs (IOS-SYS.NT.1):
+// promotional types cap at 1 push / user / 24h per type and 3 promotional
+// pushes / user / 24h total; everything else shares a generous 20 pushes /
+// user / hour anti-storm cap. A blocked push is skipped — the in-app row
+// still delivers — and counted on notification_push_cooldown_skips_total.
+func (s *Service) dispatchPush(ctx context.Context, userID, notifType, title, body, actionURL, entityType, entityID string, data map[string]string) ChannelDelivery {
+	// Lock-screen copy only. The in-app row keeps the original body.
+	title, body = redactMessageAlert(notifType, title, body)
+	if verdict := s.pushCooldownVerdict(ctx, userID, notifType); !verdict.allowed {
+		pushCooldownSkipsTotal.WithLabelValues(verdict.class, verdict.limit).Inc()
+		slog.InfoContext(ctx, "push dispatch skipped: cooldown",
+			"user_id", userID,
+			"type", notifType,
+			"class", verdict.class,
+			"limit", verdict.limit,
+			"reason", verdict.reason,
+		)
+		return ChannelDelivery{Channel: "push", Delivered: false, FailureReason: "rate limited: " + verdict.reason}
+	}
+
+	totalSent := 0
+	totalErrs := 0
+	noTokens := false
+
+	// Device token path: route each token by platform (ios → APNs, else FCM).
 	tokens, err := s.deviceRepo.GetDeviceTokens(ctx, userID)
 	if err != nil {
 		slog.Warn("push dispatch: failed to get device tokens",
 			"user_id", userID,
 			"error", err,
 		)
-		return ChannelDelivery{Channel: "push", Delivered: false, FailureReason: fmt.Sprintf("get device tokens: %s", err.Error())}
+		totalErrs++
+	} else if len(tokens) == 0 {
+		noTokens = true
+	} else {
+		var badge *int
+		if unread, uerr := s.repo.GetUnreadCount(ctx, userID); uerr == nil {
+			// Include the notification about to be persisted.
+			b := unread + 1
+			badge = &b
+		}
+		sent, stale, errs := s.push.SendMultiple(ctx, tokens, pushMessage{
+			Title:      title,
+			Body:       body,
+			ActionURL:  actionURL,
+			NotifType:  notifType,
+			Badge:      badge,
+			EntityType: entityType,
+			EntityID:   entityID,
+		})
+		totalSent += sent
+		totalErrs += len(errs)
+		// IOS-SYS.NT.4: APNs declared these tokens permanently gone (410
+		// Unregistered / 400 BadDeviceToken) — delete the rows so the next
+		// notification stops pushing at dead devices.
+		s.pruneStaleDeviceTokens(ctx, userID, stale)
+
+		// IOS-SYS.LA.3: fan out ActivityKit content-state to matching LA tokens
+		// (device_id = liveactivity:<auctionID>). Best-effort; does not affect
+		// alert delivery accounting.
+		laSent := s.dispatchLiveActivityForAuction(ctx, tokens, notifType, entityType, entityID, data, title, body)
+		totalSent += laSent
 	}
 
-	if len(tokens) == 0 {
-		slog.Info("push dispatch skipped: no device tokens registered",
+	// W3C Web Push path. Skipped silently when the dispatcher is nil
+	// (boot-time decision when VAPID keys are unset).
+	if s.webPush != nil {
+		webSent, webErrs := s.webPush.SendToUser(ctx, userID, title, body, actionURL, "")
+		totalSent += webSent
+		totalErrs += len(webErrs)
+		if webSent > 0 {
+			noTokens = false
+		}
+	}
+
+	if totalSent > 0 {
+		// Consume cooldown budget only for real deliveries: a fan-out where
+		// nothing went out (no tokens / all sends failed) must not burn the
+		// user's 1-per-24h promotional slot.
+		s.recordPushSend(ctx, userID, notifType)
+	}
+
+	if totalSent == 0 && totalErrs > 0 {
+		return ChannelDelivery{Channel: "push", Delivered: false, FailureReason: fmt.Sprintf("all %d sends failed", totalErrs)}
+	}
+	if totalSent == 0 && noTokens {
+		slog.Info("push dispatch skipped: no device tokens or web subscriptions registered",
 			"user_id", userID,
 		)
 		return ChannelDelivery{Channel: "push", Delivered: false, FailureReason: "no device tokens registered"}
 	}
 
-	deviceTokenStrings := make([]string, 0, len(tokens))
-	for _, dt := range tokens {
-		deviceTokenStrings = append(deviceTokenStrings, dt.Token)
-	}
-
-	sent, errs := s.push.SendMultiple(ctx, deviceTokenStrings, title, body, actionURL)
-	if sent == 0 && len(errs) > 0 {
-		return ChannelDelivery{Channel: "push", Delivered: false, FailureReason: fmt.Sprintf("all %d sends failed", len(errs))}
-	}
-
-	if len(errs) > 0 {
+	if totalErrs > 0 {
 		slog.Warn("push dispatch: partial failure",
 			"user_id", userID,
-			"sent", sent,
-			"failed", len(errs),
+			"sent", totalSent,
+			"failed", totalErrs,
 		)
 	}
 
 	return ChannelDelivery{Channel: "push", Delivered: true}
+}
+
+// auctionEntityTypes are entity_type values that can own a Live Activity.
+var auctionEntityTypes = map[string]struct{}{
+	"job": {}, "listing": {}, "auction": {},
+}
+
+// liveActivityNotifTypes trigger an LA content-state push when a matching
+// ios_live_activity token is registered for the auction entity.
+var liveActivityNotifTypes = map[string]struct{}{
+	"new_bid":              {},
+	"bid_outbid":           {},
+	"auction_closing_soon": {},
+	"auction_closed":       {},
+	"bid_awarded":          {},
+	"bid_not_selected":     {},
+}
+
+// dispatchLiveActivityForAuction sends ActivityKit liveactivity pushes to
+// tokens whose device_id is liveactivity:<entityID> (IOS-SYS.LA.3 fan-out).
+// Returns the number of successful LA sends (best-effort; errors only logged).
+func (s *Service) dispatchLiveActivityForAuction(
+	ctx context.Context,
+	tokens []domain.DeviceToken,
+	notifType, entityType, entityID string,
+	data map[string]string,
+	title, body string,
+) int {
+	if s.push == nil {
+		return 0
+	}
+	if _, ok := liveActivityNotifTypes[notifType]; !ok {
+		return 0
+	}
+	auctionID := strings.TrimSpace(entityID)
+	if auctionID == "" && data != nil {
+		if v := strings.TrimSpace(data["auction_id"]); v != "" {
+			auctionID = v
+		} else if v := strings.TrimSpace(data["entity_id"]); v != "" {
+			auctionID = v
+		}
+	}
+	if auctionID == "" {
+		return 0
+	}
+	if et := strings.ToLower(strings.TrimSpace(entityType)); et != "" {
+		if _, ok := auctionEntityTypes[et]; !ok {
+			// Still allow when entity_type empty but auction_id present.
+			if strings.TrimSpace(entityType) != "" {
+				return 0
+			}
+		}
+	}
+
+	isEnd := notifType == "auction_closed" || notifType == "bid_awarded" || notifType == "bid_not_selected"
+	contentState, ok := buildLiveActivityContentState(data, notifType, isEnd)
+	if !ok {
+		// Without leading/ends fields we can still end the activity.
+		if !isEnd {
+			return 0
+		}
+		contentState = map[string]any{}
+		if outcome := liveActivityOutcome(notifType, data); outcome != "" {
+			contentState["outcome"] = outcome
+		}
+	}
+
+	event := "update"
+	if isEnd {
+		event = "end"
+	}
+
+	sent := 0
+	for _, dt := range tokens {
+		if !strings.EqualFold(strings.TrimSpace(dt.Platform), platformIOSLiveActivity) {
+			continue
+		}
+		id, ok := ParseLiveActivityAuctionID(dt.DeviceID)
+		if !ok || !strings.EqualFold(id, auctionID) {
+			continue
+		}
+		upd := LiveActivityUpdate{
+			DeviceToken:  dt.Token,
+			Event:        event,
+			ContentState: contentState,
+			AlertTitle:   title,
+			AlertBody:    body,
+		}
+		if isEnd {
+			dismissal := time.Now().Add(15 * time.Minute).Unix()
+			upd.DismissalDate = &dismissal
+		}
+		if err := s.push.SendLiveActivityUpdate(ctx, upd); err != nil {
+			slog.WarnContext(ctx, "liveactivity dispatch failed",
+				"auction_id", auctionID,
+				"notif_type", notifType,
+				"error", err,
+			)
+			continue
+		}
+		sent++
+	}
+	return sent
+}
+
+// buildLiveActivityContentState maps notification data into the iOS
+// AuctionActivityAttributes.ContentState keys (leadingBidCents, endsAt, outcome).
+// Returns ok=false when required fields for an update are missing.
+func buildLiveActivityContentState(data map[string]string, notifType string, isEnd bool) (map[string]any, bool) {
+	cs := map[string]any{}
+	hasLead := false
+	hasEnds := false
+	if data != nil {
+		for _, key := range []string{"leading_bid_cents", "leadingBidCents", "amount_cents", "bid_cents"} {
+			if v := strings.TrimSpace(data[key]); v != "" {
+				if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+					cs["leadingBidCents"] = n
+					hasLead = true
+					break
+				}
+			}
+		}
+		for _, key := range []string{"ends_at", "endsAt", "auction_ends_at"} {
+			if v := strings.TrimSpace(data[key]); v != "" {
+				if unix, ok := parseEndsAtUnix(v); ok {
+					cs["endsAt"] = unix
+					hasEnds = true
+					break
+				}
+			}
+		}
+	}
+	if outcome := liveActivityOutcome(notifType, data); outcome != "" {
+		cs["outcome"] = outcome
+	}
+	if isEnd {
+		return cs, true
+	}
+	return cs, hasLead && hasEnds
+}
+
+func liveActivityOutcome(notifType string, data map[string]string) string {
+	if data != nil {
+		if v := strings.TrimSpace(data["outcome"]); v != "" {
+			return v
+		}
+	}
+	switch notifType {
+	case "bid_awarded":
+		return "won"
+	case "bid_not_selected":
+		return "lost"
+	case "auction_closed":
+		return "ended"
+	default:
+		return ""
+	}
+}
+
+func parseEndsAtUnix(v string) (int64, bool) {
+	if n, err := strconv.ParseInt(v, 10, 64); err == nil && n > 0 {
+		// Heuristic: values < year 2100 in seconds stay as-is; ms → seconds.
+		if n > 1_000_000_000_000 {
+			return n / 1000, true
+		}
+		return n, true
+	}
+	if t, err := time.Parse(time.RFC3339, v); err == nil {
+		return t.Unix(), true
+	}
+	return 0, false
+}
+
+// cooldownVerdict is the outcome of a push cooldown check.
+type cooldownVerdict struct {
+	allowed bool
+	class   string // "promotional" | "transactional"
+	limit   string // cap that tripped: "per_type" | "class_total" | "hourly_storm"
+	reason  string // human-readable, safe to surface in FailureReason
+}
+
+// pushCooldownVerdict enforces the IOS-SYS.NT.1 send-ledger cooldowns.
+//
+// Fail-open posture: this is an anti-spam/anti-storm limiter, not an authz
+// gate — on a ledger read error (or a nil ledger) we allow the push and warn,
+// matching how preference reads already fail toward delivery. The check and
+// the later RecordSend are not transactional; a concurrent race can let one
+// extra push through, which is acceptable for rate limiting.
+func (s *Service) pushCooldownVerdict(ctx context.Context, userID, notifType string) cooldownVerdict {
+	allow := cooldownVerdict{allowed: true}
+	if s.ledger == nil {
+		return allow
+	}
+	now := time.Now().UTC()
+
+	if isPromotionalNotifType(notifType) {
+		perType, err := s.ledger.CountSendsForType(ctx, userID, notifType, pushLedgerChannel, now.Add(-promoPerTypeWindow))
+		if err != nil {
+			slog.WarnContext(ctx, "push cooldown: per-type ledger read failed, allowing send",
+				"user_id", userID, "type", notifType, "error", err)
+			return allow
+		}
+		if perType >= promoPerTypeMax {
+			return cooldownVerdict{
+				class:  "promotional",
+				limit:  "per_type",
+				reason: fmt.Sprintf("promotional cooldown: max %d %q push per user per %s", promoPerTypeMax, notifType, promoPerTypeWindow),
+			}
+		}
+
+		classTotal, err := s.ledger.CountSendsMatching(ctx, userID, pushLedgerChannel, promotionalSendClass(), true, now.Add(-promoClassWindow))
+		if err != nil {
+			slog.WarnContext(ctx, "push cooldown: promotional class ledger read failed, allowing send",
+				"user_id", userID, "type", notifType, "error", err)
+			return allow
+		}
+		if classTotal >= promoClassMax {
+			return cooldownVerdict{
+				class:  "promotional",
+				limit:  "class_total",
+				reason: fmt.Sprintf("promotional cooldown: max %d promotional pushes per user per %s", promoClassMax, promoClassWindow),
+			}
+		}
+		return allow
+	}
+
+	// Transactional (everything non-promotional): generous anti-storm cap.
+	recent, err := s.ledger.CountSendsMatching(ctx, userID, pushLedgerChannel, promotionalSendClass(), false, now.Add(-transactionalWindow))
+	if err != nil {
+		slog.WarnContext(ctx, "push cooldown: transactional ledger read failed, allowing send",
+			"user_id", userID, "type", notifType, "error", err)
+		return allow
+	}
+	if recent >= transactionalMax {
+		return cooldownVerdict{
+			class:  "transactional",
+			limit:  "hourly_storm",
+			reason: fmt.Sprintf("anti-storm cap: max %d transactional pushes per user per %s", transactionalMax, transactionalWindow),
+		}
+	}
+	return allow
+}
+
+// recordPushSend stamps a successful push dispatch into the send ledger.
+// Best-effort: the pushes are already out, so a ledger write failure must not
+// fail the notification — it only weakens the next cooldown check.
+func (s *Service) recordPushSend(ctx context.Context, userID, notifType string) {
+	if s.ledger == nil {
+		return
+	}
+	if err := s.ledger.RecordSend(ctx, userID, notifType, pushLedgerChannel); err != nil {
+		slog.WarnContext(ctx, "push send ledger write failed",
+			"user_id", userID,
+			"type", notifType,
+			"error", err,
+		)
+	}
+}
+
+// pruneStaleDeviceTokens deletes device-token rows APNs reported as
+// permanently unregistered (IOS-SYS.NT.4). DeleteDeviceToken matches on
+// token OR device_id, so passing the raw token value is sufficient.
+func (s *Service) pruneStaleDeviceTokens(ctx context.Context, userID string, staleTokens []string) {
+	for _, token := range staleTokens {
+		err := s.deviceRepo.DeleteDeviceToken(ctx, userID, token)
+		switch {
+		case err == nil:
+			staleDeviceTokensPrunedTotal.Inc()
+			slog.InfoContext(ctx, "pruned unregistered device token",
+				"user_id", userID,
+				"device_token", truncateToken(token),
+			)
+		case errors.Is(err, domain.ErrDeviceTokenNotFound):
+			// Already gone (concurrent unregister) — nothing to do.
+		default:
+			slog.WarnContext(ctx, "failed to prune unregistered device token",
+				"user_id", userID,
+				"device_token", truncateToken(token),
+				"error", err,
+			)
+		}
+	}
 }
 
 // dispatchSMS sends an SMS notification for the given user.
@@ -197,6 +621,9 @@ func (s *Service) dispatchSMS(ctx context.Context, userID, title, body string, d
 	phone := ""
 	if data != nil {
 		phone = data["user_phone"]
+		if phone == "" {
+			phone = data["phone"]
+		}
 	}
 	if phone == "" {
 		slog.Warn("sms dispatch skipped: no user_phone in data",
@@ -270,11 +697,67 @@ func (s *Service) GetPreferences(ctx context.Context, userID string) (*domain.No
 }
 
 // UpdatePreferences upserts notification preferences for a user.
+//
+// Incoming keys replace stored keys. Keys the caller did not send are kept,
+// so a web save of its category list does not erase an iOS-only type such as
+// price_drop. An empty email digest keeps the stored cadence.
 func (s *Service) UpdatePreferences(ctx context.Context, prefs *domain.NotificationPreferences) (*domain.NotificationPreferences, error) {
+	existing, err := s.repo.GetPreferences(ctx, prefs.UserID)
+	if err != nil && !errors.Is(err, domain.ErrPreferencesNotFound) {
+		return nil, err
+	}
+	merged := make(map[string]domain.ChannelPrefs)
+	if existing != nil {
+		for key, value := range existing.Preferences {
+			merged[key] = value
+		}
+		if prefs.EmailDigest == "" {
+			prefs.EmailDigest = existing.EmailDigest
+		}
+	}
+	for key, value := range prefs.Preferences {
+		if key == "" || key == "unspecified" || strings.HasPrefix(key, "_") {
+			continue
+		}
+		merged[key] = value
+	}
+	storeGlobalSwitch(merged, "_global_push", prefs.GlobalPush)
+	storeGlobalSwitch(merged, "_global_email", prefs.GlobalEmail)
+	storeGlobalSwitch(merged, "_global_sms", prefs.GlobalSMS)
 	if prefs.EmailDigest == "" {
 		prefs.EmailDigest = "daily"
 	}
+	prefs.Preferences = merged
 	return s.repo.UpsertPreferences(ctx, prefs)
+}
+
+func storeGlobalSwitch(prefs map[string]domain.ChannelPrefs, key string, value *bool) {
+	if value == nil {
+		return
+	}
+	prefs[key] = domain.ChannelPrefs{Push: *value}
+}
+
+// globalSwitchAllows reports whether a master switch lets this channel through.
+// A missing switch does not suppress. Critical types ignore the switch.
+func globalSwitchAllows(prefs *domain.NotificationPreferences, channel, notifType string) bool {
+	if prefs == nil || isCriticalNotificationType(notifType) {
+		return true
+	}
+	cp, ok := prefs.Preferences["_global_"+channel]
+	if !ok {
+		return true
+	}
+	return cp.Push
+}
+
+func isCriticalNotificationType(notifType string) bool {
+	switch notifType {
+	case "payment_failed", "account_flag":
+		return true
+	default:
+		return strings.HasPrefix(notifType, "dispute_") || strings.HasPrefix(notifType, "account_flag") || strings.Contains(notifType, "guarantee")
+	}
 }
 
 // RegisterDevice saves a device token for push notifications.
@@ -346,13 +829,13 @@ func (s *Service) resolveChannels(ctx context.Context, userID, notifType string)
 	if cp.InApp {
 		channels = append(channels, "in_app")
 	}
-	if cp.Email {
+	if cp.Email && globalSwitchAllows(prefs, "email", notifType) {
 		channels = append(channels, "email")
 	}
-	if cp.Push {
+	if cp.Push && globalSwitchAllows(prefs, "push", notifType) {
 		channels = append(channels, "push")
 	}
-	if cp.SMS {
+	if cp.SMS && globalSwitchAllows(prefs, "sms", notifType) {
 		channels = append(channels, "sms")
 	}
 
@@ -360,6 +843,91 @@ func (s *Service) resolveChannels(ctx context.Context, userID, notifType string)
 		channels = []string{"in_app"}
 	}
 	return channels
+}
+
+// filterByExplicitPrefs removes any channel the user has EXPLICITLY disabled
+// for this notification type from the requested set. It only consults
+// preferences the user has actually stored (the repository returns exactly the
+// types present in the JSONB column). A transactional type the user has never
+// configured is left untouched (password reset / verification, sent as
+// `unspecified`, still deliver). A promotional type with no stored preference
+// does not fail open to push or email.
+//
+// in_app is never dropped here: SendNotification re-adds it unconditionally
+// downstream, and the in-app record is the durable notification, so dropping it
+// would lose the notification entirely. The dedicated in-app per-type toggle is
+// already honored by the resolveChannels (nil-channel) path.
+func (s *Service) filterByExplicitPrefs(ctx context.Context, userID, notifType string, requested []string) []string {
+	prefs, err := s.repo.GetPreferences(ctx, userID)
+	if err != nil {
+		// No preference row, or a transient read error. Transactional sends
+		// keep the caller's channels. Promotional push and email do not
+		// fail open.
+		if isPromotionalNotifType(notifType) {
+			return dropUnstoredPromoPush(ctx, userID, notifType, requested)
+		}
+		return requested
+	}
+
+	cp, ok := prefs.Preferences[notifType]
+	if !ok {
+		if isPromotionalNotifType(notifType) {
+			return dropUnstoredPromoPush(ctx, userID, notifType, requested)
+		}
+		return requested
+	}
+
+	filtered := make([]string, 0, len(requested))
+	for _, ch := range requested {
+		switch ch {
+		case "email":
+			if cp.Email && globalSwitchAllows(prefs, "email", notifType) {
+				filtered = append(filtered, ch)
+			}
+		case "push":
+			if cp.Push && globalSwitchAllows(prefs, "push", notifType) {
+				filtered = append(filtered, ch)
+			}
+		case "sms":
+			if cp.SMS && globalSwitchAllows(prefs, "sms", notifType) {
+				filtered = append(filtered, ch)
+			}
+		default:
+			// in_app and any unknown channel pass through; in_app is always
+			// re-added downstream regardless.
+			filtered = append(filtered, ch)
+		}
+	}
+	return filtered
+}
+
+// dropUnstoredPromoPush removes push and email when a promotional type has
+// no stored preference. Marketing email stays off until the user turns that
+// type's email on. In-app and other channels stay.
+func dropUnstoredPromoPush(ctx context.Context, userID, notifType string, requested []string) []string {
+	filtered := make([]string, 0, len(requested))
+	droppedPush := false
+	droppedEmail := false
+	for _, ch := range requested {
+		if ch == "push" {
+			droppedPush = true
+			continue
+		}
+		if ch == "email" {
+			droppedEmail = true
+			continue
+		}
+		filtered = append(filtered, ch)
+	}
+	if droppedPush || droppedEmail {
+		slog.InfoContext(ctx, "promotional channel omitted: no stored preference",
+			"user_id", userID,
+			"type", notifType,
+			"dropped_push", droppedPush,
+			"dropped_email", droppedEmail,
+		)
+	}
+	return filtered
 }
 
 // defaultPreferences returns default notification preferences for a new user.
@@ -381,6 +949,16 @@ func defaultPreferences(userID string) *domain.NotificationPreferences {
 		"document_approved", "document_rejected", "document_expiring",
 		"change_order_proposed", "change_order_responded",
 		"recurring_upcoming", "recurring_instance_ready",
+		// Onboarding cadence + seller-follow retention loop.
+		"welcome_day_1", "welcome_day_3", "welcome_day_7",
+		"seller_new_listing",
+		// Goods-marketplace retention: ≥10% drop vs. saved baseline on a
+		// watched listing. Wired by price_drop_scheduler.go.
+		"price_drop",
+		// Goods auction outbid (notify:outbid:* → listing_scheduler.go) and
+		// services pre-match (job.go notifyProviderOfMatch). Both are real
+		// emit paths; list them so users can manage their channel prefs.
+		"bid_outbid", "job_matched",
 	}
 
 	for _, t := range allTypes {
@@ -409,6 +987,11 @@ func defaultChannelPrefs(notifType string) domain.ChannelPrefs {
 		"tier_upgrade", "tier_downgrade",
 		"completion_approved", "work_completed":
 		cp.Email = true
+	}
+
+	// Promotional push is opt-in. A missing preference never turns it on.
+	if isPromotionalNotifType(notifType) {
+		cp.Push = false
 	}
 
 	return cp

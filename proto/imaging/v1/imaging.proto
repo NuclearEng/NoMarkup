@@ -34,6 +34,12 @@ service ImagingService {
   // Signed upload URLs
   rpc GetUploadURL(GetUploadURLRequest) returns (GetUploadURLResponse);
   rpc ConfirmUpload(ConfirmUploadRequest) returns (ConfirmUploadResponse);
+
+  // GDPR erasure: delete every object under each upload-context prefix for
+  // user_id. Keys are `{context}/{user_id}/…` (avatars, portfolio, job-photos,
+  // documents, review-photos, listings, chat-attachments). Idempotent: zero
+  // matching objects returns objects_deleted=0.
+  rpc DeleteUserObjects(DeleteUserObjectsRequest) returns (DeleteUserObjectsResponse);
 }
 
 // ============================================================
@@ -215,4 +221,12 @@ message ConfirmUploadResponse {
   string source_url = 1;        // confirmed URL to use for processing
   bool valid = 2;
   string error = 3;             // if invalid (wrong type, too large, etc.)
+}
+
+message DeleteUserObjectsRequest {
+  string user_id = 1;           // UUID; rejects non-UUID to prevent prefix injection
+}
+
+message DeleteUserObjectsResponse {
+  int32 objects_deleted = 1;
 }

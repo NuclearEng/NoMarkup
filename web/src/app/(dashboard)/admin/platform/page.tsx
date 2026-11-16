@@ -13,6 +13,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   useCategoryMetrics,
   useGrowthMetrics,
@@ -26,32 +27,41 @@ const GROUP_BY_OPTIONS = [
   { value: 'month', label: 'Monthly' },
 ] as const;
 
-// Analytics visibility preference persisted in localStorage per admin session.
-const ANALYTICS_STORAGE_KEY = 'nomarkup_analytics_enabled';
+/**
+ * Browser-only preview preference — does NOT control platform feature flags or
+ * other users' access. Real rollout lives under Admin → Feature Flags.
+ */
+const ANALYTICS_PREVIEW_STORAGE_KEY = 'nomarkup_analytics_preview_this_browser';
 
-function AnalyticsToggle() {
+function AnalyticsPreviewToggle() {
   const [enabled, setEnabled] = useState(() => {
     if (typeof window === 'undefined') return false;
-    return localStorage.getItem(ANALYTICS_STORAGE_KEY) === 'true';
+    return localStorage.getItem(ANALYTICS_PREVIEW_STORAGE_KEY) === 'true';
   });
 
   useEffect(() => {
-    localStorage.setItem(ANALYTICS_STORAGE_KEY, String(enabled));
+    localStorage.setItem(ANALYTICS_PREVIEW_STORAGE_KEY, String(enabled));
   }, [enabled]);
 
   return (
     <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
-      <CardContent className="flex items-center justify-between p-4">
+      <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <p className="font-medium">Enable analytics for all users</p>
+          <p className="font-medium">Analytics preview (this browser only)</p>
           <p className="text-sm text-zinc-300">
-            When enabled, all users will see analytics dashboards with spending/earnings data.
+            Local preference for your admin session — it does not enable analytics for
+            other users. Use{' '}
+            <a href="/admin/flags" className="text-brand-gold underline-offset-2 hover:underline">
+              Feature Flags
+            </a>{' '}
+            for platform-wide control.
           </p>
         </div>
         <button
           type="button"
           role="switch"
           aria-checked={enabled}
+          aria-label="Toggle analytics preview for this browser only"
           onClick={() => { setEnabled(!enabled); }}
           className={cn(
             'relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors',
@@ -100,8 +110,8 @@ export default function AdminPlatformPage() {
         </p>
       </div>
 
-      {/* Analytics Toggle */}
-      <AnalyticsToggle />
+      {/* Browser-only preview — not a platform control */}
+      <AnalyticsPreviewToggle />
 
       <Separator />
 
@@ -153,8 +163,12 @@ export default function AdminPlatformPage() {
         </CardHeader>
         <CardContent>
           {growthLoading ? (
-            <div className="flex h-48 items-center justify-center">
-              <div className="h-6 w-32 animate-pulse rounded bg-muted" />
+            <div
+              className="flex h-48 items-center justify-center"
+              role="status"
+              aria-label="Loading growth metrics"
+            >
+              <Skeleton className="h-6 w-32" />
             </div>
           ) : !growth || growth.data_points.length === 0 ? (
             <div className="flex h-48 items-center justify-center text-sm text-zinc-300">
@@ -177,7 +191,7 @@ export default function AdminPlatformPage() {
                     );
                     return (
                       <div key={dp.period_start} className="flex items-center gap-3">
-                        <span className="w-20 text-right text-xs text-zinc-300">
+                        <span className="w-20 whitespace-nowrap text-right text-xs text-zinc-300">
                           {periodLabel}
                         </span>
                         <div className="flex-1">
@@ -249,13 +263,13 @@ export default function AdminPlatformPage() {
         </CardHeader>
         <CardContent>
           {categoriesLoading ? (
-            <div className="space-y-3">
+            <div className="space-y-3" role="status" aria-label="Loading category metrics">
               {[1, 2, 3, 4, 5].map((i) => (
-                <div key={i} className="flex gap-4">
-                  <div className="h-4 w-32 animate-pulse rounded bg-muted" />
-                  <div className="h-4 w-16 animate-pulse rounded bg-muted" />
-                  <div className="h-4 w-16 animate-pulse rounded bg-muted" />
-                  <div className="h-4 w-20 animate-pulse rounded bg-muted" />
+                <div key={`cat-skel-${String(i)}`} className="flex gap-4">
+                  <Skeleton className="h-4 w-32" />
+                  <Skeleton className="h-4 w-16" />
+                  <Skeleton className="h-4 w-16" />
+                  <Skeleton className="h-4 w-20" />
                 </div>
               ))}
             </div>

@@ -21,6 +21,9 @@ const NOTIFICATION_ICON_MAP: Partial<Record<NotificationType, string>> = {
   [NOTIFICATION_TYPE.AUCTION_CLOSING_SOON]: '\u2696',
   [NOTIFICATION_TYPE.AUCTION_CLOSED]: '\u2696',
   [NOTIFICATION_TYPE.OFFER_ACCEPTED]: '\u2696',
+  [NOTIFICATION_TYPE.OFFER_RECEIVED]: '\u2696',
+  [NOTIFICATION_TYPE.OFFER_COUNTERED]: '\u2696',
+  [NOTIFICATION_TYPE.BID_OUTBID]: '\u2696',
   // Contract
   [NOTIFICATION_TYPE.CONTRACT_CREATED]: '\uD83D\uDCC4',
   [NOTIFICATION_TYPE.CONTRACT_ACCEPTED]: '\uD83D\uDCC4',
@@ -34,6 +37,7 @@ const NOTIFICATION_ICON_MAP: Partial<Record<NotificationType, string>> = {
   [NOTIFICATION_TYPE.PAYMENT_RECEIVED]: '\uD83D\uDCB3',
   [NOTIFICATION_TYPE.PAYMENT_RELEASED]: '\uD83D\uDCB3',
   [NOTIFICATION_TYPE.PAYMENT_FAILED]: '\uD83D\uDCB3',
+  [NOTIFICATION_TYPE.PAYMENT_AUTHENTICATION_REQUIRED]: '\uD83D\uDD10',
   [NOTIFICATION_TYPE.PAYOUT_SENT]: '\uD83D\uDCB3',
   // Chat
   [NOTIFICATION_TYPE.NEW_MESSAGE]: '\uD83D\uDCAC',
@@ -47,6 +51,8 @@ const NOTIFICATION_ICON_MAP: Partial<Record<NotificationType, string>> = {
   [NOTIFICATION_TYPE.TIER_DOWNGRADE]: '\uD83D\uDEE1',
   // Pre-matching
   [NOTIFICATION_TYPE.JOB_MATCHED]: '\uD83C\uDFAF',
+  // Marketplace wishlist (price/availability alert) \u2014 gift icon
+  [NOTIFICATION_TYPE.WISHLIST_MATCH]: '\uD83C\uDF81',
 };
 
 const DEFAULT_ICON = '\uD83D\uDD14';
@@ -80,7 +86,7 @@ export function NotificationItem({ notification, variant = 'full', onMarkRead }:
         <span
           className={cn(
             'block h-2 w-2 rounded-full',
-            notification.is_read ? 'bg-transparent' : 'bg-blue-500',
+            notification.is_read ? 'bg-transparent' : 'bg-bid-active',
           )}
           aria-hidden="true"
         />
@@ -118,6 +124,12 @@ export function NotificationItem({ notification, variant = 'full', onMarkRead }:
         <p className="mt-1 text-xs text-muted-foreground">
           {formatRelativeTime(new Date(notification.created_at))}
         </p>
+        {notification.notification_type === NOTIFICATION_TYPE.PAYMENT_AUTHENTICATION_REQUIRED &&
+          !isCompact && (
+            <span className="mt-2 inline-flex min-h-[44px] items-center rounded-md bg-primary px-3 text-xs font-semibold text-primary-foreground">
+              Authenticate payment
+            </span>
+          )}
       </div>
     </button>
   );

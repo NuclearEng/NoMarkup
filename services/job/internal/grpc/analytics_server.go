@@ -2,12 +2,13 @@ package grpc
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"strings"
 	"time"
 
 	analyticsv1 "github.com/nomarkup/nomarkup/proto/analytics/v1"
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
+	"github.com/nomarkup/nomarkup/services/job/internal/domain"
 	"github.com/nomarkup/nomarkup/services/job/internal/service"
 	grpclib "google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -44,14 +45,16 @@ func (s *AnalyticsServer) GetMarketRange(ctx context.Context, req *analyticsv1.G
 		serviceTypeID = &stid
 	}
 
-	// Convert location lat/lng to a zip code placeholder.
-	// The repository looks up by zip code; pass coordinates as a string for now.
-	zipCode := ""
-	if loc := req.GetLocation(); loc != nil {
-		zipCode = fmt.Sprintf("%.4f,%.4f", loc.GetLatitude(), loc.GetLongitude())
+	var mr *domain.MarketRange
+	var err error
+	if zip := strings.TrimSpace(req.GetZipCode()); zip != "" {
+		mr, err = s.svc.GetMarketRange(ctx, req.GetCategoryId(), subcategoryID, serviceTypeID, zip)
+	} else if loc := req.GetLocation(); loc != nil {
+		mr, err = s.svc.GetMarketRangeAt(ctx, req.GetCategoryId(), subcategoryID, serviceTypeID,
+			loc.GetLatitude(), loc.GetLongitude(), req.GetRadiusKm())
+	} else {
+		err = domain.ErrMarketRangeNotFound
 	}
-
-	mr, err := s.svc.GetMarketRange(ctx, req.GetCategoryId(), subcategoryID, serviceTypeID, zipCode)
 	if err != nil {
 		return nil, mapAnalyticsError(err)
 	}
@@ -192,7 +195,7 @@ func (s *AnalyticsServer) GetProviderEarnings(ctx context.Context, req *analytic
 func (s *AnalyticsServer) GetCustomerSpending(ctx context.Context, req *analyticsv1.GetCustomerSpendingRequest) (*analyticsv1.GetCustomerSpendingResponse, error) {
 	startDate, endDate := parseDateRange(req.GetDateRange())
 
-	points, categories, totalSpending, err := s.svc.GetCustomerSpending(ctx, req.GetCustomerId(), startDate, endDate, req.GetGroupBy())
+	points, categories, totalSpending, totalSavings, err := s.svc.GetCustomerSpending(ctx, req.GetCustomerId(), startDate, endDate, req.GetGroupBy(), req.GetPropertyId())
 	if err != nil {
 		return nil, mapAnalyticsError(err)
 	}
@@ -228,7 +231,7 @@ func (s *AnalyticsServer) GetCustomerSpending(ctx context.Context, req *analytic
 		TotalSpentCents:     totalSpending,
 		TotalJobs:           totalJobs,
 		AverageJobCostCents: avgJobCost,
-		TotalSavingsCents:   0, // Savings vs market median computed when market data available.
+		TotalSavingsCents:   totalSavings, // Sum of (market median - paid) per job, floored at 0.
 		CategoryBreakdown:   protoCategories,
 	}, nil
 }
@@ -320,13 +323,13 @@ func (s *AnalyticsServer) GetGrowthMetrics(ctx context.Context, req *analyticsv1
 	protoPoints := make([]*analyticsv1.GrowthDataPoint, 0, len(points))
 	for _, p := range points {
 		protoPoints = append(protoPoints, &analyticsv1.GrowthDataPoint{
-			PeriodStart:    timestamppb.New(p.PeriodStart),
-			NewUsers:       p.NewUsers,
-			NewProviders:   p.NewProviders,
-			JobsPosted:     p.JobsPosted,
-			JobsCompleted:  p.JobsCompleted,
-			GmvCents:       p.GMVCents,
-			RevenueCents:   p.RevenueCents,
+			PeriodStart:   timestamppb.New(p.PeriodStart),
+			NewUsers:      p.NewUsers,
+			NewProviders:  p.NewProviders,
+			JobsPosted:    p.JobsPosted,
+			JobsCompleted: p.JobsCompleted,
+			GmvCents:      p.GMVCents,
+			RevenueCents:  p.RevenueCents,
 		})
 	}
 
@@ -436,9 +439,8 @@ func mapAnalyticsError(err error) error {
 	if err == nil {
 		return nil
 	}
-	errMsg := err.Error()
-	if strings.Contains(errMsg, "not found") {
-		return status.Error(codes.NotFound, errMsg)
+	if errors.Is(err, domain.ErrMarketRangeNotFound) || strings.Contains(err.Error(), "not found") {
+		return status.Error(codes.NotFound, err.Error())
 	}
 	return status.Error(codes.Internal, "internal error")
 }

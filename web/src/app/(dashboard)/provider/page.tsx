@@ -1,10 +1,12 @@
 'use client';
 
 import { Briefcase, DollarSign, Gavel, Star } from 'lucide-react';
+import type { Route } from 'next';
 import Link from 'next/link';
 
 import { EarningsChart } from '@/components/analytics/EarningsChart';
 import { CreditScoreCard } from '@/components/providers/CreditScoreCard';
+import { InstantAvailabilityCard } from '@/components/providers/InstantAvailabilityCard';
 import { InstantPayoutButton } from '@/components/providers/InstantPayoutButton';
 import { ProviderRankCard } from '@/components/providers/ProviderRankCard';
 import { TaxProjectionCard } from '@/components/providers/TaxProjectionCard';
@@ -18,6 +20,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { ENABLE_LIVE_AUCTION } from '@/lib/constants';
 import { useProviderAnalytics, useProviderEarnings } from '@/hooks/useAnalytics';
 import { useMyBids } from '@/hooks/useBids';
+import { useInstantPayoutSummary } from '@/hooks/usePayments';
 import { useProviderProfile } from '@/hooks/useProviderProfile';
 import { useTierRequirements, useTrustScore } from '@/hooks/useTrustScore';
 import { formatCents } from '@/lib/utils';
@@ -65,6 +68,7 @@ export default function ProviderDashboardPage() {
     undefined,
     'month',
   );
+  const { data: payoutSummary } = useInstantPayoutSummary();
   const { data: bidsData, isLoading: bidsLoading } = useMyBids('active');
   const { data: trustData, isLoading: trustLoading } = useTrustScore(userId);
   const { data: tierData } = useTierRequirements();
@@ -81,27 +85,34 @@ export default function ProviderDashboardPage() {
             Manage your provider profile and track performance.
           </p>
         </div>
-        <Link href="/provider/onboarding">
-          <Button variant="outline" className="min-h-[44px]">
-            Edit Profile
-          </Button>
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          <Link href={'/provider/verification' as Route}>
+            <Button variant="outline" className="min-h-[44px]">
+              Verification docs
+            </Button>
+          </Link>
+          <Link href={'/provider/onboarding' as Route}>
+            <Button variant="outline" className="min-h-[44px]">
+              Edit Profile
+            </Button>
+          </Link>
+        </div>
       </div>
 
       {/* Profile completeness */}
-      {profile && profile.profileCompleteness < 100 ? (
+      {profile && profile.profile_completeness < 100 ? (
         <Card className="glass glass-highlight border border-amber-500/20 bg-amber-500/10">
           <CardContent className="flex items-center gap-4 p-4">
             <div className="min-w-0 flex-1">
               <p className="font-medium">Complete your profile</p>
               <p className="text-zinc-300 text-sm">
-                A complete profile helps you win more jobs. {String(profile.profileCompleteness)}%
+                A complete profile helps you win more jobs. {String(profile.profile_completeness)}%
                 complete.
               </p>
               <Progress
-                value={profile.profileCompleteness}
+                value={profile.profile_completeness}
                 className="mt-2 h-2"
-                aria-label={`Profile ${String(profile.profileCompleteness)}% complete`}
+                aria-label={`Profile ${String(profile.profile_completeness)}% complete`}
               />
             </div>
             <Link href="/provider/onboarding">
@@ -238,6 +249,10 @@ export default function ProviderDashboardPage() {
         ) : null}
       </div>
 
+      {/* Instant availability (weekly schedule + available-now) */}
+      <div className="glass-divider" role="separator" />
+      <InstantAvailabilityCard />
+
       {/* Financial Tools */}
       <div className="glass-divider" role="separator" />
       <div>
@@ -253,7 +268,10 @@ export default function ProviderDashboardPage() {
           ) : null}
           <CreditScoreCard />
           <InstantPayoutButton
-            availableBalanceCents={analytics?.total_earnings_cents ?? 0}
+            // NET withdrawable balance (gross cleared earnings − prior instant
+            // payouts), server-computed. NOT analytics.total_earnings_cents,
+            // which is gross and would let the same earnings be withdrawn twice.
+            availableBalanceCents={payoutSummary?.available_cents ?? 0}
           />
         </div>
       </div>

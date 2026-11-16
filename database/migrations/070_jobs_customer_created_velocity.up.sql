@@ -1,0 +1,25 @@
+-- 070: Index the job-creation fraud velocity gate.
+--
+-- The velocity gate added to the job-create path (gateway/internal/handler/job.go,
+-- recordJobCreationSignal) runs on EVERY job post:
+--
+--     SELECT COUNT(*) FROM jobs
+--      WHERE customer_id = $1
+--        AND created_at >= now() - $2::interval
+--
+-- It deliberately has NO status filter and NO `deleted_at IS NULL` predicate (a
+-- velocity signal must count ALL of a user's recent posts, including drafts and
+-- soft-deleted ones — hiding deleted posts would let an abuser evade the gate by
+-- deleting as they go). Every existing jobs(customer_id, ...) index is either
+-- PARTIAL on `deleted_at IS NULL` (idx_jobs_customer, idx_jobs_customer_status_created)
+-- or requires a leading status equality, so NONE can serve this predicate.
+--
+-- Verified via EXPLAIN: the planner falls back to a Seq Scan on `jobs` even with
+-- enable_seqscan=off (cost 1e10) — i.e. there is literally no usable index. On a
+-- hot, high-write table that becomes a full-table scan per job post at scale.
+--
+-- This non-partial (customer_id, created_at DESC) btree makes the gate an index
+-- range scan: equality on customer_id, range on created_at, count off the index.
+-- Non-partial on purpose so it covers every job row regardless of status/deletion.
+CREATE INDEX IF NOT EXISTS idx_jobs_customer_created
+    ON jobs (customer_id, created_at DESC);

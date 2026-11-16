@@ -24,15 +24,17 @@ export function SavingsBadge({ lowestBidCents, marketMedianCents, className }: S
     <div
       className={cn(
         'inline-flex items-center gap-1.5 rounded-full',
-        'border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1',
-        'text-xs font-medium text-emerald-700 dark:text-emerald-400',
+        'border border-bid-winning/30 bg-bid-winning/10 px-2.5 py-1',
+        'text-xs font-medium text-bid-winning',
         className,
       )}
       aria-label={`Saves you ${formatCents(savingsCents)} versus market average`}
     >
       <TrendingDown className="h-3 w-3 shrink-0" aria-hidden="true" />
       <span>
-        Saves you {formatCents(savingsCents)} vs. market avg
+        Saves you{' '}
+        <span className="font-mono tabular-nums tracking-tight">{formatCents(savingsCents)}</span>{' '}
+        vs. market avg
       </span>
     </div>
   );

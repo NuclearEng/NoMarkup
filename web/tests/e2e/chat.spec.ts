@@ -1,5 +1,11 @@
 import { expect, test } from '@playwright/test';
 
+/**
+ * Chat smoke E2E. QA-07: no vacuous `expect(a||b||c).toBeTruthy()` —
+ * unauthenticated CI asserts login redirect; authenticated asserts Messages
+ * heading + conversation list / empty state (not "any button").
+ */
+
 /** Navigate to a protected route and wait for the auth check to resolve. */
 async function gotoProtected(page: import('@playwright/test').Page, url: string) {
   await page.goto(url);
@@ -13,56 +19,89 @@ async function gotoProtected(page: import('@playwright/test').Page, url: string)
 test.describe('Chat flows', () => {
   test.describe('Chat page', () => {
     test('chat page loads or redirects to login', async ({ page }) => {
-      await gotoProtected(page, '/messages');
+      const redirected = await gotoProtected(page, '/messages');
+      if (redirected) {
+        await expect(page).toHaveURL(/\/login/);
+        await expect(page.getByLabel(/email/i)).toBeVisible();
+        return;
+      }
+      await expect(page).toHaveURL(/\/messages/);
+      await expect(page.getByRole('heading', { name: /^Messages$/i })).toBeVisible({
+        timeout: 10_000,
+      });
     });
 
     test('chat page shows channels list or empty state', async ({ page }) => {
       const redirected = await gotoProtected(page, '/messages');
-      if (redirected) return;
-      await page.waitForLoadState('networkidle');
-      const hasChannels = await page.getByRole('listitem').count();
-      const hasButtons = await page.getByRole('button').count();
-      const hasEmpty = await page
-        .getByText(/no conversations|no messages|start a conversation/i)
-        .count();
-      expect(hasChannels > 0 || hasButtons > 0 || hasEmpty > 0).toBeTruthy();
+      if (redirected) {
+        await expect(page.getByLabel(/email/i)).toBeVisible();
+        return;
+      }
+      await expect(page.getByRole('heading', { name: /^Messages$/i })).toBeVisible({
+        timeout: 10_000,
+      });
+      // Real chat UI markers — not arbitrary buttons (nav alone would pass).
+      const emptyOrPrompt = page.getByText(
+        /Select a conversation|No messages yet|start a conversation|no conversations/i,
+      );
+      const channelRow = page.getByRole('listitem');
+      await expect(emptyOrPrompt.or(channelRow).first()).toBeVisible({ timeout: 15_000 });
     });
   });
 
   test.describe('Message thread', () => {
     test('clicking a channel navigates to thread view', async ({ page }) => {
       const redirected = await gotoProtected(page, '/messages');
-      if (redirected) return;
-      await page.waitForLoadState('networkidle');
-      const channels = page.getByRole('listitem');
-      if ((await channels.count()) > 0) {
-        await channels.first().click();
-        const hasInput = await page.getByPlaceholder(/type|message|write/i).count();
-        const hasMessages = await page.getByRole('article').count();
-        expect(hasInput > 0 || hasMessages > 0).toBeTruthy();
+      if (redirected) {
+        await expect(page.getByLabel(/email/i)).toBeVisible();
+        return;
       }
+      await expect(page.getByRole('heading', { name: /^Messages$/i })).toBeVisible({
+        timeout: 10_000,
+      });
+      const channels = page.getByRole('listitem');
+      const channelCount = await channels.count();
+      if (channelCount === 0) {
+        // Empty inbox is a valid authenticated outcome — assert the empty UI.
+        await expect(page.getByText(/Select a conversation|No messages yet/i).first()).toBeVisible();
+        return;
+      }
+      await channels.first().click();
+      const composer = page.getByPlaceholder(/type|message|write/i);
+      const messages = page.getByRole('article');
+      await expect(composer.or(messages).first()).toBeVisible({ timeout: 10_000 });
     });
 
     test('message thread view shows input or empty state', async ({ page }) => {
       const redirected = await gotoProtected(page, '/messages');
-      if (redirected) return;
-      await page.waitForLoadState('networkidle');
-      // The messages page should show a message input, channel list, or empty state.
-      const hasInput = await page.getByPlaceholder(/type|message|write/i).count();
-      const hasChannels = await page.getByRole('button').count();
-      const hasEmpty = await page
-        .getByText(/no conversations|select.*conversation|no messages/i)
-        .count();
-      expect(hasInput > 0 || hasChannels > 0 || hasEmpty > 0).toBeTruthy();
+      if (redirected) {
+        await expect(page.getByLabel(/email/i)).toBeVisible();
+        return;
+      }
+      await expect(page.getByRole('heading', { name: /^Messages$/i })).toBeVisible({
+        timeout: 10_000,
+      });
+      const composer = page.getByPlaceholder(/type|message|write/i);
+      const emptyOrPrompt = page.getByText(
+        /Select a conversation|No messages yet|no conversations/i,
+      );
+      const channelRow = page.getByRole('listitem');
+      await expect(composer.or(emptyOrPrompt).or(channelRow).first()).toBeVisible({
+        timeout: 15_000,
+      });
     });
   });
 
   test.describe('Accessibility', () => {
     test('chat page has proper heading', async ({ page }) => {
       const redirected = await gotoProtected(page, '/messages');
-      if (redirected) return;
-      const headings = page.getByRole('heading');
-      expect(await headings.count()).toBeGreaterThanOrEqual(1);
+      if (redirected) {
+        await expect(page.getByLabel(/email/i)).toBeVisible();
+        return;
+      }
+      await expect(page.getByRole('heading', { name: /^Messages$/i })).toBeVisible({
+        timeout: 10_000,
+      });
     });
   });
 });

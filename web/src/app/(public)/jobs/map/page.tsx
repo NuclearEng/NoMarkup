@@ -7,6 +7,7 @@ import { useCallback, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useSearchJobs } from '@/hooks/useJobs';
 import { formatCents } from '@/lib/utils';
 import type { Job, SearchJobsParams } from '@/types';
@@ -47,11 +48,12 @@ export default function JobsMapPage() {
 
       {/* Map */}
       {isLoading ? (
-        <div className="bg-muted/50 mb-8 flex min-h-[400px] items-center justify-center rounded-xl border">
-          <div className="text-center">
-            <div className="border-primary mx-auto h-8 w-8 animate-spin rounded-full border-2 border-t-transparent" />
-            <p className="text-muted-foreground mt-2 text-sm">Loading jobs...</p>
-          </div>
+        <div
+          className="mb-8 overflow-hidden rounded-xl border"
+          role="status"
+          aria-label="Loading job map"
+        >
+          <Skeleton className="min-h-[400px] w-full rounded-xl" />
         </div>
       ) : isError ? (
         <div className="border-destructive/50 bg-destructive/5 mb-8 flex min-h-[400px] flex-col items-center justify-center gap-4 rounded-xl border">
@@ -109,11 +111,15 @@ export default function JobsMapPage() {
       <h2 className="mb-4 text-xl font-bold">Jobs Near You</h2>
 
       {isLoading ? (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div
+          className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
+          role="status"
+          aria-label="Loading nearby jobs"
+        >
           {Array.from({ length: 6 }).map((_, i) => (
-            <div
+            <Skeleton
               key={`skeleton-${String(i)}`}
-              className="bg-muted h-32 animate-pulse rounded-xl border"
+              className="h-32 rounded-xl"
             />
           ))}
         </div>

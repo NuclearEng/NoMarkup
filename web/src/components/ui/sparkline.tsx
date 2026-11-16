@@ -63,7 +63,9 @@ export function Sparkline({
   const firstVal = safeData[0] ?? 0;
   const lastVal = safeData[safeData.length - 1] ?? 0;
   const trend = lastVal >= firstVal ? 'up' : 'down';
-  const resolvedColor = color ?? (trend === 'up' ? '#22c55e' : '#ef4444');
+  // Semantic tokens — SVG accepts CSS vars in stroke/fill/stopColor.
+  const resolvedColor =
+    color ?? (trend === 'up' ? 'var(--brand-green)' : 'var(--destructive)');
 
   // Compute points within padded SVG area
   const paddingX = 4;
@@ -90,7 +92,9 @@ export function Sparkline({
       ? `${linePath} L ${String(lastPoint.x)},${String(height)} L ${String(firstPoint.x)},${String(height)} Z`
       : '';
 
-  const gradientId = `sparkline-gradient-${String(width)}-${String(height)}-${resolvedColor.replace('#', '')}`;
+  // Stable id without raw hex — sanitize optional color overrides for multi-sparkline pages.
+  const colorKey = (color ?? trend).replace(/[^a-zA-Z0-9_-]/g, '');
+  const gradientId = `sparkline-gradient-${String(width)}-${String(height)}-${colorKey}`;
 
   useEffect(() => {
     if (pathRef.current) {
@@ -103,7 +107,10 @@ export function Sparkline({
       width={width}
       height={height}
       viewBox={`0 0 ${String(width)} ${String(height)}`}
-      className={cn('overflow-visible', className)}
+      // width/height set the intrinsic aspect via the viewBox; max-w-full + h-auto
+      // let the chart shrink to its container so a wide sparkline never overflows
+      // on mobile (preserveAspectRatio defaults to uniform scaling).
+      className={cn('h-auto max-w-full overflow-visible', className)}
       role="img"
       aria-label={`Sparkline chart showing ${trend === 'up' ? 'upward' : 'downward'} trend`}
     >
