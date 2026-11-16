@@ -2,12 +2,12 @@
 
 import { AlertTriangle, ArrowLeft, CheckCircle, MapPin, MessageSquare, User } from 'lucide-react';
 import type { Route } from 'next';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useState } from 'react';
 
 import { OrderPaymentPrompt } from '@/components/orders/OrderPaymentPrompt';
-import { OrderReviewForm } from '@/components/orders/OrderReviewForm';
 import { StarRatingDisplay } from '@/components/reviews/StarRating';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -45,6 +45,24 @@ import {
 import { formatCents, formatRelativeTime } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth-store';
 import { LISTING_ORDER_STATUS } from '@/types';
+
+// PERF-08: the review form is the only thing on this page that needs
+// react-hook-form + zod (~25 kB gzip), and it only appears once an order is
+// complete and the review-eligibility request has answered. Load it then. The
+// placeholder is the same block the eligibility request already shows, so the
+// section keeps its size while the chunk arrives.
+function ReviewFormLoading() {
+  return (
+    <div role="status" aria-label="Loading review form">
+      <Skeleton className="h-48 rounded-xl" />
+    </div>
+  );
+}
+
+const OrderReviewForm = dynamic(
+  () => import('@/components/orders/OrderReviewForm').then((mod) => mod.OrderReviewForm),
+  { loading: ReviewFormLoading },
+);
 
 // Must match the backend allow-list in
 // gateway/internal/handler/listing_orders.go (FileListingDispute).

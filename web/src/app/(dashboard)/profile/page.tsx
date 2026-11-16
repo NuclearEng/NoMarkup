@@ -1,12 +1,12 @@
 'use client';
 
 import type { Route } from 'next';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
 import { PhoneOtpForm } from '@/components/forms/PhoneOtpForm';
-import { ProfileForm } from '@/components/forms/ProfileForm';
 import { AnimatedIllustration } from '@/components/ui/animated-illustration';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -15,9 +15,41 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ContentLoader } from '@/components/ui/content-loader';
 import { EmptyState } from '@/components/ui/empty-state';
 import { PageTransition } from '@/components/ui/page-transition';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useEnableRole, useProfile } from '@/hooks/useProfile';
 import { useProviderProfile } from '@/hooks/useProviderProfile';
 import { USER_ROLE } from '@/types';
+
+// PERF-08: the edit form (react-hook-form + the timezone select) only renders
+// after "Edit Profile" is pressed, so it is loaded then instead of with the
+// page. The placeholder mirrors the form — four labelled 44px fields and the
+// button row — so the card does not resize when the form replaces it.
+function ProfileFormLoading() {
+  return (
+    <div role="status" aria-label="Loading profile form" className="space-y-6">
+      {[0, 1, 2, 3].map((i) => (
+        <div key={i} className="space-y-2">
+          <Skeleton className="h-4 w-28" />
+          <Skeleton className="h-11 w-full" />
+        </div>
+      ))}
+      <div className="flex gap-3">
+        <Skeleton className="h-11 w-32" />
+        <Skeleton className="h-11 w-24" />
+      </div>
+    </div>
+  );
+}
+
+const loadProfileForm = () =>
+  import('@/components/forms/ProfileForm').then((mod) => mod.ProfileForm);
+
+const ProfileForm = dynamic(loadProfileForm, { loading: ProfileFormLoading });
+
+/** Start fetching the edit form as soon as the pointer or focus reaches the button. */
+function preloadProfileForm() {
+  void loadProfileForm().catch(() => undefined);
+}
 
 function getInitials(name: string): string {
   return name
@@ -139,6 +171,8 @@ export default function ProfilePage() {
                 onClick={() => {
                   setEditing(true);
                 }}
+                onPointerEnter={preloadProfileForm}
+                onFocus={preloadProfileForm}
                 className="min-h-[44px]"
               >
                 Edit Profile
