@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net"
+	"net/url"
 	"strings"
 
 	"github.com/nomarkup/nomarkup/services/payment/internal/observability"
@@ -183,6 +185,16 @@ func classifyStripeDeleteErr(err error, kind classifyKind) (outcome string, shou
 		return "deleted", false
 	}
 
+	// No answer from Stripe means nothing is known about the object, so the
+	// text of the error must not be read as one. A transport error embeds the
+	// request URL — host, port and the object id — and the string rules below
+	// used to match on it: a cancelled DELETE to a host on port 40441, or for
+	// an id containing "404", was recorded as "deleted_already_gone" and the
+	// erasure was never retried.
+	if isNoAnswerErr(err) {
+		return "", true
+	}
+
 	var sErr *stripe.Error
 	if errors.As(err, &sErr) {
 		// 404 — already gone is a happy outcome.
@@ -216,8 +228,7 @@ func classifyStripeDeleteErr(err error, kind classifyKind) (outcome string, shou
 	msg := strings.ToLower(err.Error())
 	switch kind {
 	case classifyKindCustomer:
-		if strings.Contains(msg, "404") ||
-			strings.Contains(msg, "no such customer") {
+		if strings.Contains(msg, "no such customer") {
 			return "deleted_already_gone", false
 		}
 		if strings.Contains(msg, "open invoice") || strings.Contains(msg, "open balance") {
@@ -227,8 +238,7 @@ func classifyStripeDeleteErr(err error, kind classifyKind) (outcome string, shou
 			return "skipped_dispute", false
 		}
 	case classifyKindAccount:
-		if strings.Contains(msg, "404") ||
-			strings.Contains(msg, "no such account") {
+		if strings.Contains(msg, "no such account") {
 			return "deleted_already_gone", false
 		}
 		if strings.Contains(msg, "balance") || strings.Contains(msg, "active subscription") {
@@ -237,4 +247,23 @@ func classifyStripeDeleteErr(err error, kind classifyKind) (outcome string, shou
 	}
 
 	return "", true // unrecognized — let caller bubble the error
+}
+
+// isNoAnswerErr reports whether err means the request got no response from
+// Stripe: the caller's context ended, or the transport failed. A typed
+// *stripe.Error is always an answer, whatever it wraps.
+func isNoAnswerErr(err error) bool {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var sErr *stripe.Error
+	if errors.As(err, &sErr) {
+		return false
+	}
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		return true
+	}
+	var netErr net.Error
+	return errors.As(err, &netErr)
 }

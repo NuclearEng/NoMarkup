@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -292,6 +294,52 @@ func TestStripeCalls_AlreadyCancelledContextReturnsImmediately(t *testing.T) {
 				t.Fatalf("call still running after %s on an already-cancelled context", cancelBudget)
 			}
 		})
+	}
+}
+
+// TestStripeDeleter_CancelledCallOnA404PortIsNotRecordedAsGone reproduces the
+// CI failure of the test above deterministically. httptest picks a random
+// port; when it contained "404" (40441, 34048, ...), the cancelled DELETE's
+// error text — `Delete "http://127.0.0.1:40441/v1/customers/cus_1": context
+// canceled` — matched the deleter's plain-string "404" rule and the erasure
+// was reported as "deleted_already_gone" with a nil error. Here the port is
+// chosen to contain "404" on purpose.
+func TestStripeDeleter_CancelledCallOnA404PortIsNotRecordedAsGone(t *testing.T) {
+	t.Setenv("STRIPE_ACCOUNTS_V2", "false")
+
+	var listener net.Listener
+	for port := 40400; port < 40500 && listener == nil; port++ {
+		l, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+		if err == nil {
+			listener = l
+		}
+	}
+	if listener == nil {
+		t.Fatal("no free port in 40400-40499 to reproduce the 404-in-URL case")
+	}
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	}))
+	_ = srv.Listener.Close()
+	srv.Listener = listener
+	srv.Start()
+	t.Cleanup(srv.Close)
+	if !strings.Contains(srv.URL, "404") {
+		t.Fatalf("test server URL %q must contain 404", srv.URL)
+	}
+	useStripeTestBackend(t, srv.URL, 2, 0)
+
+	deleter := NewStripeDeleter(&StripeService{})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	outcome, err := deleter.DeleteCustomer(ctx, "cus_1")
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("DeleteCustomer: want context.Canceled, got outcome %q err %v", outcome, err)
+	}
+	outcome, err = deleter.DeleteConnectAccount(ctx, "acct_1")
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("DeleteConnectAccount: want context.Canceled, got outcome %q err %v", outcome, err)
 	}
 }
 

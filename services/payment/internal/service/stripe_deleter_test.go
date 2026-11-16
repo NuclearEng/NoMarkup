@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net/url"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -264,6 +266,55 @@ func TestClassifyStripeDeleteErr_PlainStringFallback(t *testing.T) {
 		{
 			name:        "plain-string-unknown",
 			err:         errors.New("something else"),
+			kind:        classifyKindCustomer,
+			wantOutcome: "",
+			wantRetry:   true,
+		},
+		// A transport error carries the request URL. Its port and the object
+		// id are not Stripe's answer: 40441 and cus_404 both contain "404",
+		// and "balance" can be part of a host name.
+		{
+			name: "cancelled-request-url-contains-404-customer",
+			err: &url.Error{Op: "Delete", URL: "http://127.0.0.1:40441/v1/customers/cus_1",
+				Err: context.Canceled},
+			kind:        classifyKindCustomer,
+			wantOutcome: "",
+			wantRetry:   true,
+		},
+		{
+			name: "cancelled-request-url-contains-404-account",
+			err: &url.Error{Op: "Delete", URL: "http://127.0.0.1:40441/v1/accounts/acct_1",
+				Err: context.Canceled},
+			kind:        classifyKindAccount,
+			wantOutcome: "",
+			wantRetry:   true,
+		},
+		{
+			name: "connection-refused-for-an-id-containing-404",
+			err: &url.Error{Op: "Delete", URL: "https://api.stripe.com/v1/customers/cus_Qx404yZ",
+				Err: errors.New("dial tcp: connection refused")},
+			kind:        classifyKindCustomer,
+			wantOutcome: "",
+			wantRetry:   true,
+		},
+		{
+			name: "timeout-through-a-host-named-balance",
+			err: &url.Error{Op: "Delete", URL: "https://load-balancer.internal/v1/accounts/acct_1",
+				Err: context.DeadlineExceeded},
+			kind:        classifyKindAccount,
+			wantOutcome: "",
+			wantRetry:   true,
+		},
+		{
+			name:        "wrapped-context-cancel-mentioning-open-invoice",
+			err:         fmt.Errorf("delete customer with open invoice: %w", context.Canceled),
+			kind:        classifyKindCustomer,
+			wantOutcome: "",
+			wantRetry:   true,
+		},
+		{
+			name:        "plain-string-404-is-not-an-answer",
+			err:         errors.New("upstream said 404"),
 			kind:        classifyKindCustomer,
 			wantOutcome: "",
 			wantRetry:   true,
