@@ -4,6 +4,45 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* Metric-adjusted fallbacks for the self-hosted type stack (src/app/layout.tsx
+   names them in each font's `fallback`). While a web font is still loading
+   (`font-display: swap`), text renders in the local system font scaled to the
+   web font's metrics, so the swap does not shift layout. The values are the
+   ones next/font/google generated for these families — keep them in step with
+   the files in src/fonts/. */
+@font-face {
+  font-family: 'Instrument Serif Fallback';
+  src: local('Times New Roman');
+  ascent-override: 117.94%;
+  descent-override: 36.93%;
+  line-gap-override: 0%;
+  size-adjust: 83.94%;
+}
+@font-face {
+  font-family: 'Syne Fallback';
+  src: local('Arial');
+  ascent-override: 93.93%;
+  descent-override: 27.93%;
+  line-gap-override: 0%;
+  size-adjust: 98.47%;
+}
+@font-face {
+  font-family: 'Outfit Fallback';
+  src: local('Arial');
+  ascent-override: 100.18%;
+  descent-override: 26.05%;
+  line-gap-override: 0%;
+  size-adjust: 99.82%;
+}
+@font-face {
+  font-family: 'JetBrains Mono Fallback';
+  src: local('Arial');
+  ascent-override: 75.79%;
+  descent-override: 22.29%;
+  line-gap-override: 0%;
+  size-adjust: 134.59%;
+}
+
 /* iPhone / iPad: prevent horizontal rubber-band scroll from full-bleed sections;
    keep form controls ≥16px so iOS does not auto-zoom on focus (Input/Textarea already use text-base). */
 html {
