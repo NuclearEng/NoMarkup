@@ -27,7 +27,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useAddEmployee } from '@/hooks/useEmployees';
-import { addEmployeeSchema, type AddEmployeeFormValues } from '@/lib/validations';
+import { addEmployeeSchema, type AddEmployeeFormValues } from '@/lib/schemas/provider';
 import { cn } from '@/lib/utils';
 
 const US_STATES = [

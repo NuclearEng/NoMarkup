@@ -41,10 +41,7 @@ import { getApiErrorMessage } from '@/lib/api';
 import { getAccessToken } from '@/lib/auth';
 import { scorePhotoQuality } from '@/lib/photo-quality';
 import { cn } from '@/lib/utils';
-import {
-  listingPostingSchema,
-  type ListingPostingFormValues,
-} from '@/lib/validations';
+import { listingPostingSchema, type ListingPostingFormValues } from '@/lib/schemas/listings';
 import { UPLOAD_CONTEXT } from '@/types';
 import type { CreateListingInput, ListingDurationHours } from '@/types';
 

@@ -21,7 +21,7 @@ import { ImageUpload } from '@/components/ui/ImageUpload';
 import { Textarea } from '@/components/ui/textarea';
 import { useCreateReview } from '@/hooks/useReviews';
 import { reviewDimensionsForDirection } from '@/lib/review-dimensions';
-import { reviewSchema, type ReviewFormValues } from '@/lib/validations';
+import { reviewSchema, type ReviewFormValues } from '@/lib/schemas/reviews';
 import { UPLOAD_CONTEXT, type CreateReviewInput } from '@/types';
 
 const MAX_REVIEW_PHOTOS = 5;

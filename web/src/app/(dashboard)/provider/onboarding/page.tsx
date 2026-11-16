@@ -65,12 +65,7 @@ import {
   PROVIDER_DOCUMENT_TYPES,
   type DocumentTypeConfig,
 } from '@/lib/provider-verification-docs';
-import {
-  businessInfoSchema,
-  globalTermsSchema,
-  type BusinessInfoFormValues,
-  type GlobalTermsFormValues,
-} from '@/lib/validations';
+import { businessInfoSchema, globalTermsSchema, type BusinessInfoFormValues, type GlobalTermsFormValues } from '@/lib/schemas/provider';
 
 const STEPS = [
   { title: 'Business Info', description: 'Tell us about your business' },

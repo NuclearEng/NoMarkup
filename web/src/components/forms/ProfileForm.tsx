@@ -21,7 +21,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useUpdateProfile } from '@/hooks/useProfile';
-import { profileSchema, type ProfileFormValues } from '@/lib/validations';
+import { profileSchema, type ProfileFormValues } from '@/lib/schemas/profile';
 import type { User } from '@/types';
 
 const US_TIMEZONES = [

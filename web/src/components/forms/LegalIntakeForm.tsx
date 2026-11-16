@@ -30,14 +30,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { useCategoryTree } from '@/hooks/useCategories';
 import { useCreateJob } from '@/hooks/useJobs';
-import {
-  LEGAL_CONTACT_PREFERENCE,
-  LEGAL_URGENCY,
-  legalIntakeSchema,
-  type LegalContactPreference,
-  type LegalIntakeFormValues,
-  type LegalUrgency,
-} from '@/lib/validations';
+import { LEGAL_CONTACT_PREFERENCE, LEGAL_URGENCY, legalIntakeSchema, type LegalContactPreference, type LegalIntakeFormValues, type LegalUrgency } from '@/lib/schemas/jobs';
 import { AUCTION_TYPE, SCHEDULE_TYPE, type CreateJobInput, type ServiceCategory } from '@/types';
 
 // 2-letter US state codes (+ DC). Mirrors the provider onboarding list so the

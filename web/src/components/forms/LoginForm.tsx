@@ -31,7 +31,7 @@ import { getApiErrorMessage } from '@/lib/api';
 import { BUYER_PAYS_AGREED_PRICE } from '@/lib/constants';
 import { messageForOAuthError } from '@/lib/oauth-errors';
 import { safeInternalPath } from '@/lib/safe-internal-path';
-import { loginSchema } from '@/lib/validations';
+import { loginSchema } from '@/lib/schemas/auth';
 import type * as z from '@/lib/zod-mini';
 import { useAuthStore, MFARequiredError } from '@/stores/auth-store';
 

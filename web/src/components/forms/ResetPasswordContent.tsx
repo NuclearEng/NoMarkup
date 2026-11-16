@@ -25,8 +25,7 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { api } from '@/lib/api';
-import { resetPasswordSchema } from '@/lib/validations';
-import type { ResetPasswordFormValues } from '@/lib/validations';
+import { resetPasswordSchema, type ResetPasswordFormValues } from '@/lib/schemas/auth';
 
 export function ResetPasswordContent() {
   const searchParams = useSearchParams();

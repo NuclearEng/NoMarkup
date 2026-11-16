@@ -30,7 +30,7 @@ import {
 } from '@/hooks/useQuoteTemplates';
 import { sendQuoteOpeningMessage } from '@/lib/quote-bid';
 import { cn, formatCents } from '@/lib/utils';
-import { bidSchema, type BidFormValues } from '@/lib/validations';
+import { bidSchema, type BidFormValues } from '@/lib/schemas/bids';
 import type { Bid, MarketRange } from '@/types';
 
 interface BidFormProps {
