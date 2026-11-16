@@ -15,8 +15,8 @@ import UIKit
 // Dark (showcase terminal, unchanged): navy `#07080b`, card `#14161e`,
 // gold `#c9a84c` / bright `#e4c566`, text `#e8ecf1` / `#8b949e`, green `#22c55e`.
 // Light (web `:root` product UI, warmed for the brand): paper `#f6f4ef`,
-// card `#ffffff`, raised `#edeae3`, navy ink `#14161e`, interactive gold
-// `#b89938` (AccentColor light), text-sized gold darkened to `#806316`
+// card `#ffffff`, raised `#edeae3`, navy ink `#14161e`, border gold
+// `#b89938`, text and chrome gold `#806316` (AccentColor light)
 // (showcase gold fails 4.5:1 on light — same reason the web keeps `gold-dim`).
 // Gold CTA fills stay literal showcase gold in BOTH modes (web parity:
 // `--brand-gold` is identical in light and dark).
@@ -40,7 +40,7 @@ enum BrandTheme {
         // Gold
         static let gold: UInt32 = 0xC9A84C // showcase --gold (fills, dark-mode accents)
         static let goldBrightHex: UInt32 = 0xE4C566 // showcase --gold-bright
-        static let goldLight: UInt32 = 0xB89938 // AccentColor light — interactive/border gold on light
+        static let goldLight: UInt32 = 0xB89938 // border / fill gold on light; chrome tint is AccentColor #806316
         static let goldTextLight: UInt32 = 0x806316 // text-sized gold on light (5.65 white / 5.14 paper / 4.71 raised)
         static let goldTextLightHC: UInt32 = 0x6B520F // 7.40 white / 6.73 paper / 6.16 raised
 
@@ -432,8 +432,9 @@ enum BrandTheme {
             lightIncreased: ui(P.textSecondaryLightHC),
             darkIncreased: ui(P.textSecondaryDarkHC)
         )
-        // Interactive gold — asset catalog is authoritative (light #b89938 / dark #c9a84c).
-        let goldUI = UIColor(named: "AccentColor") ?? ui(P.gold)
+        // Chrome tint. Light AccentColor is #806316 so tab and nav icons clear 4.5:1
+        // on paper. Gold fills that sit under navy ink stay on goldFill, not this asset.
+        let goldUI = UIColor(named: "AccentColor") ?? ui(P.goldTextLight)
         // Bar hairline shadows: strong on navy, soft on paper.
         let barShadowUI = dynamicUIColor(
             light: UIColor.black.withAlphaComponent(0.12),

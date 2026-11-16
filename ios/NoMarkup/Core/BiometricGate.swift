@@ -4,9 +4,9 @@ import LocalAuthentication
 /// Optional Face ID / Touch ID / device passcode gate for sensitive actions and app lock (IOS-SEC.7).
 ///
 /// Uses `deviceOwnerAuthentication` so users without enrolled biometrics can still
-/// authenticate with device passcode. When the device has **no** authentication at all,
-/// calls fail closed only when the preference is on and evaluation cannot run — otherwise
-/// we degrade gracefully (allow) so development / simulators without a passcode stay usable.
+/// authenticate with device passcode. When the device cannot evaluate that policy,
+/// `authenticate` returns false. The lock screen offers the account password and
+/// sign-out. `authenticateIfRequired` still skips the prompt when the lock is off.
 @MainActor
 enum BiometricGate {
     private static let preferenceKey = "com.nomarkup.security.requireBiometricForSensitive"
@@ -45,24 +45,46 @@ enum BiometricGate {
     }
 
     /// Always prompts (when possible). Use for explicit unlock / sensitive confirm.
-    /// - Returns: `true` on success; `false` on cancel/failure.
-    ///   If the device cannot evaluate policy at all, returns `true` (graceful fallback).
+    /// - Returns: `true` only when the system accepts the owner. Cancel, fallback,
+    ///   lockout, missing biometrics, a missing passcode, or a policy that cannot
+    ///   be evaluated all return `false` so the caller can offer the account password.
     static func authenticate(reason: String) async -> Bool {
         let context = LAContext()
-        context.localizedCancelTitle = "Cancel"
+        context.localizedCancelTitle = "Use Password"
         var error: NSError?
         guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) else {
-            // Simulator / no passcode: do not brick the product surface.
-            return true
+            return false
         }
 
         return await withCheckedContinuation { continuation in
             context.evaluatePolicy(
                 .deviceOwnerAuthentication,
                 localizedReason: reason
-            ) { success, _ in
-                continuation.resume(returning: success)
+            ) { success, evalError in
+                if success {
+                    continuation.resume(returning: true)
+                    return
+                }
+                let code = (evalError as? LAError)?.code ?? .authenticationFailed
+                // Every failure leaves the biometric prompt. The lock screen's
+                // password field is the way back in.
+                _ = routesToPasswordFallback(code)
+                continuation.resume(returning: false)
             }
+        }
+    }
+
+    /// Maps a LocalAuthentication failure onto the password fallback. Biometrics
+    /// are never the only way in.
+    static func routesToPasswordFallback(_ code: LAError.Code) -> Bool {
+        switch code {
+        case .userCancel, .userFallback, .systemCancel, .appCancel,
+             .biometryNotAvailable, .biometryNotEnrolled, .biometryLockout,
+             .passcodeNotSet, .invalidContext, .authenticationFailed,
+             .notInteractive:
+            return true
+        @unknown default:
+            return true
         }
     }
 

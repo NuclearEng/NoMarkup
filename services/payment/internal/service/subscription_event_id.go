@@ -1,7 +1,9 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 )
 
@@ -49,8 +51,8 @@ type stripeEventObject struct {
 }
 
 type stripePriceCarrier struct {
-	Price flexStripeID `json:"price"`
-	Plan  flexStripeID `json:"plan"`
+	Price   flexStripeID `json:"price"`
+	Plan    flexStripeID `json:"plan"`
 	Pricing struct {
 		PriceDetails struct {
 			Price string `json:"price"`
@@ -210,6 +212,21 @@ func PriceIDForTierSyncFromStripeObject(eventType string, objectJSON []byte) str
 // PriceIDForTierSyncFromStripeEvent reads the price id from a full event body.
 func PriceIDForTierSyncFromStripeEvent(eventType string, payload []byte) string {
 	return PriceIDForTierSyncFromStripeObject(eventType, stripeEventObjectJSON(payload))
+}
+
+// ClaimStripeEvent reports whether eventID was already handled or is in flight.
+// Callers must run stripe.webhooks.constructEvent() before this code.
+func (s *SubscriptionService) ClaimStripeEvent(ctx context.Context, eventID, eventType string) (bool, error) {
+	if strings.TrimSpace(eventID) == "" {
+		return false, fmt.Errorf("stripe event id is required")
+	}
+	return s.repo.ClaimStripeEvent(ctx, eventID, eventType)
+}
+
+// FinishStripeEvent stamps eventID after its side effects land.
+// Callers must run stripe.webhooks.constructEvent() before this code.
+func (s *SubscriptionService) FinishStripeEvent(ctx context.Context, eventID string) error {
+	return s.repo.FinishStripeEvent(ctx, eventID)
 }
 
 func stripeEventObjectJSON(payload []byte) []byte {

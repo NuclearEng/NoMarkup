@@ -86,7 +86,11 @@ struct RegisterView: View {
 
     private var formFields: some View {
         VStack(spacing: 12) {
-            TextField("Display name", text: $displayName)
+            Text("Display name")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(BrandTheme.textSecondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            TextField("How you appear to others", text: $displayName)
                 .textContentType(.name)
                 .textInputAutocapitalization(.words)
                 .autocorrectionDisabled()
@@ -100,7 +104,11 @@ struct RegisterView: View {
                 .accessibilityLabel("Display name")
                 .accessibilityIdentifier("register.displayName")
 
-            TextField("Email", text: $email)
+            Text("Email")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(BrandTheme.textSecondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            TextField("name@example.com", text: $email)
                 .textContentType(.emailAddress)
                 .keyboardType(.emailAddress)
                 .textInputAutocapitalization(.never)
@@ -115,7 +123,11 @@ struct RegisterView: View {
                 .accessibilityLabel("Email")
                 .accessibilityIdentifier("register.email")
 
-            SecureField("Password", text: $password)
+            Text("Password")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(BrandTheme.textSecondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            SecureField("At least 8 characters", text: $password)
                 .textContentType(.newPassword)
                 .foregroundStyle(BrandTheme.textPrimary)
                 .padding(14)
@@ -127,7 +139,16 @@ struct RegisterView: View {
                 .accessibilityLabel("Password")
                 .accessibilityIdentifier("register.password")
 
-            SecureField("Confirm password", text: $confirmPassword)
+            Text("At least 8 characters with letters and a number or symbol.")
+                .font(.caption)
+                .foregroundStyle(BrandTheme.textSecondary.opacity(0.9))
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            Text("Confirm password")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(BrandTheme.textSecondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            SecureField("Repeat your password", text: $confirmPassword)
                 .textContentType(.newPassword)
                 .foregroundStyle(BrandTheme.textPrimary)
                 .padding(14)
@@ -138,10 +159,6 @@ struct RegisterView: View {
                 .onSubmit { Task { await submit() } }
                 .accessibilityLabel("Confirm password")
                 .accessibilityIdentifier("register.confirmPassword")
-
-            Text("At least 8 characters with letters and a number or symbol.")
-                .font(.caption)
-                .foregroundStyle(BrandTheme.textSecondary.opacity(0.9))
         }
     }
 

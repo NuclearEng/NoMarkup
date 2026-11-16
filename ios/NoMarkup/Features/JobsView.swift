@@ -557,6 +557,8 @@ struct JobsView: View {
         case .browse:
             do {
                 try await loadOpenBrowse(reset: reset, pageSize: pageSize)
+            } catch is CancellationError {
+                return
             } catch {
                 if reset, jobs.isEmpty {
                     errorMessage = error.localizedDescription
@@ -586,6 +588,8 @@ struct JobsView: View {
                     myJobs.append(contentsOf: response.jobs.filter { !existing.contains($0.id) })
                 }
                 myPagination = response.pagination
+            } catch is CancellationError {
+                return
             } catch let error as APIClientError where error.isUnauthorized {
                 if reset {
                     myJobs = []

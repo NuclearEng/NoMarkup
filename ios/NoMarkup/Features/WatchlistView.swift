@@ -61,7 +61,7 @@ struct WatchlistView: View {
             BrandEmptyState(
                 title: "No watched listings",
                 systemImage: "heart.circle",
-                message: "Tap the heart on a marketplace listing to watch it. Closing-soon and outbid alerts use this list."
+                message: "Tap Add to watchlist (heart) on a listing. Closing-soon and outbid alerts use this list."
             )
         } else {
             List {

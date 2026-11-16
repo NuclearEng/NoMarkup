@@ -183,6 +183,14 @@ type OAuthInput struct {
 	AvatarURL  string
 }
 
+// AppleRefreshToken is a stored Sign in with Apple refresh token.
+// RefreshToken is plaintext only after decryption. ClientID is the audience
+// used when the code was exchanged (bundle id or Services ID).
+type AppleRefreshToken struct {
+	ClientID     string
+	RefreshToken string
+}
+
 // RegisterInput holds the data needed to register a new user.
 type RegisterInput struct {
 	Email       string

@@ -18,6 +18,24 @@ struct ClientActionLogView: View {
     var body: some View {
         Group {
             VStack(alignment: .leading, spacing: 4) {
+                Toggle("Record activity on this device", isOn: Binding(
+                    get: { log.recordingEnabled },
+                    set: { log.setRecordingEnabled($0) }
+                ))
+                .accessibilityIdentifier("requestLog.recordingToggle")
+                if log.recordingEnabled {
+                    Text("Activity recording is on. This device keeps recent taps and API paths until you turn it off.")
+                        .font(.caption)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("requestLog.recordingOn")
+                } else {
+                    Text("Activity recording is off. Turn it on to keep recent taps and API paths on this device.")
+                        .font(.caption)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("requestLog.recordingOff")
+                }
                 Text("HTTP hops: \(httpCount)")
                     .font(.caption.monospaced())
                     .foregroundStyle(BrandTheme.textSecondary)

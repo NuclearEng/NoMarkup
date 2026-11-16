@@ -613,7 +613,7 @@ struct JobDetailView: View {
         } message: {
             Text("You won’t see their messages. You can unblock later from Blocked users.")
         }
-        .sheet(isPresented: $showWebSafari) {
+        .fullScreenCover(isPresented: $showWebSafari) {
             NavigationStack {
                 LegalWebView(title: "Job on web", url: webJobURL)
                     .toolbar {

@@ -1159,6 +1159,16 @@ func TestPaymentService_CreatePayment(t *testing.T) {
 
 			var storedPayment *domain.Payment
 			repo := &mockPaymentRepo{
+				getContractForPaymentFn: func(_ context.Context, contractID string) (*domain.ContractForPayment, error) {
+					amount := tt.input.AmountCents
+					if amount <= 0 {
+						amount = 10000
+					}
+					return &domain.ContractForPayment{
+						ID: contractID, CustomerID: "cust-1", ProviderID: "prov-1",
+						AmountCents: amount, Status: "active",
+					}, nil
+				},
 				getDefaultFeeConfigFn: func(_ context.Context) (*domain.FeeConfig, error) {
 					return defaultFeeConfig(), nil
 				},
@@ -1262,6 +1272,12 @@ func TestPaymentService_CreatePayment_LeadGenLedgerReconciles(t *testing.T) {
 
 	var stored *domain.Payment
 	repo := &mockPaymentRepo{
+		getContractForPaymentFn: func(_ context.Context, contractID string) (*domain.ContractForPayment, error) {
+			return &domain.ContractForPayment{
+				ID: contractID, CustomerID: "cust-1", ProviderID: "prov-1",
+				AmountCents: 10000, Status: "active",
+			}, nil
+		},
 		getDefaultFeeConfigFn: func(_ context.Context) (*domain.FeeConfig, error) {
 			return &domain.FeeConfig{
 				ID:                  "fc-leadgen",

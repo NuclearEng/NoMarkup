@@ -55,6 +55,28 @@ enum AuctionLiveActivityController {
         for activity in Activity<AuctionActivityAttributes>.activities
             where activity.attributes.auctionID == auctionID
         {
+            if let started = activityStartedAt(auctionID),
+               Date().timeIntervalSince(started) >= Self.systemLifetimeLimit {
+                let activityID = activity.id
+                let restartTitle = attributes.title
+                let restartKind = kind
+                let restartCents = leadingBidCents
+                let restartEnds = endsAt
+                Task { @MainActor in
+                    let matches = Activity<AuctionActivityAttributes>.activities.filter { $0.id == activityID }
+                    guard let live = matches.first else { return }
+                    await ActivityUpdateBox(activity: live).endImmediate(live.content.state)
+                    clearActivityStarted(auctionID)
+                    startOrUpdate(
+                        auctionID: auctionID,
+                        title: restartTitle,
+                        kind: restartKind,
+                        leadingBidCents: restartCents,
+                        endsAt: restartEnds
+                    )
+                }
+                return
+            }
             let content = ActivityContent(state: state, staleDate: endsAt)
             // Activity is not Sendable under Swift 6; hop via id + nonisolated update task.
             let activityID = activity.id
@@ -84,6 +106,7 @@ enum AuctionLiveActivityController {
                 content: content,
                 pushType: .token
             )
+            markActivityStarted(auctionID)
             observePushToken(activityID: activity.id, auctionID: auctionID)
             WidgetSharedStore.recordActiveAuction(
                 id: auctionID,
@@ -102,6 +125,7 @@ enum AuctionLiveActivityController {
                     content: content,
                     pushType: nil
                 )
+                markActivityStarted(auctionID)
                 WidgetSharedStore.recordActiveAuction(
                     id: auctionID,
                     title: attributes.title,
@@ -223,8 +247,9 @@ enum AuctionLiveActivityController {
                     // Keep the outcome card visible briefly, then let the system dismiss.
                     await box.end(content, dismissalPolicy: .after(Date().addingTimeInterval(15 * 60)))
                 } else {
-                    await box.endImmediate()
+                    await box.endImmediate(live.content.state)
                 }
+                clearActivityStarted(auctionID)
             }
         }
         WidgetSharedStore.removeAuction(id: auctionID)
@@ -257,7 +282,8 @@ enum AuctionLiveActivityController {
             Task { @MainActor in
                 let matches = Activity<AuctionActivityAttributes>.activities.filter { $0.id == activityID }
                 guard let live = matches.first else { return }
-                await ActivityUpdateBox(activity: live).endImmediate()
+                await ActivityUpdateBox(activity: live).endImmediate(live.content.state)
+                clearActivityStarted(auctionID)
             }
         }
         return ids
@@ -280,11 +306,65 @@ enum AuctionLiveActivityController {
             Task { @MainActor in
                 let matches = Activity<AuctionActivityAttributes>.activities.filter { $0.id == activityID }
                 guard let live = matches.first else { return }
-                await ActivityUpdateBox(activity: live).endImmediate()
+                await ActivityUpdateBox(activity: live).endImmediate(live.content.state)
+                clearActivityStarted(auctionID)
             }
             WidgetSharedStore.removeAuction(id: auctionID)
         }
         #endif
+    }
+
+    /// End and recreate any auction activity that is near ActivityKit's 8 hour limit.
+    static func maintainSystemLifetime() {
+        #if canImport(ActivityKit)
+        let now = Date()
+        for activity in Activity<AuctionActivityAttributes>.activities {
+            let auctionID = activity.attributes.auctionID
+            guard activity.content.state.endsAt > now else { continue }
+            guard let started = activityStartedAt(auctionID) else {
+                markActivityStarted(auctionID)
+                continue
+            }
+            guard now.timeIntervalSince(started) >= systemLifetimeLimit else { continue }
+            let activityID = activity.id
+            let title = activity.attributes.title
+            let kind = activity.attributes.kind
+            let state = activity.content.state
+            Task { @MainActor in
+                let matches = Activity<AuctionActivityAttributes>.activities.filter { $0.id == activityID }
+                guard let live = matches.first else { return }
+                await ActivityUpdateBox(activity: live).endImmediate(live.content.state)
+                clearActivityStarted(auctionID)
+                startOrUpdate(
+                    auctionID: auctionID,
+                    title: title,
+                    kind: kind,
+                    leadingBidCents: state.leadingBidCents,
+                    endsAt: state.endsAt
+                )
+            }
+        }
+        #endif
+    }
+
+    private static let systemLifetimeLimit: TimeInterval = 7 * 60 * 60
+
+    private static func startStampKey(_ auctionID: String) -> String {
+        "nomarkup.liveActivity.started." + auctionID
+    }
+
+    private static func markActivityStarted(_ auctionID: String) {
+        UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: startStampKey(auctionID))
+    }
+
+    private static func clearActivityStarted(_ auctionID: String) {
+        UserDefaults.standard.removeObject(forKey: startStampKey(auctionID))
+    }
+
+    private static func activityStartedAt(_ auctionID: String) -> Date? {
+        let raw = UserDefaults.standard.double(forKey: startStampKey(auctionID))
+        guard raw > 0 else { return nil }
+        return Date(timeIntervalSince1970: raw)
     }
 
     // MARK: - Live Activity push tokens (IOS-SYS.LA.3)
@@ -338,8 +418,16 @@ private struct ActivityUpdateBox: @unchecked Sendable {
         await activity.update(content)
     }
 
-    func endImmediate() async {
-        await activity.end(nil, dismissalPolicy: .immediate)
+    func endImmediate(_ state: AuctionActivityAttributes.ContentState) async {
+        var final = state
+        if final.outcome == nil || final.outcome?.isEmpty == true {
+            final.outcome = "ended"
+        }
+        if final.endsAt > Date() {
+            final.endsAt = Date()
+        }
+        let content = ActivityContent(state: final, staleDate: nil)
+        await activity.end(content, dismissalPolicy: .immediate)
     }
 
     func end(

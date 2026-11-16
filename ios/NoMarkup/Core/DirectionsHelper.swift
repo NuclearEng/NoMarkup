@@ -135,16 +135,10 @@ enum DirectionsHelper {
         appleMapsURL(address: address) ?? googleMapsURL(address: address)
     }
 
-    /// Ordered candidates: Google Maps app scheme (if built), then Apple Maps HTTPS.
+    /// Apple Maps only. `googleMapsAppURL` remains for an explicit caller.
     static func directionsURLCandidates(address: String) -> [URL] {
-        var urls: [URL] = []
-        if let google = googleMapsAppURL(address: address) {
-            urls.append(google)
-        }
-        if let apple = appleMapsURL(address: address) {
-            urls.append(apple)
-        }
-        return urls
+        guard let apple = appleMapsURL(address: address) else { return [] }
+        return [apple]
     }
 
     /// `MKMapItem` named with the address (no precise lat/lng — avoid leaking pins).
@@ -156,36 +150,15 @@ enum DirectionsHelper {
 
     // MARK: Open
 
-    /// Prefer Google Maps app when `canOpenURL` succeeds; otherwise Apple Maps.
+    /// Open driving directions in Apple Maps.
     @MainActor
     static func openDirections(address: String, openURL: ((URL) -> Void)? = nil) {
-        let candidates = directionsURLCandidates(address: address)
-        guard !candidates.isEmpty else { return }
-
-        #if canImport(UIKit)
-        let open: (URL) -> Void = { url in
-            if let openURL {
-                openURL(url)
-            } else {
-                UIApplication.shared.open(url, options: [:], completionHandler: nil)
-            }
-        }
-        for url in candidates {
-            if url.scheme == "comgooglemaps" {
-                if UIApplication.shared.canOpenURL(url) {
-                    open(url)
-                    return
-                }
-                continue
-            }
-            open(url)
+        if openURL == nil {
+            openInAppleMaps(address: address)
             return
         }
-        #else
-        if let first = candidates.last ?? candidates.first {
-            openURL?(first)
-        }
-        #endif
+        guard let apple = appleMapsURL(address: address) else { return }
+        openURL?(apple)
     }
 
     /// Open Apple Maps via `MKMapItem` (driving directions).

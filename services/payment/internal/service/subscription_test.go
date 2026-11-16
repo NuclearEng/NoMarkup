@@ -28,6 +28,8 @@ type mockSubRepo struct {
 	getUsageFn               func(ctx context.Context, userID string) (int32, int32, int32, error)
 	updateTierFn             func(ctx context.Context, tierID string, updates map[string]interface{}) (*domain.SubscriptionTier, error)
 	adminListSubscriptionsFn func(ctx context.Context, statusFilter, tierID string, page, pageSize int) ([]*domain.Subscription, int, int64, error)
+	claimStripeEventFn       func(ctx context.Context, eventID, eventType string) (bool, error)
+	finishStripeEventFn      func(ctx context.Context, eventID string) error
 }
 
 func (m *mockSubRepo) ListTiers(ctx context.Context) ([]*domain.SubscriptionTier, error) {
@@ -90,6 +92,20 @@ func (m *mockSubRepo) AdminListSubscriptions(ctx context.Context, statusFilter, 
 		return m.adminListSubscriptionsFn(ctx, statusFilter, tierID, page, pageSize)
 	}
 	return nil, 0, 0, nil
+}
+
+func (m *mockSubRepo) ClaimStripeEvent(ctx context.Context, eventID, eventType string) (bool, error) {
+	if m.claimStripeEventFn != nil {
+		return m.claimStripeEventFn(ctx, eventID, eventType)
+	}
+	return false, nil
+}
+
+func (m *mockSubRepo) FinishStripeEvent(ctx context.Context, eventID string) error {
+	if m.finishStripeEventFn != nil {
+		return m.finishStripeEventFn(ctx, eventID)
+	}
+	return nil
 }
 
 // --- helpers ---

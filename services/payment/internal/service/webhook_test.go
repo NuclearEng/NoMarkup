@@ -295,16 +295,18 @@ type payoutNotifyRecorder struct {
 	userID string
 	typ    notificationv1.NotificationType
 	title  string
+	body   string
 	calls  int
 	err    error
 }
 
 func (r *payoutNotifyRecorder) Send(_ context.Context, userID string, typ notificationv1.NotificationType,
-	title, _, _ string, _ map[string]string) error {
+	title, body, _ string, _ map[string]string) error {
 	r.calls++
 	r.userID = userID
 	r.typ = typ
 	r.title = title
+	r.body = body
 	return r.err
 }
 
@@ -344,6 +346,8 @@ func TestHandleWebhook_PayoutEvents(t *testing.T) {
 		assert.Equal(t, "provider-1", rec.userID)
 		assert.Equal(t, notificationv1.NotificationType_NOTIFICATION_TYPE_PAYOUT_SENT, rec.typ)
 		assert.Equal(t, "Payout sent", rec.title)
+		assert.NotContains(t, rec.body, "$")
+		assert.NotContains(t, rec.body, "125")
 	})
 
 	t.Run("failed_notifies_payment_failed", func(t *testing.T) {
@@ -370,7 +374,9 @@ func TestHandleWebhook_PayoutEvents(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, 1, rec.calls)
 		assert.Equal(t, notificationv1.NotificationType_NOTIFICATION_TYPE_PAYMENT_FAILED, rec.typ)
-		assert.Equal(t, "Payout failed", rec.title)
+		assert.Equal(t, "Payout update", rec.title)
+		assert.NotContains(t, rec.body, "$")
+		assert.NotContains(t, rec.body, "could_not_process")
 	})
 
 	t.Run("canceled_notifies_payment_failed", func(t *testing.T) {

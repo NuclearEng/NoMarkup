@@ -21,12 +21,14 @@ struct AuctionLiveActivityWidget: Widget {
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.white)
                         .lineLimit(2)
+                        .privacySensitive()
                 }
                 Spacer(minLength: 8)
                 VStack(alignment: .trailing, spacing: 4) {
                     Text(MoneyCentsFormat.usd(cents: context.state.leadingBidCents))
                         .font(.headline.monospacedDigit())
                         .foregroundStyle(.white)
+                        .privacySensitive()
                     if context.state.outcome == nil, context.state.endsAt > Date() {
                         Text(timerInterval: Date()...context.state.endsAt, countsDown: true)
                             .font(.caption.monospacedDigit())
@@ -64,6 +66,7 @@ struct AuctionLiveActivityWidget: Widget {
                 DynamicIslandExpandedRegion(.trailing) {
                     Text(MoneyCentsFormat.usd(cents: context.state.leadingBidCents))
                         .font(.caption.monospacedDigit().weight(.semibold))
+                        .privacySensitive()
                         .accessibilityLabel(Text(
                             "Leading bid \(MoneyCentsFormat.usd(cents: context.state.leadingBidCents))"
                         ))
@@ -72,6 +75,7 @@ struct AuctionLiveActivityWidget: Widget {
                     Text(context.attributes.title)
                         .font(.caption.weight(.semibold))
                         .lineLimit(1)
+                        .privacySensitive()
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     if context.state.outcome == nil, context.state.endsAt > Date() {

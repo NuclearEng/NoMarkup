@@ -2570,7 +2570,8 @@ struct ContractDetailView: View {
                 return
             }
 
-            // 3) Capture → escrow (sticky process-payment:{id}).
+            // 3) Server capture. The sheet result is not fulfillment.
+            statusMessage = "Confirming payment…"
             let held = try await APIClient.shared.processContractPayment(paymentId: created.id)
             await APIClient.shared.clearCreateContractPaymentIdempotency(
                 contractId: contract.id,
@@ -2584,8 +2585,10 @@ struct ContractDetailView: View {
             }
             statusIsError = false
             payEscrowError = nil
-            statusMessage =
-                "Payment complete — \(held.displayAmount) is held in escrow. Release after you approve the work."
+            statusMessage = escrowStatusMessage(
+                for: held,
+                held: "Payment confirmed — \(held.displayAmount) is held in escrow. Release after you approve the work."
+            )
             await refreshSideData()
         } catch let error as RailACheckout.CheckoutError where error.isCanceled {
             statusIsError = false
@@ -2812,12 +2815,15 @@ struct ContractDetailView: View {
                 return
             }
 
+            statusMessage = "Confirming payment…"
             let held = try await APIClient.shared.processContractPayment(paymentId: created.id)
             upsertContractPayment(held)
             pendingRecurringPay = nil
             statusIsError = false
-            statusMessage =
-                "Visit paid — \(held.displayAmount) held in escrow. Release after work is done."
+            statusMessage = escrowStatusMessage(
+                for: held,
+                held: "Payment confirmed — \(held.displayAmount) is held in escrow. Release after work is done."
+            )
             await refreshSideData()
         } catch let error as RailACheckout.CheckoutError where error.isCanceled {
             statusIsError = false
@@ -2942,12 +2948,15 @@ struct ContractDetailView: View {
                 }
             }
 
+            statusMessage = "Confirming payment…"
             let held = try await APIClient.shared.processContractPayment(paymentId: paymentId)
             upsertContractPayment(held)
             pendingRecurringPay = nil
             statusIsError = false
-            statusMessage =
-                "Visit paid — \(held.displayAmount) held in escrow. Release after work is done."
+            statusMessage = escrowStatusMessage(
+                for: held,
+                held: "Payment confirmed — \(held.displayAmount) is held in escrow. Release after work is done."
+            )
             await refreshSideData()
         } catch let error as RailACheckout.CheckoutError where error.isCanceled {
             // Keep pendingRecurringPay so Pay CTA remains.
@@ -2962,6 +2971,14 @@ struct ContractDetailView: View {
             statusMessage = error.localizedDescription
             await refreshSideData()
         }
+    }
+
+    /// The sheet callback is not fulfillment. Copy follows the payment row.
+    private func escrowStatusMessage(for payment: ContractPayment, held: String) -> String {
+        if payment.isHeldInEscrow || payment.isReleased {
+            return held
+        }
+        return "Payment submitted. Escrow updates when the server records the charge."
     }
 
     private func upsertContractPayment(_ payment: ContractPayment) {

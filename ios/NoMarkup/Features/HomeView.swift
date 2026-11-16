@@ -1,7 +1,4 @@
 import SwiftUI
-#if canImport(UIKit)
-import UIKit
-#endif
 
 /// Product home — reverse-auction first, materials-first (not scaffold marketing).
 struct HomeView: View {
@@ -10,15 +7,10 @@ struct HomeView: View {
     /// A11Y.3: solid hairline divider under Reduce Transparency.
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
-    /// iPhone 17e-class (~844pt tall, ~390pt wide). Pro Max (~932pt) already
-    /// clears Market Desk + LIVE NOW / GOODS LIVE above the floating tab.
-    private var usesCompactHomeChrome: Bool {
-        #if canImport(UIKit)
-        UIScreen.main.bounds.height < 880
-        #else
-        false
-        #endif
-    }
+    /// Tightens hero spacing when the window itself is short. Reads the scroll
+    /// view's height, so a fold, Split View, or rotation updates it. Not the
+    /// device screen and not a model name.
+    @State private var usesCompactHomeChrome = false
 
     @State private var healthOK: Bool?
     @State private var isChecking = false
@@ -75,6 +67,17 @@ struct HomeView: View {
                 .brandReadableWidth()
             }
             .brandScreenBackground()
+            .background {
+                GeometryReader { proxy in
+                    Color.clear.preference(key: HomeChromeHeightKey.self, value: proxy.size.height)
+                }
+            }
+            .onPreferenceChange(HomeChromeHeightKey.self) { height in
+                let compact = height > 0 && height < 760
+                if compact != usesCompactHomeChrome {
+                    usesCompactHomeChrome = compact
+                }
+            }
             // Floating tab capsule (~80pt) is not in the scroll safe area on iOS 26.
             // Compact phones also tighten hero spacing so desk + stats clear it on first paint.
             .brandTabBarClearance()
@@ -1270,6 +1273,7 @@ private struct HomeListingCard: View {
     let listing: ListingSummary
     /// A11Y.2 — scale thumbnail frame with Dynamic Type.
     @ScaledMetric(relativeTo: .body) private var thumbSize: CGFloat = 48
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     private var isAuctionLive: Bool {
         let status = (listing.status ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -1293,7 +1297,7 @@ private struct HomeListingCard: View {
         HStack(alignment: .center, spacing: 14) {
             // Thumb — warm glass well, gold bag (no cool gray/purple cast).
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(.ultraThinMaterial)
+                .fill(reduceTransparency ? AnyShapeStyle(BrandTheme.surfaceRaised) : AnyShapeStyle(.ultraThinMaterial))
                 .overlay {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .fill(BrandTheme.gold.opacity(0.08))
@@ -1390,6 +1394,13 @@ private struct HomeListingCard: View {
 /// Home post / sell actions. iOS 26 uses Liquid Glass; earlier releases keep the
 /// existing ghost or plain style. Empty-state post stays `brandPrimaryButton()` —
 /// no glass on empty content.
+private struct HomeChromeHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
 private struct HomePostSellCTAModifier: ViewModifier {
     enum Legacy {
         case ghost

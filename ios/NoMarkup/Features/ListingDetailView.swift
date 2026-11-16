@@ -1,6 +1,5 @@
 import AppIntents
 import CoreSpotlight
-import PassKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -16,6 +15,7 @@ struct ListingDetailView: View {
 
     @EnvironmentObject private var auth: AuthViewModel
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     @State private var detail: ListingDetail?
     @State private var isLoading = false
@@ -60,6 +60,7 @@ struct ListingDetailView: View {
 
     @State private var isBuyingNow = false
     @State private var buyNowStatusMessage: String?
+    @State private var pendingGoodsCharge: GoodsChargeBreakdown?
     @State private var buyNowStatusIsError = false
 
     @State private var isWatching = false
@@ -227,7 +228,7 @@ struct ListingDetailView: View {
                 showReportSheet = false
             }
         }
-        .sheet(isPresented: $showWebSafari) {
+        .fullScreenCover(isPresented: $showWebSafari) {
             NavigationStack {
                 LegalWebView(title: "Listing on web", url: webListingURL)
                     .toolbar {
@@ -237,6 +238,26 @@ struct ListingDetailView: View {
                         }
                     }
             }
+        }
+        .alert(
+            "Review payment",
+            isPresented: Binding(
+                get: { pendingGoodsCharge != nil },
+                set: { if !$0 { pendingGoodsCharge = nil } }
+            ),
+            presenting: pendingGoodsCharge
+        ) { charge in
+            Button("Pay \(MoneyFormat.usd(cents: charge.totalCents))") {
+                let snapshot = charge
+                pendingGoodsCharge = nil
+                Task { await confirmReviewedGoodsCharge(snapshot) }
+            }
+            Button("Not now", role: .cancel) {
+                noteGoodsChargeDeferred(charge)
+                pendingGoodsCharge = nil
+            }
+        } message: { charge in
+            Text(charge.summary)
         }
         .alert("Bid bond required", isPresented: $showBidBondAlert) {
             Button("Post bond") {
@@ -344,7 +365,13 @@ struct ListingDetailView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(.ultraThinMaterial)
+        .background {
+            if reduceTransparency {
+                BrandTheme.surfaceRaised
+            } else {
+                Rectangle().fill(.ultraThinMaterial)
+            }
+        }
         .overlay(alignment: .top) {
             Rectangle()
                 .fill(BrandTheme.gold.opacity(0.25))
@@ -1227,7 +1254,7 @@ struct ListingDetailView: View {
 
             Section {
                 if !auth.isAuthenticated {
-                    Text("Sign in to buy now with Apple Pay.")
+                    Text("Sign in to buy now.")
                         .font(.footnote)
                         .foregroundStyle(BrandTheme.textSecondary)
                 } else if auth.isScaffoldSession {
@@ -1245,9 +1272,10 @@ struct ListingDetailView: View {
                         .font(.footnote)
                         .foregroundStyle(BrandTheme.textSecondary)
                 } else {
-                    Text("Pays \(priceLabel) via Apple Pay (or card). Funds are held in escrow until you confirm pickup. Local pickup only.")
+                    Text("The next step shows the item price, fee, tax, and total before checkout. Funds stay in escrow until you confirm pickup. Local pickup only.")
                         .font(.footnote)
                         .foregroundStyle(BrandTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
                     Text(Self.buyerPaysAgreedPriceLine)
                         .font(.footnote)
                         .foregroundStyle(BrandTheme.textSecondary)
@@ -1270,14 +1298,17 @@ struct ListingDetailView: View {
                             .frame(maxWidth: .infinity, minHeight: 44)
                             .accessibilityLabel("Processing buy now")
                     } else {
-                        PayWithApplePayButton(.buy) {
+                        Button {
                             Task { await buyNow() }
+                        } label: {
+                            Label("Buy now \(priceLabel)", systemImage: "creditcard.fill")
+                                .frame(maxWidth: .infinity, minHeight: 44)
                         }
-                        .frame(maxWidth: .infinity, minHeight: 44)
-                        .payWithApplePayButtonStyle(.automatic)
+                        .buttonStyle(.borderedProminent)
+                        .tint(BrandTheme.accent)
                         .disabled(isPlacingBid || isPostingBond)
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Buy now with Apple Pay")
+                        .accessibilityLabel("Buy now \(priceLabel)")
+                        .accessibilityHint("Shows the item, fee, tax, and total before checkout")
                         .accessibilityIdentifier("listingDetail.buyNow")
                     }
                 }
@@ -1914,6 +1945,67 @@ struct ListingDetailView: View {
     }
 
     @MainActor
+    private func noteGoodsChargeDeferred(_ charge: GoodsChargeBreakdown) {
+        let message = "Payment not started. Finish under Account → Orders."
+        switch charge.context {
+        case .buyNow:
+            buyNowStatusIsError = false
+            buyNowStatusMessage = message
+        case .offer:
+            offerStatusIsError = false
+            offerStatusMessage = message
+        case .order:
+            break
+        }
+    }
+
+    @MainActor
+    private func confirmReviewedGoodsCharge(_ charge: GoodsChargeBreakdown) async {
+        isBuyingNow = true
+        defer { isBuyingNow = false }
+        do {
+            try await RailACheckout.presentPaymentSheet(clientSecret: charge.clientSecret)
+            switch charge.context {
+            case .buyNow:
+                buyNowStatusIsError = false
+                buyNowStatusMessage = "Confirming payment…"
+                await load()
+                buyNowStatusMessage = await goodsEscrowStatusMessage(orderId: charge.orderId)
+            case .offer:
+                offerStatusIsError = false
+                offerStatusMessage = "Confirming payment…"
+                offerStatusMessage = await goodsEscrowStatusMessage(orderId: charge.orderId)
+            case .order:
+                break
+            }
+        } catch let error as RailACheckout.CheckoutError where error.isCanceled {
+            let message = "Payment canceled. If an order was created, finish paying under Account → Orders."
+            switch charge.context {
+            case .buyNow:
+                buyNowStatusIsError = false
+                buyNowStatusMessage = message
+                await load()
+            case .offer:
+                offerStatusIsError = false
+                offerStatusMessage = message
+            case .order:
+                break
+            }
+        } catch {
+            switch charge.context {
+            case .buyNow:
+                buyNowStatusIsError = true
+                buyNowStatusMessage = error.localizedDescription
+            case .offer:
+                offerStatusIsError = true
+                offerStatusMessage = error.localizedDescription
+            case .order:
+                break
+            }
+        }
+    }
+
+    @MainActor
     private func buyNow() async {
         buyNowStatusMessage = nil
         buyNowStatusIsError = false
@@ -1932,12 +2024,10 @@ struct ListingDetailView: View {
             let response = try await APIClient.shared.buyNow(listingId: listingID)
             let envelope = response.envelope
 
-            if let secret = envelope.clientSecret, envelope.hasConfirmableSecret {
-                try await RailACheckout.presentPaymentSheet(clientSecret: secret)
+            if let charge = GoodsChargeBreakdown(envelope: envelope, context: .buyNow) {
+                pendingGoodsCharge = charge
                 buyNowStatusIsError = false
-                buyNowStatusMessage =
-                    "Payment complete — order \(response.orderId ?? "") is held in escrow until pickup."
-                await load()
+                buyNowStatusMessage = "Review the item, fee, tax, and total before paying."
                 return
             }
 
@@ -1946,10 +2036,10 @@ struct ListingDetailView: View {
                 buyNowStatusIsError = true
                 if let chargeError = response.chargeError, !chargeError.isEmpty {
                     buyNowStatusMessage =
-                        "Order \(orderId) created, but payment could not start (\(chargeError)). Open Account → Orders to pay with Apple Pay."
+                        "Order \(orderId) created, but payment could not start (\(chargeError)). Open Account → Orders to pay."
                 } else {
                     buyNowStatusMessage =
-                        "Order \(orderId) created and awaits payment. Open Account → Orders to pay with Apple Pay."
+                        "Order \(orderId) created and awaits payment. Open Account → Orders to pay."
                 }
                 await load()
                 return
@@ -2241,6 +2331,20 @@ struct ListingDetailView: View {
     }
 
     @MainActor
+    /// Reads the order after PaymentSheet. The sheet callback is not fulfillment.
+    private func goodsEscrowStatusMessage(orderId: String?) async -> String {
+        let id = orderId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let pending = id.isEmpty
+            ? "Payment submitted. Escrow is recorded when the server confirms the charge. Check Account → Orders."
+            : "Payment submitted for order \(id). Escrow is recorded when the server confirms the charge. Check Account → Orders."
+        guard !id.isEmpty else { return pending }
+        guard let response = try? await APIClient.shared.fetchMyOrders() else { return pending }
+        if response.orders.contains(where: { $0.id == id && $0.serverRecordsEscrow }) {
+            return "Payment confirmed — order \(id) is held in escrow until pickup."
+        }
+        return pending
+    }
+
     private func load() async {
         isLoading = detail == nil
         errorMessage = nil
@@ -2366,21 +2470,10 @@ struct ListingDetailView: View {
                 // Buyer accepting a counter may receive their own PI secret — pay now.
                 // Seller accepting never receives client_secret (gateway withholding).
                 let envelope = response.envelope
-                if let secret = envelope.clientSecret, envelope.hasConfirmableSecret {
-                    do {
-                        try await RailACheckout.presentPaymentSheet(clientSecret: secret)
-                        offerStatusIsError = false
-                        offerStatusMessage =
-                            "Payment complete — order \(response.orderId ?? "") is held in escrow until pickup."
-                    } catch let error as RailACheckout.CheckoutError where error.isCanceled {
-                        offerStatusIsError = false
-                        offerStatusMessage =
-                            "Offer accepted (order \(response.orderId ?? "")). Payment canceled — finish under Account → Orders."
-                    } catch {
-                        offerStatusIsError = true
-                        offerStatusMessage =
-                            "Offer accepted (order \(response.orderId ?? "")), but payment failed: \(error.localizedDescription). Pay under Account → Orders."
-                    }
+                if let charge = GoodsChargeBreakdown(envelope: envelope, context: .offer) {
+                    pendingGoodsCharge = charge
+                    offerStatusIsError = false
+                    offerStatusMessage = "Review the item, fee, tax, and total before paying."
                 } else if let orderId = response.orderId, !orderId.isEmpty {
                     // Seller accept (or buyer accept without PI): order is pending_payment.
                     let isBuyer = offer.buyerId == currentUserID
@@ -2391,7 +2484,7 @@ struct ListingDetailView: View {
                                 "Order \(orderId) created, but payment could not start (\(chargeError)). Open Account → Orders to pay."
                         } else {
                             offerStatusMessage =
-                                "Counter accepted — order \(orderId) awaits payment. Open Account → Orders to pay with Apple Pay."
+                                "Counter accepted — order \(orderId) awaits payment. Open Account → Orders to pay."
                         }
                     } else {
                         offerStatusMessage =

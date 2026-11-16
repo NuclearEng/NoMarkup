@@ -429,6 +429,8 @@ struct MarketplaceView: View {
                 listings.append(contentsOf: response.listings.filter { !existing.contains($0.id) })
             }
             pagination = response.pagination
+        } catch is CancellationError {
+            return
         } catch {
             if reset, listings.isEmpty {
                 errorMessage = error.localizedDescription

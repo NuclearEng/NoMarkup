@@ -21,9 +21,8 @@ struct AccountView: View {
     @State private var showOnboardingWizard = false
     /// From `UserProfile.roles` — gates Admin console row.
     @State private var hasAdminRole = false
-    /// Legal/support HTML opens as a sheet (`SFSafariViewController`), not a
-    /// NavigationLink push — Safari is modal chrome; pushing it via the nav stack
-    /// can hide the tab bar and leave Close/Back stuck after dismiss.
+    /// Legal pages use a full-screen Safari view. SFSafariViewController must be
+    /// presented modally and must not sit inside a resizable sheet.
     @State private var legalSheet: LegalSheetTarget?
     /// Sign out sits next to Verify / Security — require a confirm so a fat-finger
     /// does not dump a signed-in provider onto LoginView.
@@ -226,7 +225,6 @@ struct AccountView: View {
                     .accessibilityHint("Resend email verification and complete phone OTP")
                     .accessibilityIdentifier("account.row.verification")
 
-                    #if DEBUG
                     NavigationLink {
                         LazyView {
                             ClientActionLogView()
@@ -235,9 +233,8 @@ struct AccountView: View {
                         Label("Request log", systemImage: "list.clipboard")
                     }
                     .frame(minHeight: 44)
-                    .accessibilityHint("Shows recent API calls from this device with status, duration, and request id.")
+                    .accessibilityHint("Activity recording stays off until you turn it on. The log stays on this device.")
                     .accessibilityIdentifier("account.row.requestLog")
-                    #endif
 
                     Button("Sign out", role: .destructive) {
                         confirmSignOut = true
@@ -589,7 +586,7 @@ struct AccountView: View {
                     .accessibilityHint("Choose push, email, and in-app channels per notification type")
                     .accessibilityIdentifier("account.row.notificationPreferences")
 
-                    Text("Jobs and local goods use Apple Pay / Stripe escrow (not App Store IAP). For services, the buyer pays the agreed price, and the platform fee is taken from the seller’s payout. For local goods, the buyer pays the item price plus disclosed fees and tax, and the seller receives the item price.")
+                    Text("Jobs and local goods use Apple Pay / Stripe escrow (not Apple In-App Purchase). For services, the buyer pays the agreed price, and the platform fee is taken from the seller’s payout. For local goods, the buyer pays the item price plus disclosed fees and tax, and the seller receives the item price.")
                         .font(.caption)
                         .foregroundStyle(BrandTheme.textSecondary)
                 } header: {
@@ -893,7 +890,7 @@ struct AccountView: View {
                     }
 
                     Text(AppConfig.storeKitEnabled
-                        ? "Digital Pro / Business plans use App Store In-App Purchase when enabled. BNPL, insurance, advances, and instant payout are off in this App Store build until licensed."
+                        ? "Digital Pro / Business plans use Apple In-App Purchase when enabled. BNPL, insurance, advances, and instant payout are off in this App Store build until licensed."
                         : "Digital plans are included free for launch in this app (no In-App Purchase, no web digital upgrade). BNPL, insurance, advances, and instant payout are off in this App Store build until licensed.")
                         .font(.caption)
                         .foregroundStyle(BrandTheme.textSecondary)
@@ -918,7 +915,7 @@ struct AccountView: View {
                         value: AppConfig.stripePublishableKey.isEmpty ? "not set" : "configured"
                     )
                     Text(AppConfig.storeKitEnabled
-                        ? "Pay for jobs and goods with Apple Pay. Digital subscriptions use App Store In-App Purchase when products are live."
+                        ? "Pay for jobs and goods with Apple Pay. Digital subscriptions use Apple In-App Purchase when products are live."
                         : "Pay for jobs and goods with Apple Pay. Digital feature unlocks are free-tier only in this build — no subscription purchase.")
                         .font(.caption)
                         .foregroundStyle(BrandTheme.textSecondary)
@@ -981,7 +978,7 @@ struct AccountView: View {
                 ActivityShareSheet(items: [item.url])
             }
             #endif
-            .sheet(item: $legalSheet) { target in
+            .fullScreenCover(item: $legalSheet) { target in
                 LegalWebView(title: target.title, url: target.url, fallback: target.fallback)
             }
         }

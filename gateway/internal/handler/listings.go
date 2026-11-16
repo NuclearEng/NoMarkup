@@ -107,17 +107,35 @@ func (h *ListingsHandler) SetPaymentClient(c paymentv1.PaymentServiceClient) {
 // totalCents is the amount actually charged (item + fee + tax) so buy-now
 // responses can label the confirm button with a real number rather than
 // "Pay now".
-func (h *ListingsHandler) chargeListingOrder(ctx context.Context, orderID string) (piID, clientSecret string, totalCents int64, err error) {
+// listingChargeResult is the buyer-visible charge the payment service computed.
+// Amounts are server fields. The client displays them and does not choose them.
+type listingChargeResult struct {
+	PaymentIntentID string
+	ClientSecret    string
+	AmountCents     int64
+	FeeCents        int64
+	TaxCents        int64
+	TotalCents      int64
+}
+
+func (h *ListingsHandler) chargeListingOrder(ctx context.Context, orderID string) (listingChargeResult, error) {
 	if h.paymentClient == nil || orderID == "" {
-		return "", "", 0, nil
+		return listingChargeResult{}, nil
 	}
 	resp, err := h.paymentClient.ChargeListingWinner(ctx, &paymentv1.ChargeListingWinnerRequest{
 		OrderId: orderID,
 	})
 	if err != nil {
-		return "", "", 0, err
+		return listingChargeResult{}, err
 	}
-	return resp.GetPaymentIntentId(), resp.GetClientSecret(), resp.GetTotalCents(), nil
+	return listingChargeResult{
+		PaymentIntentID: resp.GetPaymentIntentId(),
+		ClientSecret:    resp.GetClientSecret(),
+		AmountCents:     resp.GetAmountCents(),
+		FeeCents:        resp.GetFeeCents(),
+		TaxCents:        resp.GetTaxCents(),
+		TotalCents:      resp.GetTotalCents(),
+	}, nil
 }
 
 // sellerTrust fetches a seller's real computed trust score from the trust

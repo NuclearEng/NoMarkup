@@ -405,8 +405,12 @@ final class NoMarkupAppDelegate: NSObject, UIApplicationDelegate {
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
-        Task { @MainActor in
+        // The notification delegate must exist before a cold launch delivers an
+        // action. Registration every launch refreshes the APNs token. It does
+        // not request permission.
+        MainActor.assumeIsolated {
             PushRegistration.shared.configure()
+            UIApplication.shared.registerForRemoteNotifications()
         }
         return true
     }
@@ -426,14 +430,6 @@ final class NoMarkupAppDelegate: NSObject, UIApplicationDelegate {
     ) {
         Task { @MainActor in
             PushRegistration.shared.didFailToRegister(error: error)
-        }
-    }
-
-    func applicationDidBecomeActive(_ application: UIApplication) {
-        Task { @MainActor in
-            // IOS-SYS.NT.5: reconcile from server unread, never blind-zero.
-            await PushRegistration.shared.reconcileBadgeFromServer()
-            await PushRegistration.shared.refreshAuthorizationStatus()
         }
     }
 }
