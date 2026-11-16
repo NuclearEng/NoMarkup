@@ -33,6 +33,15 @@ interface ProposedTerms {
 }
 
 /**
+ * Smallest proposal amount, in dollars: one cent. The amount field's `min`,
+ * the check in formatProposedAmountDisplay and the message shown when it
+ * fails all come from this, so the field cannot advertise a value the form
+ * then refuses (it used to say min 0 while zero was rejected).
+ */
+const MIN_PROPOSAL_AMOUNT_DOLLARS = 0.01;
+const PROPOSAL_AMOUNT_TOO_LOW_MESSAGE = 'Enter an amount of at least $0.01.';
+
+/**
  * Format dollars form input as a display amount for POST …/proposed-terms.
  * Amount is a human-readable USD string (server stores it on the proposal body);
  * integer-cent conversion for contract binding is done server-side from metadata.
@@ -40,11 +49,12 @@ interface ProposedTerms {
 function formatProposedAmountDisplay(raw: string): string {
   const cleaned = raw.trim().replace(/[$,\s]/g, '');
   const n = Number.parseFloat(cleaned);
-  // A number that is zero or negative is not an amount: money on this platform
-  // must be positive (bids, offers and orders are all rejected at <= 0), so
-  // return nothing and let the caller ask for a valid amount. It used to fall
-  // through to the text branch below and be sent as "$0".
-  if (Number.isFinite(n) && n <= 0) return '';
+  // A number below one cent is not an amount: money on this platform must be
+  // positive (bids, offers and orders are all rejected at <= 0), so return
+  // nothing and let the caller ask for a valid amount. Zero used to fall
+  // through to the text branch below and be sent as "$0"; a fraction of a
+  // cent would be formatted as "$0.00".
+  if (Number.isFinite(n) && n < MIN_PROPOSAL_AMOUNT_DOLLARS) return '';
   if (!Number.isFinite(n)) {
     // Fall back to user text with a $ prefix when parse fails but non-empty.
     const t = raw.trim();
@@ -117,7 +127,7 @@ function ProposeTermsForm({
           <Input
             id="propose-amount"
             type="number"
-            min={0}
+            min={MIN_PROPOSAL_AMOUNT_DOLLARS}
             step={0.01}
             value={amount}
             onChange={(e) => { setAmount(e.target.value); }}
@@ -301,7 +311,7 @@ export function MessageInput({
     // Accept can bind metadata onto the live contract (FR-5.4).
     const amount = formatProposedAmountDisplay(terms.amount);
     if (!amount) {
-      toast.error('Enter a valid amount.');
+      toast.error(PROPOSAL_AMOUNT_TOO_LOW_MESSAGE);
       return;
     }
 

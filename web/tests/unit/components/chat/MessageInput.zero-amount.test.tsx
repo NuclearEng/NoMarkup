@@ -1,7 +1,8 @@
 // MessageInput — a proposal amount of zero. "0" used to fall through the
 // number check into the free-text branch and was sent to the customer as
-// "$0". Money on the platform must be positive, so a zero or negative number
-// is refused with the form's existing "Enter a valid amount." message.
+// "$0". Money on the platform must be positive, so anything below one cent is
+// refused. The field's `min` and the message state the same limit: the field
+// used to say min 0 while zero was rejected with "Enter a valid amount.".
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -64,15 +65,31 @@ beforeEach(() => {
 
 describe('MessageInput — proposal amount', () => {
   // The field is <input type="number">, so only numeric text can reach it.
-  it.each(['0', '0.00', '-5', '-12.50'])(
-    'refuses %j with a validation message and sends nothing',
+  it.each(['0', '0.00', '-5', '-12.50', '0.004', '0.009'])(
+    'refuses %j with a message naming the minimum and sends nothing',
     (amount) => {
       proposeWithAmount(amount);
 
-      expect(h.toastError).toHaveBeenCalledWith('Enter a valid amount.');
+      expect(h.toastError).toHaveBeenCalledWith('Enter an amount of at least $0.01.');
       expect(h.propose).not.toHaveBeenCalled();
     },
   );
+
+  it('advertises the same minimum on the field that the form enforces', () => {
+    render(<MessageInput channelId="chan-1" channelStatus={CHANNEL_STATUS.ACTIVE} canProposeTerms />);
+    fireEvent.click(screen.getByLabelText('Propose terms'));
+
+    const field = screen.getByLabelText(/Amount/);
+    expect(field.getAttribute('min')).toBe('0.01');
+    expect(field.getAttribute('step')).toBe('0.01');
+
+    // The smallest value the field allows is accepted...
+    fireEvent.change(field, { target: { value: field.getAttribute('min') } });
+    fireEvent.change(screen.getByLabelText(/Description/), { target: { value: 'Build a fence' } });
+    fireEvent.click(screen.getByRole('button', { name: /Send Proposal/ }));
+    expect(h.toastError).not.toHaveBeenCalled();
+    expect(h.propose).toHaveBeenCalledTimes(1);
+  });
 
   it.each([
     ['250', '$250.00'],
