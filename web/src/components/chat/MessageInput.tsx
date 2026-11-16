@@ -19,7 +19,7 @@ import { useSendMessage, useSendProposedTerms } from '@/hooks/useChannels';
 import { useImageUpload } from '@/hooks/useImageUpload';
 import { useSendTypingIndicator } from '@/hooks/useWebSocket';
 import { getApiErrorMessage } from '@/lib/api';
-import { chatMessageSchema } from '@/lib/validations';
+import { CHAT_MESSAGE_RULE, textRuleError } from '@/lib/text-rules';
 import { CHANNEL_STATUS, UPLOAD_CONTEXT } from '@/types';
 
 const MAX_CHAR_COUNT = 2000;
@@ -201,7 +201,7 @@ export function MessageInput({
   const isDisabled =
     channelStatus === CHANNEL_STATUS.READ_ONLY || channelStatus === CHANNEL_STATUS.CLOSED;
 
-  const isValid = chatMessageSchema.safeParse(content).success;
+  const isValid = textRuleError(CHAT_MESSAGE_RULE, content) === null;
   const isPending =
     sendMessage.isPending || sendProposedTerms.isPending || pdfUpload.status === 'uploading' || pdfUpload.status === 'getting_url' || pdfUpload.status === 'confirming';
 

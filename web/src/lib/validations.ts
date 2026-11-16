@@ -5,6 +5,12 @@
 // `x.min(n, m)` → `x.check(z.minLength(n, m))`, `x.optional()` →
 // `z.optional(x)`, `a.or(b)` → `z.union([a, b])`, `x.refine(f, p)` →
 // `x.check(z.refine(f, p))`, `x.transform(f)` → `z.pipe(x, z.transform(f))`.
+import {
+  CHAT_MESSAGE_RULE,
+  PHONE_RULE,
+  REVIEW_RESPONSE_RULE,
+  REVISION_NOTES_RULE,
+} from '@/lib/text-rules';
 import * as z from '@/lib/zod-mini';
 
 /** Optional field that also accepts '' (classic: `.optional().or(z.literal(''))`). */
@@ -45,7 +51,9 @@ export const displayNameSchema = z
     z.maxLength(100, 'Display name must be at most 100 characters'),
   );
 
-export const phoneSchema = z.string().check(z.regex(/^\+?[1-9]\d{1,14}$/, 'Invalid phone number'));
+// Single-string rules live in `text-rules.ts` so components that only check one
+// field can do it without loading Zod; the schemas here are built from them.
+export const phoneSchema = z.string().check(z.regex(PHONE_RULE.pattern, PHONE_RULE.patternMessage));
 
 export const loginSchema = z.object({
   email: emailSchema,
@@ -282,9 +290,11 @@ export const bidSchema = z.object({
 export type BidFormValues = z.infer<typeof bidSchema>;
 
 // Contract schemas
-export const revisionNotesSchema = z
-  .string()
-  .check(z.minLength(10, 'Revision notes must be at least 10 characters'), z.maxLength(2000));
+export const revisionNotesSchema = z.string().check(
+  z.minLength(REVISION_NOTES_RULE.min, REVISION_NOTES_RULE.minMessage),
+  // No custom message: the upper bound reports Zod's default text.
+  z.maxLength(REVISION_NOTES_RULE.max),
+);
 
 // Review schemas
 export const reviewSchema = z.object({
@@ -310,14 +320,17 @@ export type ReviewFormValues = z.infer<typeof reviewSchema>;
 export const reviewResponseSchema = z
   .string()
   .check(
-    z.minLength(10, 'Response must be at least 10 characters'),
-    z.maxLength(2000, 'Response must be at most 2000 characters'),
+    z.minLength(REVIEW_RESPONSE_RULE.min, REVIEW_RESPONSE_RULE.minMessage),
+    z.maxLength(REVIEW_RESPONSE_RULE.max, REVIEW_RESPONSE_RULE.maxMessage),
   );
 
 // Chat schemas
 export const chatMessageSchema = z
   .string()
-  .check(z.minLength(1, 'Message cannot be empty'), z.maxLength(2000, 'Message too long'));
+  .check(
+    z.minLength(CHAT_MESSAGE_RULE.min, CHAT_MESSAGE_RULE.minMessage),
+    z.maxLength(CHAT_MESSAGE_RULE.max, CHAT_MESSAGE_RULE.maxMessage),
+  );
 
 // MFA schema
 export const mfaCodeSchema = z
