@@ -33,6 +33,22 @@ export default tseslint.config(
         'error',
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
       ],
+      // Fonts are self-hosted from src/fonts/ (see src/app/layout.tsx).
+      // next/font/google downloads from fonts.googleapis.com when the dev
+      // server starts and during `next build`, so a slow or unreachable Google
+      // Fonts fails both — it broke the backendless Playwright CI job.
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: 'next/font/google',
+              message:
+                'Self-host fonts with next/font/local (files in src/fonts/) so the build needs no network.',
+            },
+          ],
+        },
+      ],
     },
     languageOptions: {
       parserOptions: {
