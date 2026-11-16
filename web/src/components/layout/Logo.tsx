@@ -9,7 +9,7 @@ interface LogoProps {
   className?: string;
   asLink?: boolean;
   /** Override link target (default `/`). Header uses `/dashboard` when signed in. */
-  href?: Route | string;
+  href?: Route;
   /** Hide the app-icon tile (wordmark only). Default shows tile. */
   showMark?: boolean;
   /** Eager-load tile (auth hero, marketing). */
@@ -60,7 +60,7 @@ export function Logo({
   if (asLink) {
     return (
       <Link
-        href={href as Route}
+        href={href}
         className="inline-flex min-h-[44px] items-center text-foreground no-underline"
         aria-label={ariaLabel}
       >
