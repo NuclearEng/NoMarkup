@@ -31,10 +31,10 @@ use image::{
 use uuid::Uuid;
 
 use crate::models::{
-    DEFAULT_QUALITY, ImageFormat, ImageVariant, ImagingError,
-    MAX_DECODE_ALLOC_BYTES, MAX_DECODE_DIMENSION, MAX_FILE_SIZE_BYTES, PRESIGN_EXPIRY_SECS,
-    ProcessedJobPhoto, ProcessingOptions, ResizeMode, UploadContext,
-    allowed_mime_types_for_object_key, extension_for_mime, is_pdf_bytes, sniff_content_type,
+    DEFAULT_QUALITY, ImageFormat, ImageVariant, ImagingError, MAX_DECODE_ALLOC_BYTES,
+    MAX_DECODE_DIMENSION, MAX_FILE_SIZE_BYTES, PRESIGN_EXPIRY_SECS, ProcessedJobPhoto,
+    ProcessingOptions, ResizeMode, UploadContext, allowed_mime_types_for_object_key,
+    extension_for_mime, is_pdf_bytes, sniff_content_type,
 };
 
 // ---------------------------------------------------------------------------
@@ -796,9 +796,10 @@ impl ImagePipeline {
             if let Some(token) = continuation.as_ref() {
                 req = req.continuation_token(token);
             }
-            let resp = req.send().await.map_err(|e| {
-                ImagingError::S3Error(format!("LIST {prefix}: {e}"))
-            })?;
+            let resp = req
+                .send()
+                .await
+                .map_err(|e| ImagingError::S3Error(format!("LIST {prefix}: {e}")))?;
 
             let keys: Vec<String> = resp
                 .contents()
@@ -826,7 +827,11 @@ impl ImagePipeline {
         for chunk in keys.chunks(1000) {
             let ids: Result<Vec<_>, _> = chunk
                 .iter()
-                .map(|k| aws_sdk_s3::types::ObjectIdentifier::builder().key(k).build())
+                .map(|k| {
+                    aws_sdk_s3::types::ObjectIdentifier::builder()
+                        .key(k)
+                        .build()
+                })
                 .collect();
             let ids = ids.map_err(|e| ImagingError::S3Error(format!("object identifier: {e}")))?;
             let delete = aws_sdk_s3::types::Delete::builder()
@@ -1342,7 +1347,10 @@ mod tests {
         assert_eq!(UploadContext::Document.path_prefix(), "documents");
         assert_eq!(UploadContext::ReviewPhoto.path_prefix(), "review-photos");
         assert_eq!(UploadContext::Listing.path_prefix(), "listings");
-        assert_eq!(UploadContext::ChatAttachment.path_prefix(), "chat-attachments");
+        assert_eq!(
+            UploadContext::ChatAttachment.path_prefix(),
+            "chat-attachments"
+        );
     }
 
     #[test]
@@ -1375,12 +1383,16 @@ mod tests {
         assert!(!UploadContext::Avatar.allows_pdf());
         assert!(!UploadContext::JobPhoto.allows_pdf());
         assert!(!UploadContext::Listing.allows_pdf());
-        assert!(UploadContext::Document
-            .allowed_mime_types()
-            .contains(&"application/pdf"));
-        assert!(!UploadContext::Avatar
-            .allowed_mime_types()
-            .contains(&"application/pdf"));
+        assert!(
+            UploadContext::Document
+                .allowed_mime_types()
+                .contains(&"application/pdf")
+        );
+        assert!(
+            !UploadContext::Avatar
+                .allowed_mime_types()
+                .contains(&"application/pdf")
+        );
     }
 
     #[test]
@@ -1390,21 +1402,30 @@ mod tests {
             sniff_content_type(&[0xFF, 0xD8, 0xFF, 0xE0, 0, 0, 0, 0]),
             "image/jpeg"
         );
-        assert_eq!(sniff_content_type(b"not-an-image"), "application/octet-stream");
+        assert_eq!(
+            sniff_content_type(b"not-an-image"),
+            "application/octet-stream"
+        );
         assert!(is_pdf_bytes(b"%PDF-1.7"));
         assert!(!is_pdf_bytes(b"JFIF"));
     }
 
     #[test]
     fn object_key_prefix_gates_pdf() {
-        assert!(allowed_mime_types_for_object_key("documents/u/raw/a.pdf")
-            .contains(&"application/pdf"));
-        assert!(allowed_mime_types_for_object_key("chat-attachments/u/raw/a.pdf")
-            .contains(&"application/pdf"));
-        assert!(!allowed_mime_types_for_object_key("avatars/u/raw/a.pdf")
-            .contains(&"application/pdf"));
-        assert!(!allowed_mime_types_for_object_key("job-photos/u/raw/a.pdf")
-            .contains(&"application/pdf"));
+        assert!(
+            allowed_mime_types_for_object_key("documents/u/raw/a.pdf").contains(&"application/pdf")
+        );
+        assert!(
+            allowed_mime_types_for_object_key("chat-attachments/u/raw/a.pdf")
+                .contains(&"application/pdf")
+        );
+        assert!(
+            !allowed_mime_types_for_object_key("avatars/u/raw/a.pdf").contains(&"application/pdf")
+        );
+        assert!(
+            !allowed_mime_types_for_object_key("job-photos/u/raw/a.pdf")
+                .contains(&"application/pdf")
+        );
     }
 
     // ------------------------------------------------------------------

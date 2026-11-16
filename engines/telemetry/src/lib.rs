@@ -44,8 +44,8 @@ pub mod test_support;
 pub use grpc::{GrpcTrace, GrpcTraceLayer};
 pub use mtls::load_server_tls;
 pub use peer_allowlist::{
-    PeerAllowlist, parse_peer_allowlist, peer_allowlist_from_env, peer_allowlist_layer,
-    peer_allowed, peer_service_name_from_der, spiffe_service_name,
+    PeerAllowlist, parse_peer_allowlist, peer_allowed, peer_allowlist_from_env,
+    peer_allowlist_layer, peer_service_name_from_der, spiffe_service_name,
 };
 
 use opentelemetry::KeyValue;

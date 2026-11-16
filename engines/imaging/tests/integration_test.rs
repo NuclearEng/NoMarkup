@@ -230,7 +230,10 @@ fn upload_context_path_prefixes() {
     assert_eq!(UploadContext::Document.path_prefix(), "documents");
     assert_eq!(UploadContext::ReviewPhoto.path_prefix(), "review-photos");
     assert_eq!(UploadContext::Listing.path_prefix(), "listings");
-    assert_eq!(UploadContext::ChatAttachment.path_prefix(), "chat-attachments");
+    assert_eq!(
+        UploadContext::ChatAttachment.path_prefix(),
+        "chat-attachments"
+    );
     assert_eq!(
         UploadContext::from_str_context("chat_attachment"),
         Some(UploadContext::ChatAttachment)

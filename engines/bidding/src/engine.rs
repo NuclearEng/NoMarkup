@@ -886,12 +886,11 @@ impl BiddingEngine {
     #[allow(clippy::cast_possible_truncation)]
     pub async fn expire_auction(&self, job_id: Uuid) -> Result<i32, BidError> {
         let mut tx = self.pool.begin().await?;
-        let status: Option<String> = sqlx::query_scalar(
-            "SELECT status FROM jobs WHERE id = $1 FOR UPDATE",
-        )
-        .bind(job_id)
-        .fetch_optional(&mut *tx)
-        .await?;
+        let status: Option<String> =
+            sqlx::query_scalar("SELECT status FROM jobs WHERE id = $1 FOR UPDATE")
+                .bind(job_id)
+                .fetch_optional(&mut *tx)
+                .await?;
 
         let Some(status) = status else {
             return Err(BidError::JobNotFound);

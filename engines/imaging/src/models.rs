@@ -230,7 +230,11 @@ pub fn allowed_mime_types_for_object_key(object_key: &str) -> &'static [&'static
 #[must_use]
 pub fn sniff_content_type(bytes: &[u8]) -> String {
     // PDF: "%PDF" at offset 0 (ISO 32000).
-    if bytes.len() >= 4 && bytes[0] == b'%' && bytes[1] == b'P' && bytes[2] == b'D' && bytes[3] == b'F'
+    if bytes.len() >= 4
+        && bytes[0] == b'%'
+        && bytes[1] == b'P'
+        && bytes[2] == b'D'
+        && bytes[3] == b'F'
     {
         return MIME_APPLICATION_PDF.to_string();
     }
