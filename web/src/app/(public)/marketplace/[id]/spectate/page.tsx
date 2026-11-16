@@ -65,12 +65,23 @@ export default function ListingSpectatePage() {
             title="Failed to load listing"
             description="We could not load this auction. Check your connection and try again."
             action={
-              <Button type="button" className="min-h-11" asChild>
-                <Link href={`/marketplace/${listingId}` as Route}>
+              <div className="flex flex-col items-center gap-3 sm:flex-row">
+                <Button
+                  type="button"
+                  className="min-h-11"
+                  disabled={terminal.isFetching}
+                  onClick={terminal.retry}
+                >
                   <RefreshCw className="mr-2 h-4 w-4" aria-hidden="true" />
-                  Back to listing
-                </Link>
-              </Button>
+                  Retry
+                </Button>
+                <Button type="button" variant="outline" className="min-h-11" asChild>
+                  <Link href={`/marketplace/${listingId}` as Route}>
+                    <ArrowLeft className="mr-2 h-4 w-4" aria-hidden="true" />
+                    Back to listing
+                  </Link>
+                </Button>
+              </div>
             }
           />
         </div>

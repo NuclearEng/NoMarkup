@@ -55,6 +55,10 @@ export interface MarketplaceSpectatorTerminalResult {
   jobCategory: string;
   isLoading: boolean;
   isError: boolean;
+  /** True while the listing query is in flight (including a retry). */
+  isFetching: boolean;
+  /** Re-run the listing query — the error state's Retry action. */
+  retry: () => void;
 }
 
 /**
@@ -67,7 +71,7 @@ export interface MarketplaceSpectatorTerminalResult {
 export function useMarketplaceSpectatorTerminal(
   listingId: string | undefined,
 ): MarketplaceSpectatorTerminalResult {
-  const { data: listing, isLoading, isError } = useListing(listingId ?? '');
+  const { data: listing, isLoading, isError, isFetching, refetch } = useListing(listingId ?? '');
   const { data: bidHistory } = useListingBids(listingId ?? '');
   const { isConnected, lastBid, watcherCount } = useMarketplaceSpectator(listingId);
 
@@ -284,5 +288,9 @@ export function useMarketplaceSpectatorTerminal(
     jobCategory: listing?.category_name ?? listing?.condition ?? '',
     isLoading,
     isError,
+    isFetching,
+    retry: () => {
+      void refetch();
+    },
   };
 }
