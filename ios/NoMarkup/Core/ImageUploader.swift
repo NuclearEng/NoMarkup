@@ -11,72 +11,73 @@ import UIKit
 import SensitiveContentAnalysis
 #endif
 
-/// When an on-device sensitive-content scan may refuse a photo upload.
-/// Simulator and a missing or disabled analyzer always allow the upload.
+/// When an on-device sensitive-content scan must refuse a photo upload.
+/// A real device fails closed unless a completed scan says the image is not sensitive.
+/// The simulator has no analyzer, so tests and simulator dogfood stay allowed.
 enum SensitivePhotoUploadDecision: Sendable {
     static let refusalDetail =
         "This photo can’t be uploaded because it was flagged as sensitive content."
+    static let unavailableDetail =
+        "This photo can’t be uploaded because sensitive-content screening isn’t available on this device."
 
     static func shouldRefuse(
         isSimulator: Bool,
         frameworkAvailable: Bool,
         policyDisabled: Bool,
+        analysisFailed: Bool = false,
         classifiedSensitive: Bool
     ) -> Bool {
         if isSimulator { return false }
-        if !frameworkAvailable || policyDisabled { return false }
+        if !frameworkAvailable || policyDisabled || analysisFailed { return true }
         return classifiedSensitive
     }
 }
 
-/// Pre-upload scan. Allows the photo when the framework is absent, the policy
-/// is off, analysis fails, or this is the simulator (no false positive).
+/// Pre-upload scan. On a device, a missing framework, a disabled policy, a
+/// decode failure, or an analyzer error refuses the upload. The simulator allows it.
 enum SensitivePhotoUploadGate {
     static func refuseIfSensitive(_ jpeg: Data) async throws {
         #if targetEnvironment(simulator)
-        let simulator = true
+        return
         #else
-        let simulator = false
-        #endif
         #if canImport(SensitiveContentAnalysis)
-        let framework = true
-        #else
-        let framework = false
-        #endif
-        guard SensitivePhotoUploadDecision.shouldRefuse(
-            isSimulator: simulator,
-            frameworkAvailable: framework,
-            policyDisabled: false,
-            classifiedSensitive: true
-        ) else { return }
-
-        #if canImport(SensitiveContentAnalysis)
-        guard #available(iOS 17.0, *) else { return }
+        guard #available(iOS 17.0, *) else {
+            throw refused(SensitivePhotoUploadDecision.unavailableDetail)
+        }
         let analyzer = SCSensitivityAnalyzer()
-        guard SensitivePhotoUploadDecision.shouldRefuse(
+        if SensitivePhotoUploadDecision.shouldRefuse(
             isSimulator: false,
             frameworkAvailable: true,
             policyDisabled: analyzer.analysisPolicy == .disabled,
-            classifiedSensitive: true
-        ) else { return }
-        guard let image = cgImage(from: jpeg) else { return }
+            classifiedSensitive: false
+        ) {
+            throw refused(SensitivePhotoUploadDecision.unavailableDetail)
+        }
+        guard let image = cgImage(from: jpeg) else {
+            throw refused(SensitivePhotoUploadDecision.unavailableDetail)
+        }
         let flagged: Bool
         do {
             flagged = try await isSensitive(image, analyzer: analyzer)
         } catch {
-            return
+            throw refused(SensitivePhotoUploadDecision.unavailableDetail)
         }
-        guard SensitivePhotoUploadDecision.shouldRefuse(
+        if SensitivePhotoUploadDecision.shouldRefuse(
             isSimulator: false,
             frameworkAvailable: true,
             policyDisabled: false,
             classifiedSensitive: flagged
-        ) else { return }
-        throw APIClientError.httpStatus(
-            400,
-            detail: SensitivePhotoUploadDecision.refusalDetail
-        )
+        ) {
+            throw refused(SensitivePhotoUploadDecision.refusalDetail)
+        }
+        #else
+        throw refused(SensitivePhotoUploadDecision.unavailableDetail)
         #endif
+        #endif
+    }
+
+    private static func refused(_ detail: String) -> APIClientError {
+        APIClientError.httpStatus(400, detail: detail)
     }
 
     #if canImport(SensitiveContentAnalysis)

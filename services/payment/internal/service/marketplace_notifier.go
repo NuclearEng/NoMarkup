@@ -42,12 +42,13 @@ func NewMarketplaceNotifier(sender NotificationSender) MarketplaceNotifier {
 func orderURL(orderID string) string { return "/orders/" + orderID }
 
 func (n *marketplaceNotifier) NotifyPaymentReleased(ctx context.Context, sellerID, orderID string, amountCents int64) error {
+	_ = amountCents
 	return n.sender.Send(ctx, sellerID,
 		notificationv1.NotificationType_NOTIFICATION_TYPE_PAYMENT_RELEASED,
 		"Payment released",
-		fmt.Sprintf("The buyer confirmed pickup. %s is on its way to your account.", formatCents(amountCents)),
+		"The buyer confirmed pickup. Open the app to see the payout.",
 		orderURL(orderID),
-		map[string]string{"order_id": orderID, "amount_cents": fmt.Sprintf("%d", amountCents)},
+		map[string]string{"order_id": orderID},
 	)
 }
 
@@ -62,12 +63,13 @@ func (n *marketplaceNotifier) NotifyAutoReleaseToBuyer(ctx context.Context, buye
 }
 
 func (n *marketplaceNotifier) NotifyAutoReleaseToSeller(ctx context.Context, sellerID, orderID string, amountCents int64) error {
+	_ = amountCents
 	return n.sender.Send(ctx, sellerID,
 		notificationv1.NotificationType_NOTIFICATION_TYPE_PAYMENT_RELEASED,
 		"Payment released",
-		fmt.Sprintf("The dispute window closed with no dispute. %s is on its way to your account.", formatCents(amountCents)),
+		"The dispute window closed with no dispute. Open the app to see the payout.",
 		orderURL(orderID),
-		map[string]string{"order_id": orderID, "amount_cents": fmt.Sprintf("%d", amountCents), "reason": "auto_release"},
+		map[string]string{"order_id": orderID, "reason": "auto_release"},
 	)
 }
 
@@ -120,12 +122,13 @@ func (n *marketplaceNotifier) NotifyListingPaymentProblem(ctx context.Context, b
 }
 
 func (n *marketplaceNotifier) NotifyListingPaymentCaptured(ctx context.Context, buyerID, orderID string, totalCents int64) error {
+	_ = totalCents
 	return n.sender.Send(ctx, buyerID,
 		notificationv1.NotificationType_NOTIFICATION_TYPE_PAYMENT_RECEIVED,
 		"Payment received",
-		fmt.Sprintf("We charged %s for the item you won. Arrange pickup with the seller.", formatCents(totalCents)),
+		"Payment for your order was received. Open the app to arrange pickup.",
 		orderURL(orderID),
-		map[string]string{"order_id": orderID, "total_cents": fmt.Sprintf("%d", totalCents)},
+		map[string]string{"order_id": orderID},
 	)
 }
 

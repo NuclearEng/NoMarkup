@@ -1342,19 +1342,24 @@ func (h *ListingsHandler) BuyItNow(w http.ResponseWriter, r *http.Request) {
 	// Attach a PaymentIntent when the payment service is wired. Failure here
 	// does not roll back the sold listing / pending_payment order — the buyer
 	// (or a retry) can re-charge via ChargeListingWinner / POST /orders/{id}/pay.
-	if piID, clientSecret, totalCents, cerr := h.chargeListingOrder(r.Context(), orderID); cerr != nil {
+	if charge, cerr := h.chargeListingOrder(r.Context(), orderID); cerr != nil {
 		slog.ErrorContext(r.Context(), "buy-now: charge listing winner failed",
 			"error", cerr, "order_id", orderID)
 		resp["payment_required"] = true
 		resp["charge_error"] = "payment setup failed; retry charge for this order"
-	} else if piID != "" {
-		resp["payment_intent_id"] = piID
-		resp["client_secret"] = clientSecret
+	} else if charge.PaymentIntentID != "" {
+		resp["payment_intent_id"] = charge.PaymentIntentID
+		resp["client_secret"] = charge.ClientSecret
 		resp["payment_required"] = true
-		// Forward total_cents so the UI can show the real charge (item + fee +
-		// tax). Dropping it forced every button to say "Pay now" with no amount.
-		if totalCents > 0 {
-			resp["total_cents"] = totalCents
+		// Item, fee, tax, and total are the server charge. The client shows
+		// them before PaymentSheet and does not choose the amount.
+		if charge.AmountCents > 0 {
+			resp["amount_cents"] = charge.AmountCents
+		}
+		resp["fee_cents"] = charge.FeeCents
+		resp["tax_cents"] = charge.TaxCents
+		if charge.TotalCents > 0 {
+			resp["total_cents"] = charge.TotalCents
 		}
 	} else {
 		// No payment client (dev without payment service): still never

@@ -88,3 +88,10 @@ ios/**/xcuserdata/
 *.xcuserstate
 ios/NoMarkupUITests/Credentials.local
 ios/DerivedData*/
+
+# Signing material. Never commit keys, certs, or profiles.
+*.p8
+*.p12
+*.cer
+*.mobileprovision
+*.provisionprofile

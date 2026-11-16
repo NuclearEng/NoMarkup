@@ -214,7 +214,7 @@ func TestPaymentService_CreatePayment_DerivesProviderFromContract(t *testing.T) 
 		ContractID:     "contract-1",
 		CustomerID:     "cust-1",
 		ProviderID:     "prov-attacker-controlled", // must be ignored
-		AmountCents:    5000,
+		AmountCents:    70000, // full remaining balance; a client-chosen partial is rejected
 		IdempotencyKey: "k3",
 	})
 	require.NoError(t, err)
@@ -278,6 +278,77 @@ func TestPaymentService_CreatePayment_AllowsUnderCapPartial(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, payment)
 	assert.Equal(t, int64(30000), stored.AmountCents)
+}
+
+func TestPaymentService_CreatePayment_RejectsClientChosenUnderpay(t *testing.T) {
+	t.Parallel()
+	repo := reconcileRepo(70000)
+	created := false
+	repo.createPaymentFn = func(_ context.Context, _ *domain.Payment) error {
+		created = true
+		return nil
+	}
+	svc := newTestPaymentService(repo, nil)
+
+	_, _, err := svc.CreatePayment(context.Background(), domain.CreatePaymentInput{
+		ContractID:     "contract-1",
+		CustomerID:     "cust-1",
+		ProviderID:     "prov-1",
+		AmountCents:    1,
+		IdempotencyKey: "idem-one-cent",
+	})
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, domain.ErrInvalidAmount), "one cent on a $700 contract must be rejected, got %v", err)
+	assert.False(t, created, "must not insert a payment for a client-chosen underpay")
+}
+
+func TestPaymentService_CreatePayment_MilestoneChargesStoredAmount(t *testing.T) {
+	t.Parallel()
+	milestoneID := "ms-1"
+	repo := reconcileRepo(70000)
+	repo.getMilestonesForContractFn = func(_ context.Context, contractID string) ([]*domain.MilestoneDetail, error) {
+		assert.Equal(t, "contract-1", contractID)
+		return []*domain.MilestoneDetail{{
+			ID: milestoneID, Description: "Diagnostic", AmountCents: 20000, Status: "approved",
+		}}, nil
+	}
+	var stored *domain.Payment
+	repo.createPaymentFn = func(_ context.Context, p *domain.Payment) error { stored = p; return nil }
+	repo.getPaymentFn = func(_ context.Context, _ string) (*domain.Payment, error) { return stored, nil }
+	svc := newTestPaymentService(repo, nil)
+
+	_, _, err := svc.CreatePayment(context.Background(), domain.CreatePaymentInput{
+		ContractID:     "contract-1",
+		CustomerID:     "cust-1",
+		MilestoneID:    &milestoneID,
+		AmountCents:    1,
+		IdempotencyKey: "idem-milestone-penny",
+	})
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, domain.ErrInvalidAmount))
+
+	unknown := "ms-missing"
+	_, _, err = svc.CreatePayment(context.Background(), domain.CreatePaymentInput{
+		ContractID:     "contract-1",
+		CustomerID:     "cust-1",
+		MilestoneID:    &unknown,
+		AmountCents:    20000,
+		IdempotencyKey: "idem-milestone-unknown",
+	})
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, domain.ErrInvalidAmount))
+
+	payment, _, err := svc.CreatePayment(context.Background(), domain.CreatePaymentInput{
+		ContractID:     "contract-1",
+		CustomerID:     "cust-1",
+		MilestoneID:    &milestoneID,
+		AmountCents:    20000,
+		IdempotencyKey: "idem-milestone-exact",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, payment)
+	require.NotNil(t, stored)
+	assert.Equal(t, int64(20000), stored.AmountCents)
 }
 
 func TestPaymentService_CreatePayment_FailedAndRefundedDoNotCountTowardCap(t *testing.T) {

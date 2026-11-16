@@ -299,6 +299,45 @@ func (s *PaymentService) CalculateFees(ctx context.Context, amountCents int64, c
 	}, nil
 }
 
+// expectedCreatePaymentCents is the only amount CreatePayment may charge when
+// the call is not already bound to a recurring instance. A milestone id charges
+// that milestone's stored cents. Otherwise the charge is the unpaid remainder.
+func (s *PaymentService) expectedCreatePaymentCents(ctx context.Context, contractID string, milestoneID *string, remaining int64) (int64, error) {
+	msID := ""
+	if milestoneID != nil {
+		msID = strings.TrimSpace(*milestoneID)
+	}
+	if msID == "" {
+		return remaining, nil
+	}
+	milestones, err := s.repo.GetMilestonesForContract(ctx, contractID)
+	if err != nil {
+		return 0, fmt.Errorf("create payment: milestones: %w", err)
+	}
+	for _, m := range milestones {
+		if m == nil || m.ID != msID {
+			continue
+		}
+		if m.AmountCents <= 0 {
+			return 0, fmt.Errorf("create payment: milestone amount: %w", domain.ErrInvalidAmount)
+		}
+		return m.AmountCents, nil
+	}
+	return 0, fmt.Errorf("create payment: milestone not on contract: %w", domain.ErrInvalidAmount)
+}
+
+// replayCreatePaymentIfPresent soft-replays only when the caller supplied a
+// sticky idempotency key or a recurring visit id. A brand-new underpay has
+// neither match and comes back as ErrPaymentNotFound.
+func (s *PaymentService) replayCreatePaymentIfPresent(ctx context.Context, input domain.CreatePaymentInput) (*domain.Payment, string, error) {
+	hasKey := strings.TrimSpace(input.IdempotencyKey) != ""
+	hasInstance := input.RecurringInstanceID != nil && strings.TrimSpace(*input.RecurringInstanceID) != ""
+	if !hasKey && !hasInstance {
+		return nil, "", domain.ErrPaymentNotFound
+	}
+	return s.softReplayCreatePayment(ctx, input)
+}
+
 // CreatePayment creates a new payment record and a Stripe PaymentIntent.
 func (s *PaymentService) CreatePayment(ctx context.Context, input domain.CreatePaymentInput) (*domain.Payment, string, error) {
 	if input.AmountCents <= 0 {
@@ -318,9 +357,9 @@ func (s *PaymentService) CreatePayment(ctx context.Context, input domain.CreateP
 	if input.CustomerID != contract.CustomerID {
 		return nil, "", fmt.Errorf("create payment: %w", domain.ErrContractNotOwned)
 	}
-	// The amount may never exceed the contract total. Partial milestone and
-	// installment payments are <= the total, so this bound permits them while
-	// rejecting overcharge and overflow inputs.
+	// The amount may never exceed the contract total. Milestone charges are
+	// checked against the milestone row below; a one-shot charge must equal
+	// the unpaid remainder. A client-chosen amount under that figure is rejected.
 	if input.AmountCents > contract.AmountCents {
 		return nil, "", fmt.Errorf("create payment: amount exceeds contract: %w", domain.ErrInvalidAmount)
 	}
@@ -394,6 +433,35 @@ func (s *PaymentService) CreatePayment(ctx context.Context, input domain.CreateP
 			"create payment: cumulative payments %d + amount %d exceed cap %d: %w",
 			paidSoFar, input.AmountCents, capCents, domain.ErrInvalidAmount,
 		)
+	}
+	// STRIPE-5: the PaymentIntent amount is computed here. A recurring visit
+	// already had to match the instance row. A milestone charges that row.
+	// Anything else charges the unpaid remainder of the contract. The client
+	// amount is accepted only when it equals that figure, so a one-cent body
+	// cannot buy a larger job. A retry of an existing idempotency key or visit
+	// still soft-replays the stored payment instead of minting a new one.
+	if !instanceScoped {
+		remaining := capCents - paidSoFar
+		if remaining < 0 {
+			remaining = 0
+		}
+		expected, expectErr := s.expectedCreatePaymentCents(ctx, input.ContractID, input.MilestoneID, remaining)
+		if expectErr != nil {
+			return nil, "", expectErr
+		}
+		if input.AmountCents != expected {
+			replay, secret, replayErr := s.replayCreatePaymentIfPresent(ctx, input)
+			if replayErr == nil {
+				return replay, secret, nil
+			}
+			if !errors.Is(replayErr, domain.ErrPaymentNotFound) {
+				return nil, "", replayErr
+			}
+			return nil, "", fmt.Errorf(
+				"create payment: amount %d must equal server amount %d: %w",
+				input.AmountCents, expected, domain.ErrInvalidAmount,
+			)
+		}
 	}
 	// Derive the payee from the contract; never trust the client's provider_id.
 	input.ProviderID = contract.ProviderID

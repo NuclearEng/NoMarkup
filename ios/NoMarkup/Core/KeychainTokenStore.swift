@@ -15,6 +15,16 @@ final class KeychainTokenStore: @unchecked Sendable {
         self.service = service
     }
 
+    /// Most restrictive class that still works for a foreground session.
+    /// Device items do not migrate in a backup. There is no locked-device reader.
+    private static var accessibility: CFString {
+        #if targetEnvironment(simulator)
+        kSecAttrAccessibleWhenUnlocked
+        #else
+        kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        #endif
+    }
+
     func save(_ value: String, for key: Key) throws {
         let data = Data(value.utf8)
         let query: [String: Any] = [
@@ -25,7 +35,10 @@ final class KeychainTokenStore: @unchecked Sendable {
 
         let status = SecItemCopyMatching(query as CFDictionary, nil)
         if status == errSecSuccess {
-            let update: [String: Any] = [kSecValueData as String: data]
+            let update: [String: Any] = [
+                kSecValueData as String: data,
+                kSecAttrAccessible as String: Self.accessibility,
+            ]
             let updateStatus = SecItemUpdate(query as CFDictionary, update as CFDictionary)
             guard updateStatus == errSecSuccess else {
                 throw KeychainError.unhandled(updateStatus)
@@ -33,14 +46,10 @@ final class KeychainTokenStore: @unchecked Sendable {
         } else if status == errSecItemNotFound {
             var add = query
             add[kSecValueData as String] = data
-            // Simulator XCTest clones often cannot satisfy ThisDeviceOnly at process
-            // start (~errSecInteractionNotAllowed). Device/release keeps ThisDeviceOnly
-            // so tokens never restore onto a different physical device from backup.
-            #if targetEnvironment(simulator)
-            add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
-            #else
-            add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-            #endif
+            // Foreground session tokens. No background reader needs them while locked.
+            // Simulator XCTest clones often cannot satisfy ThisDeviceOnly
+            // (~errSecInteractionNotAllowed), so the simulator uses WhenUnlocked.
+            add[kSecAttrAccessible as String] = Self.accessibility
             let addStatus = SecItemAdd(add as CFDictionary, nil)
             guard addStatus == errSecSuccess else {
                 throw KeychainError.unhandled(addStatus)

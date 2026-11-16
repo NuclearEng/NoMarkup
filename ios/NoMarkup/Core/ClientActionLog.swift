@@ -29,10 +29,38 @@ final class ClientActionLog: ObservableObject, @unchecked Sendable {
 
     static let requestIDHeader = "X-Request-ID"
     static let capacity = 200
+    static let recordingDefaultsKey = "nomarkup.requestLogEnabled"
 
     @Published private(set) var events: [ClientActionEvent] = []
+    @Published private(set) var recordingEnabled: Bool
 
     private let lock = NSLock()
+
+    init() {
+        #if DEBUG
+        if UserDefaults.standard.object(forKey: Self.recordingDefaultsKey) == nil {
+            recordingEnabled = true
+        } else {
+            recordingEnabled = UserDefaults.standard.bool(forKey: Self.recordingDefaultsKey)
+        }
+        #else
+        recordingEnabled = UserDefaults.standard.bool(forKey: Self.recordingDefaultsKey)
+        #endif
+    }
+
+    /// Release records taps and API paths only after the person turns the log on.
+    /// Debug builds record unless the person explicitly turns the log off.
+    static var isRecordingEnabled: Bool {
+        shared.recordingEnabled
+    }
+
+    func setRecordingEnabled(_ on: Bool) {
+        UserDefaults.standard.set(on, forKey: Self.recordingDefaultsKey)
+        recordingEnabled = on
+        if !on {
+            clear()
+        }
+    }
 
     /// 16-hex-char id matching gateway `observability.NewRequestID`.
     static func mintRequestID() -> String {
@@ -92,6 +120,7 @@ final class ClientActionLog: ObservableObject, @unchecked Sendable {
         error: Error? = nil,
         kind: String = "http"
     ) {
+        guard recordingEnabled else { return }
         let event = ClientActionEvent(
             id: UUID(),
             at: Date(),

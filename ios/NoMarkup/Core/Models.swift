@@ -1642,6 +1642,57 @@ struct PaymentIntentEnvelope: Codable, Sendable {
     }
 }
 
+/// Server item, fee, tax, and total shown before PaymentSheet.
+struct GoodsChargeBreakdown: Equatable, Identifiable {
+    enum Context: String, Equatable {
+        case buyNow
+        case offer
+        case order
+    }
+
+    var id: String { clientSecret }
+    var context: Context
+    var orderId: String?
+    var itemCents: Int64
+    var feeCents: Int64
+    var taxCents: Int64
+    var totalCents: Int64
+    var clientSecret: String
+
+    var summary: String {
+        [
+            "Item \(MoneyFormat.usd(cents: itemCents))",
+            "Fee \(MoneyFormat.usd(cents: feeCents))",
+            "Tax \(MoneyFormat.usd(cents: taxCents))",
+            "Total \(MoneyFormat.usd(cents: totalCents))",
+        ].joined(separator: "\n")
+    }
+
+    init?(envelope: PaymentIntentEnvelope, context: Context) {
+        guard let secret = envelope.clientSecret, envelope.hasConfirmableSecret else { return nil }
+        let fee = max(0, envelope.feeCents ?? 0)
+        let tax = max(0, envelope.taxCents ?? 0)
+        let total = envelope.displayTotalCents ?? 0
+        let item: Int64
+        if let amount = envelope.amountCents, amount > 0 {
+            item = amount
+        } else if total > fee + tax {
+            item = total - fee - tax
+        } else {
+            item = total
+        }
+        let charged = total > 0 ? total : item + fee + tax
+        guard charged > 0 else { return nil }
+        self.context = context
+        self.orderId = envelope.orderId
+        self.itemCents = item
+        self.feeCents = fee
+        self.taxCents = tax
+        self.totalCents = charged
+        self.clientSecret = secret
+    }
+}
+
 /// Buy-now closeout: order created in `pending_payment` + optional PI secret.
 struct BuyNowResponse: Codable, Sendable {
     var orderId: String?
@@ -1649,6 +1700,9 @@ struct BuyNowResponse: Codable, Sendable {
     var clientSecret: String?
     var paymentIntentId: String?
     var paymentRequired: Bool?
+    var amountCents: Int64?
+    var feeCents: Int64?
+    var taxCents: Int64?
     var totalCents: Int64?
     var chargeError: String?
 
@@ -1659,9 +1713,9 @@ struct BuyNowResponse: Codable, Sendable {
             paymentIntentId: paymentIntentId,
             paymentRequired: paymentRequired,
             totalCents: totalCents,
-            amountCents: nil,
-            feeCents: nil,
-            taxCents: nil,
+            amountCents: amountCents,
+            feeCents: feeCents,
+            taxCents: taxCents,
             escrowStatus: escrowStatus,
             chargeError: chargeError
         )
@@ -1704,6 +1758,16 @@ struct ListingOrderSummary: Codable, Sendable, Hashable, Identifiable {
     /// Normalized escrow state machine value (`pending_payment`, `held`, …).
     var normalizedEscrow: String {
         (escrowStatus ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    /// True only after the server has recorded held or released funds.
+    var serverRecordsEscrow: Bool {
+        switch normalizedEscrow {
+        case "held", "released":
+            return true
+        default:
+            return false
+        }
     }
 
     var needsPayment: Bool {
@@ -1777,7 +1841,7 @@ struct ListingOrderSummary: Codable, Sendable, Hashable, Identifiable {
     func nextActionCaption(userId: String?) -> String? {
         if needsPayment {
             if let userId, !userId.isEmpty, buyerId == userId {
-                return "Next: pay with Apple Pay (or card). Funds are held in escrow until pickup."
+                return "Next: review the item, fee, tax, and total, then pay. Funds are held in escrow until pickup."
             }
             if let userId, !userId.isEmpty, sellerId == userId {
                 return "Waiting for the buyer to pay. Escrow starts after payment."
@@ -2033,6 +2097,9 @@ struct UpdateListingOfferResponse: Codable, Sendable {
     var clientSecret: String?
     var paymentIntentId: String?
     var paymentRequired: Bool?
+    var amountCents: Int64?
+    var feeCents: Int64?
+    var taxCents: Int64?
     var totalCents: Int64?
     var escrowStatus: String?
     var chargeError: String?
@@ -2044,9 +2111,9 @@ struct UpdateListingOfferResponse: Codable, Sendable {
             paymentIntentId: paymentIntentId,
             paymentRequired: paymentRequired,
             totalCents: totalCents,
-            amountCents: nil,
-            feeCents: nil,
-            taxCents: nil,
+            amountCents: amountCents,
+            feeCents: feeCents,
+            taxCents: taxCents,
             escrowStatus: escrowStatus,
             chargeError: chargeError
         )

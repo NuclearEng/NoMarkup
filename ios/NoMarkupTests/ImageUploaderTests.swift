@@ -239,23 +239,11 @@ final class ImageUploaderTests: XCTestCase {
         ))
     }
 
-    func testSensitivePhotoUploadAllowsSimulatorAndDisabledPolicy() {
+    func testSensitivePhotoUploadAllowsSimulatorAndCleanDeviceScan() {
         XCTAssertFalse(SensitivePhotoUploadDecision.shouldRefuse(
             isSimulator: true,
             frameworkAvailable: true,
             policyDisabled: false,
-            classifiedSensitive: true
-        ))
-        XCTAssertFalse(SensitivePhotoUploadDecision.shouldRefuse(
-            isSimulator: false,
-            frameworkAvailable: false,
-            policyDisabled: false,
-            classifiedSensitive: true
-        ))
-        XCTAssertFalse(SensitivePhotoUploadDecision.shouldRefuse(
-            isSimulator: false,
-            frameworkAvailable: true,
-            policyDisabled: true,
             classifiedSensitive: true
         ))
         XCTAssertFalse(SensitivePhotoUploadDecision.shouldRefuse(
@@ -266,7 +254,26 @@ final class ImageUploaderTests: XCTestCase {
         ))
     }
 
-    func testSensitivePhotoUploadRefusesOnlyAFlaggedDeviceScan() {
+    func testSensitivePhotoUploadFailsClosedOnDevice() {
+        XCTAssertTrue(SensitivePhotoUploadDecision.shouldRefuse(
+            isSimulator: false,
+            frameworkAvailable: false,
+            policyDisabled: false,
+            classifiedSensitive: false
+        ))
+        XCTAssertTrue(SensitivePhotoUploadDecision.shouldRefuse(
+            isSimulator: false,
+            frameworkAvailable: true,
+            policyDisabled: true,
+            classifiedSensitive: false
+        ))
+        XCTAssertTrue(SensitivePhotoUploadDecision.shouldRefuse(
+            isSimulator: false,
+            frameworkAvailable: true,
+            policyDisabled: false,
+            analysisFailed: true,
+            classifiedSensitive: false
+        ))
         XCTAssertTrue(SensitivePhotoUploadDecision.shouldRefuse(
             isSimulator: false,
             frameworkAvailable: true,
@@ -275,6 +282,7 @@ final class ImageUploaderTests: XCTestCase {
         ))
         XCTAssertFalse(SensitivePhotoUploadDecision.refusalDetail.isEmpty)
         XCTAssertTrue(SensitivePhotoUploadDecision.refusalDetail.localizedCaseInsensitiveContains("sensitive"))
+        XCTAssertFalse(SensitivePhotoUploadDecision.unavailableDetail.isEmpty)
     }
 
     func testSensitiveMediaGateCopyIsNotColorOnly() {

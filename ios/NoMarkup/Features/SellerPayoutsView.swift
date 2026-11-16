@@ -51,7 +51,7 @@ struct SellerPayoutsView: View {
         .accessibilityIdentifier("sellerPayouts.root")
         .task { await load() }
         .refreshable { await load() }
-        .sheet(isPresented: Binding(
+        .fullScreenCover(isPresented: Binding(
             get: { onboardingSafariURL != nil },
             set: { if !$0 { onboardingSafariURL = nil } }
         )) {

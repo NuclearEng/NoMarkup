@@ -112,6 +112,7 @@ struct ActiveBidsWidgetView: View {
                                 .font(.subheadline.weight(.semibold))
                                 .foregroundStyle(WidgetBrand.primaryText)
                                 .lineLimit(2)
+                                .privacySensitive()
                         } else {
                             Text("No active bids")
                                 .font(.subheadline)

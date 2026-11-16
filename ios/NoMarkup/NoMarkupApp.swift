@@ -1,3 +1,4 @@
+import StripePaymentSheet
 import SwiftUI
 
 @main
@@ -66,6 +67,8 @@ struct RootView: View {
 
     /// Optional app lock when "Require Face ID for sensitive actions" is on (IOS-SEC.7).
     @State private var isBiometricallyUnlocked = !BiometricGate.requireForSensitiveActions
+    @State private var showLockPassword = false
+    @State private var lockPasswordError: String?
 
     var body: some View {
         Group {
@@ -96,6 +99,9 @@ struct RootView: View {
         }
         .animation(BrandTheme.animation(.easeInOut(duration: 0.25), reduceMotion: reduceMotion), value: network.isOnline)
         .onOpenURL { url in
+            if StripeAPI.handleURLCallback(with: url) {
+                return
+            }
             _ = deepLinks.handle(url: url)
         }
         .onChange(of: auth.isAuthenticated) { _, isAuthed in
@@ -150,6 +156,7 @@ struct RootView: View {
             if phase == .active {
                 // IOS-SYS.NT.5: server unread is source of truth — never blind-zero.
                 Task { await push.reconcileBadgeFromServer() }
+                AuctionLiveActivityController.maintainSystemLifetime()
             }
             guard auth.isAuthenticated, BiometricGate.requireForSensitiveActions else { return }
             if phase == .background {
@@ -204,6 +211,42 @@ struct RootView: View {
                 .tint(BrandTheme.accent)
                 .foregroundStyle(BrandTheme.ctaLabelOnGold)
                 .accessibilityIdentifier("lock.unlock")
+                Button {
+                    showLockPassword = true
+                } label: {
+                    Text("Use password")
+                        .frame(maxWidth: 240)
+                        .frame(minHeight: 44)
+                }
+                .accessibilityIdentifier("lock.password")
+                if showLockPassword || !BiometricGate.canAuthenticate {
+                    SecureField("Password", text: $auth.password)
+                        .textContentType(.password)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(maxWidth: 280)
+                        .accessibilityIdentifier("lock.password.field")
+                    Button {
+                        Task { await unlockWithPassword() }
+                    } label: {
+                        Text("Continue")
+                            .frame(maxWidth: 240)
+                            .frame(minHeight: 44)
+                    }
+                    .disabled(auth.isBusy || auth.password.isEmpty)
+                    .accessibilityIdentifier("lock.password.continue")
+                }
+                if let lockPasswordError {
+                    Text(lockPasswordError)
+                        .font(.footnote)
+                        .foregroundStyle(BrandTheme.destructive)
+                        .multilineTextAlignment(.center)
+                        .accessibilityIdentifier("lock.password.error")
+                }
+                Button("Sign out", role: .cancel) {
+                    auth.signOut()
+                }
+                .frame(minHeight: 44)
+                .accessibilityIdentifier("lock.signout")
             }
             .padding(32)
         }
@@ -215,7 +258,31 @@ struct RootView: View {
         let ok = await BiometricGate.authenticate(
             reason: "Unlock NoMarkup to view your account and bids."
         )
-        isBiometricallyUnlocked = ok
+        if ok {
+            isBiometricallyUnlocked = true
+            lockPasswordError = nil
+            return
+        }
+        showLockPassword = true
+        lockPasswordError = "Use your account password to continue."
+    }
+
+    private func unlockWithPassword() async {
+        lockPasswordError = nil
+        await auth.login()
+        if auth.needsMFA || !auth.isAuthenticated {
+            // MFA drops back to LoginView. A wrong password stays on the lock.
+            if let message = auth.errorMessage, !message.isEmpty {
+                lockPasswordError = message
+            }
+            return
+        }
+        if auth.errorMessage != nil {
+            lockPasswordError = auth.errorMessage
+            return
+        }
+        isBiometricallyUnlocked = true
+        showLockPassword = false
     }
 
 }

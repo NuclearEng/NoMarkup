@@ -22,11 +22,8 @@ enum LocationPurposeCopy {
     static let jobSiteCheckInPrePrompt =
         "Location confirms you arrived at the job site. It is stored with the contract for dispute protection. GPS is required for check-in."
 
-    /// Photo library purpose (Info.plist) — consolidated product uses.
-    static let photoLibraryUsageDescription =
-        "NoMarkup needs access to your photos so you can set a profile picture, add portfolio images, and attach photos to jobs, listings, and claims."
-
-    /// Camera purpose (Info.plist) — only declare when capture is enabled in binary.
+    /// PhotosPicker does not use `NSPhotoLibraryUsageDescription`. Do not declare that key.
+    /// Camera purpose matches every capture path in the binary.
     static let cameraUsageDescription =
-        "NoMarkup uses the camera so you can take photos for jobs, listings, or your profile instead of choosing an existing photo."
+        "NoMarkup uses the camera to photograph jobs, listings, your profile, chat attachments, contract completion or claim photos, and verification documents such as a driver license."
 }

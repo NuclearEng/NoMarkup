@@ -100,9 +100,33 @@ func postNativeAppleSignIn(t *testing.T, h *OAuthHandler, payload map[string]str
 	return rec
 }
 
+type memoryAppleRefresh struct {
+	userID   string
+	clientID string
+	token    string
+	calls    int
+}
+
+func (m *memoryAppleRefresh) SaveAppleRefreshToken(_ context.Context, userID, clientID, refreshToken string) error {
+	m.calls++
+	m.userID = userID
+	m.clientID = clientID
+	m.token = refreshToken
+	return nil
+}
+
 func TestNativeAppleSignIn_NonceBinding(t *testing.T) {
 	// t.Setenv cannot combine with t.Parallel.
 	t.Setenv("APPLE_CLIENT_ID", testAppleClientID)
+	t.Setenv("APPLE_CLIENT_SECRET", "test-apple-secret")
+	origExchange := exchangeAppleAuthorizationCodeFn
+	exchangeAppleAuthorizationCodeFn = func(_ context.Context, code, clientID, secret string) (string, error) {
+		if code != "code-1" || clientID != testAppleClientID || secret != "test-apple-secret" {
+			return "", fmt.Errorf("unexpected exchange inputs")
+		}
+		return "apple-refresh-1", nil
+	}
+	t.Cleanup(func() { exchangeAppleAuthorizationCodeFn = origExchange })
 
 	key := setupFakeAppleJWKS(t)
 	const rawNonce = "raw-nonce-123456"
@@ -171,11 +195,15 @@ func TestNativeAppleSignIn_NonceBinding(t *testing.T) {
 					}, nil
 				},
 			}
+			saved := &memoryAppleRefresh{}
 			h := NewOAuthHandler(mock, false, "test-session-secret")
+			h.WithAppleRefreshSaver(saved)
 
 			rec := postNativeAppleSignIn(t, h, map[string]string{
-				"identity_token": mintAppleIDToken(t, key, tc.tokenNonce),
-				"nonce":          tc.reqNonce,
+				"identity_token":     mintAppleIDToken(t, key, tc.tokenNonce),
+				"nonce":              tc.reqNonce,
+				"authorization_code": "code-1",
+				"user":               "apple-sub-0001",
 			})
 
 			require.Equal(t, tc.wantStatus, rec.Code, "body=%s", rec.Body.String())
@@ -184,6 +212,12 @@ func TestNativeAppleSignIn_NonceBinding(t *testing.T) {
 			}
 			if tc.wantStatus == http.StatusOK {
 				assert.Contains(t, rec.Body.String(), "access-token")
+				assert.Equal(t, 1, saved.calls)
+				assert.Equal(t, "user-1", saved.userID)
+				assert.Equal(t, testAppleClientID, saved.clientID)
+				assert.Equal(t, "apple-refresh-1", saved.token)
+			} else {
+				assert.Equal(t, 0, saved.calls)
 			}
 		})
 	}
@@ -191,6 +225,52 @@ func TestNativeAppleSignIn_NonceBinding(t *testing.T) {
 
 // TestNativeAppleSignIn_MissingIdentityToken keeps the pre-existing contract:
 // identity_token is validated before the nonce.
+func TestNativeAppleSignIn_RequiresCodeAndMatchingUser(t *testing.T) {
+	t.Setenv("APPLE_CLIENT_ID", testAppleClientID)
+	t.Setenv("APPLE_CLIENT_SECRET", "test-apple-secret")
+	key := setupFakeAppleJWKS(t)
+	const rawNonce = "raw-nonce-123456"
+
+	origExchange := exchangeAppleAuthorizationCodeFn
+	exchangeAppleAuthorizationCodeFn = func(context.Context, string, string, string) (string, error) {
+		return "", fmt.Errorf("apple rejected the code")
+	}
+	t.Cleanup(func() { exchangeAppleAuthorizationCodeFn = origExchange })
+
+	h := NewOAuthHandler(&appleOAuthMockUserClient{
+		findOrCreateByOAuthFn: func(context.Context, *userv1.FindOrCreateByOAuthRequest) (*userv1.FindOrCreateByOAuthResponse, error) {
+			t.Fatal("user service must not be called when the code exchange fails")
+			return nil, nil
+		},
+	}, false, "test-session-secret")
+
+	missingCode := postNativeAppleSignIn(t, h, map[string]string{
+		"identity_token": mintAppleIDToken(t, key, sha256Hex(rawNonce)),
+		"nonce":          rawNonce,
+		"user":           "apple-sub-0001",
+	})
+	require.Equal(t, http.StatusBadRequest, missingCode.Code)
+	assert.Contains(t, missingCode.Body.String(), "authorization_code is required")
+
+	mismatch := postNativeAppleSignIn(t, h, map[string]string{
+		"identity_token":     mintAppleIDToken(t, key, sha256Hex(rawNonce)),
+		"nonce":              rawNonce,
+		"authorization_code": "code-1",
+		"user":               "someone-else",
+	})
+	require.Equal(t, http.StatusUnauthorized, mismatch.Code)
+	assert.Contains(t, mismatch.Body.String(), "apple user id does not match")
+
+	exchangeFailed := postNativeAppleSignIn(t, h, map[string]string{
+		"identity_token":     mintAppleIDToken(t, key, sha256Hex(rawNonce)),
+		"nonce":              rawNonce,
+		"authorization_code": "code-1",
+		"user":               "apple-sub-0001",
+	})
+	require.Equal(t, http.StatusUnauthorized, exchangeFailed.Code)
+	assert.Contains(t, exchangeFailed.Body.String(), "authorization code exchange failed")
+}
+
 func TestNativeAppleSignIn_MissingIdentityToken(t *testing.T) {
 	t.Parallel()
 	h := NewOAuthHandler(nil, false, "test-session-secret")

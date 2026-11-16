@@ -70,18 +70,22 @@ struct CameraImagePicker: UIViewControllerRepresentable {
     @Binding var image: UIImage?
     @Environment(\.dismiss) private var dismiss
 
-    func makeUIViewController(context: Context) -> UIImagePickerController {
+    func makeUIViewController(context: Context) -> UIViewController {
+        // Camera only. A default UIImagePickerController uses the photo library.
+        // Library picks stay on PhotosPicker.
+        guard UIImagePickerController.isSourceTypeAvailable(.camera) else {
+            let placeholder = UIViewController()
+            DispatchQueue.main.async { self.dismiss() }
+            return placeholder
+        }
         let picker = UIImagePickerController()
-        // Prefer camera; fall back to library only if camera hardware is gone mid-session.
-        picker.sourceType = UIImagePickerController.isSourceTypeAvailable(.camera)
-            ? .camera
-            : .photoLibrary
+        picker.sourceType = .camera
         picker.allowsEditing = false
         picker.delegate = context.coordinator
         return picker
     }
 
-    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
+    func updateUIViewController(_ uiViewController: UIViewController, context: Context) {}
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)

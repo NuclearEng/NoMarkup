@@ -12,6 +12,7 @@ struct TermsAcceptanceView: View {
     @State private var errorMessage: String?
     @State private var statusMessage: String?
     @State private var needsSignIn = false
+    @State private var showTermsDocument = false
 
     private var isUpToDate: Bool {
         guard let current, let acceptance else { return false }
@@ -66,6 +67,11 @@ struct TermsAcceptanceView: View {
         .brandNavigationBarChrome()
         .task { await load() }
         .refreshable { await load() }
+        .fullScreenCover(isPresented: $showTermsDocument) {
+            if let bodyURL = current?.resolvedBodyURL {
+                LegalWebView(title: "Terms of Service", url: bodyURL)
+            }
+        }
     }
 
     private var formContent: some View {
@@ -88,11 +94,12 @@ struct TermsAcceptanceView: View {
                     .listRowBackground(BrandTheme.navyElevated)
                 }
 
-                if let bodyURL = current?.resolvedBodyURL {
-                    NavigationLink {
-                        LegalWebView(title: "Terms of Service", url: bodyURL)
+                if current?.resolvedBodyURL != nil {
+                    Button {
+                        showTermsDocument = true
                     } label: {
                         Label("Read full terms", systemImage: "safari")
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .frame(minHeight: 44)
                     .listRowBackground(BrandTheme.navyElevated)

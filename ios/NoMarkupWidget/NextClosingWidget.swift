@@ -175,6 +175,7 @@ struct NextClosingWidgetView: View {
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(WidgetBrand.primaryText)
                         .lineLimit(family == .systemSmall ? 2 : 3)
+                        .privacySensitive()
                     if let ends = entry.endsAt, ends > Date() {
                         Text(timerInterval: Date()...ends, countsDown: true)
                             .font(.title3.monospacedDigit().weight(.bold))
@@ -183,6 +184,7 @@ struct NextClosingWidgetView: View {
                     Text(entry.amountLabel)
                         .font(.caption.weight(.medium))
                         .foregroundStyle(WidgetBrand.secondaryText(for: contrast))
+                        .privacySensitive()
                     Spacer(minLength: 0)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)

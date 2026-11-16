@@ -671,6 +671,18 @@ final class AuthViewModel: ObservableObject {
                 errorMessage = "Sign in with Apple could not be verified on this attempt. Please try again."
                 return
             }
+            guard let codeData = credential.authorizationCode,
+                  let authorizationCode = String(data: codeData, encoding: .utf8),
+                  !authorizationCode.isEmpty
+            else {
+                errorMessage = "Sign in with Apple did not return an authorization code."
+                return
+            }
+            let appleUserID = credential.user.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !appleUserID.isEmpty else {
+                errorMessage = "Sign in with Apple did not return a user id."
+                return
+            }
 
             var fullName: String?
             if let name = credential.fullName {
@@ -681,7 +693,13 @@ final class AuthViewModel: ObservableObject {
             }
 
             Task {
-                await exchangeAppleIdentityToken(identityToken, fullName: fullName, nonce: rawNonce)
+                await exchangeAppleIdentityToken(
+                    identityToken,
+                    authorizationCode: authorizationCode,
+                    appleUserID: appleUserID,
+                    fullName: fullName,
+                    nonce: rawNonce
+                )
             }
         case .failure(let error):
             if let authError = error as? ASAuthorizationError, authError.code == .canceled {
@@ -772,6 +790,8 @@ final class AuthViewModel: ObservableObject {
     /// - Parameter nonce: RAW request nonce (gateway re-hashes; required for native).
     private func exchangeAppleIdentityToken(
         _ identityToken: String,
+        authorizationCode: String,
+        appleUserID: String,
         fullName: String?,
         nonce: String?
     ) async {
@@ -781,6 +801,8 @@ final class AuthViewModel: ObservableObject {
         do {
             let result = try await api.signInWithApple(
                 identityToken: identityToken,
+                authorizationCode: authorizationCode,
+                appleUserID: appleUserID,
                 fullName: fullName,
                 nonce: nonce
             )

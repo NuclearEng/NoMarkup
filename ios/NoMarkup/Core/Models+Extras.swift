@@ -1505,7 +1505,6 @@ struct OAuthAccount: Codable, Sendable, Hashable, Identifiable {
     var systemImage: String {
         switch provider.lowercased() {
         case "google": return "g.circle.fill"
-        case "apple": return "apple.logo"
         case "facebook": return "f.circle.fill"
         default: return "link.circle.fill"
         }

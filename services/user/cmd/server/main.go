@@ -251,10 +251,10 @@ func main() {
 	// the bucket and the real key layout; the user service does not take an
 	// AWS SDK dependency. Unset IMAGING_SERVICE_ADDR skips S3 cleanup.
 	//
-	// OAuth provider-side revoke is not wired: oauth_accounts stores
-	// provider + provider_id + email only (no refresh/access tokens), so
-	// Google/Apple/Facebook cannot be revoked remotely. Local oauth_accounts
-	// rows are DELETE'd in the Postgres cascade.
+	// Sign in with Apple revoke reads oauth_accounts.apple_refresh_token
+	// (migration 136) and posts it to Apple with APPLE_CLIENT_SECRET.
+	// The secret is never generated here. A missing secret fails that call
+	// when a token is stored; deletion still completes and logs the error.
 	var stripeDeleter service.StripeDeleter
 	if paymentAddr := os.Getenv("PAYMENT_SERVICE_ADDR"); paymentAddr != "" {
 		dialOpt, dialErr := meshClientDialOption()
@@ -310,7 +310,8 @@ func main() {
 	} else {
 		slog.Warn("notification client unavailable; GDPR lifecycle emails will log Error until NOTIFICATION_SERVICE_ADDR is set")
 	}
-	erasureService := service.NewErasure(repo, stripeDeleter, objectStore, nil, gdprMailer)
+	appleRevoker := service.NewAppleOAuthRevoker(repo)
+	erasureService := service.NewErasure(repo, stripeDeleter, objectStore, appleRevoker, gdprMailer)
 	srv := grpcserver.NewServer(authService, profileService, adminService, phoneService, verificationService, erasureService, notifClient, baseURL)
 
 	// Start gRPC server.

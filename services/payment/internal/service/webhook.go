@@ -632,12 +632,10 @@ func (s *PaymentService) handlePayoutEvent(ctx context.Context, event stripe.Eve
 
 	typ, title, body := payoutNotificationCopy(event.Type, po)
 	data := map[string]string{
-		"payout_id":    po.ID,
-		"account_id":   accountID,
-		"amount_cents": fmt.Sprintf("%d", po.Amount),
-		"status":       string(po.Status),
-		"failure_code": string(po.FailureCode),
-		"event_type":   string(event.Type),
+		"payout_id":  po.ID,
+		"account_id": accountID,
+		"status":     string(po.Status),
+		"event_type": string(event.Type),
 	}
 	if err := s.notify.Send(ctx, providerID, typ, title, body, "/payouts", data); err != nil {
 		slog.WarnContext(ctx, "payout notification failed (event kept)",
@@ -651,24 +649,22 @@ func (s *PaymentService) handlePayoutEvent(ctx context.Context, event stripe.Eve
 }
 
 func payoutNotificationCopy(eventType stripe.EventType, po stripe.Payout) (notificationv1.NotificationType, string, string) {
-	amount := formatCents(po.Amount)
+	// Push and the notification row stay generic. Amounts and failure codes
+	// stay on the payout screen inside the app.
+	_ = po
 	switch eventType {
 	case "payout.paid":
 		return notificationv1.NotificationType_NOTIFICATION_TYPE_PAYOUT_SENT,
 			"Payout sent",
-			fmt.Sprintf("%s is on its way to your bank account.", amount)
+			"A payout update is ready. Open the app to see the status."
 	case "payout.canceled":
 		return notificationv1.NotificationType_NOTIFICATION_TYPE_PAYMENT_FAILED,
 			"Payout canceled",
-			fmt.Sprintf("Your %s payout was canceled. The funds remain in your Stripe balance.", amount)
+			"A payout was canceled. Open the app for details."
 	default: // payout.failed
-		reason := string(po.FailureCode)
-		if reason == "" {
-			reason = "the payout could not be completed"
-		}
 		return notificationv1.NotificationType_NOTIFICATION_TYPE_PAYMENT_FAILED,
-			"Payout failed",
-			fmt.Sprintf("Your %s payout failed (%s). Update your bank details and try again.", amount, reason)
+			"Payout update",
+			"A payout needs attention. Open the app to review it."
 	}
 }
 

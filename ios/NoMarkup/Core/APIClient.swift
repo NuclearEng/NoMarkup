@@ -211,6 +211,8 @@ actor APIClient {
     ///   (IOS-SEC.1 replay binding).
     func signInWithApple(
         identityToken: String,
+        authorizationCode: String,
+        appleUserID: String,
         fullName: String?,
         nonce: String? = nil
     ) async throws -> AuthLoginResult {
@@ -220,7 +222,11 @@ actor APIClient {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         applyClientIdentity(to: &request)
-        var body: [String: String] = ["identity_token": identityToken]
+        var body: [String: String] = [
+            "identity_token": identityToken,
+            "authorization_code": authorizationCode,
+            "user": appleUserID,
+        ]
         if let fullName, !fullName.isEmpty {
             body["full_name"] = fullName
         }

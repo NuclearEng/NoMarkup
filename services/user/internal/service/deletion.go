@@ -240,6 +240,18 @@ func (e *Erasure) FinalizeAccountDeletion(ctx context.Context, userID string, fo
 		return nil, fmt.Errorf("finalize deletion: lookup stripe ids: %w", err)
 	}
 
+	// Revoke Sign in with Apple while oauth_accounts still holds the refresh
+	// token. The cascade below deletes that row. A revoke failure is logged
+	// and does not block erasure; the legal act is the local wipe.
+	if e.oauth != nil {
+		if oErr := e.oauth.RevokeUserTokens(ctx, userID); oErr != nil {
+			slog.Warn("gdpr: oauth revoke failed",
+				"user_id", userID,
+				"error", oErr,
+			)
+		}
+	}
+
 	counts, err := e.repo.FinalizeAccountDeletion(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("finalize deletion: cascade: %w", err)
@@ -286,15 +298,6 @@ func (e *Erasure) FinalizeAccountDeletion(ctx context.Context, userID string, fo
 			)
 		} else {
 			counts["s3_objects"] = int64(n)
-		}
-	}
-
-	if e.oauth != nil {
-		if oErr := e.oauth.RevokeUserTokens(ctx, userID); oErr != nil {
-			slog.Warn("gdpr: oauth revoke failed",
-				"user_id", userID,
-				"error", oErr,
-			)
 		}
 	}
 
