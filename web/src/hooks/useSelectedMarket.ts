@@ -9,6 +9,29 @@ const RECENTS_KEY = 'nm.recentMarkets';
 const RECENTS_MAX = 5;
 const EVENT = 'nm:selectedMarket';
 
+/**
+ * When localStorage refuses a write (private mode, quota) the value cannot be
+ * re-read from storage, so the sync event carries it instead. Listeners take
+ * the value for their own key from the event and leave their state alone when
+ * the event carries the other key; a plain event means "re-read storage".
+ */
+interface MemoryFallback {
+  selected?: Market | null;
+  recents?: Market[];
+}
+
+function announce(fallback?: MemoryFallback): void {
+  window.dispatchEvent(
+    fallback ? new CustomEvent<MemoryFallback>(EVENT, { detail: fallback }) : new Event(EVENT),
+  );
+}
+
+function fallbackOf(event: Event): MemoryFallback | null {
+  if (!(event instanceof CustomEvent)) return null;
+  const detail: unknown = event.detail;
+  return typeof detail === 'object' && detail !== null ? (detail as MemoryFallback) : null;
+}
+
 function read(): Market | null {
   if (typeof window === 'undefined') return null;
   try {
@@ -39,7 +62,11 @@ export function useSelectedMarket(): [Market | null, (m: Market | null) => void]
   }, []);
 
   useEffect(() => {
-    const sync = () => { setMarketState(read()); };
+    const sync = (event: Event) => {
+      const fallback = fallbackOf(event);
+      if (!fallback) setMarketState(read());
+      else if (fallback.selected !== undefined) setMarketState(fallback.selected);
+    };
     window.addEventListener(EVENT, sync);
     window.addEventListener('storage', sync);
     return () => {
@@ -50,14 +77,16 @@ export function useSelectedMarket(): [Market | null, (m: Market | null) => void]
 
   const setMarket = useCallback((m: Market | null) => {
     if (typeof window === 'undefined') return;
+    let stored = true;
     try {
       if (m) window.localStorage.setItem(STORAGE_KEY, JSON.stringify(m));
       else window.localStorage.removeItem(STORAGE_KEY);
     } catch {
       // storage unavailable (private mode) — fall back to in-memory only
+      stored = false;
     }
     setMarketState(m);
-    window.dispatchEvent(new Event(EVENT));
+    announce(stored ? undefined : { selected: m });
   }, []);
 
   return [market, setMarket];
@@ -88,7 +117,11 @@ export function useRecentMarkets(): [Market[], (m: Market) => void] {
   }, []);
 
   useEffect(() => {
-    const sync = () => { setRecents(readRecents()); };
+    const sync = (event: Event) => {
+      const fallback = fallbackOf(event);
+      if (!fallback) setRecents(readRecents());
+      else if (fallback.recents !== undefined) setRecents(fallback.recents);
+    };
     window.addEventListener(EVENT, sync);
     window.addEventListener('storage', sync);
     return () => {
@@ -100,13 +133,15 @@ export function useRecentMarkets(): [Market[], (m: Market) => void] {
   const pushRecent = useCallback((m: Market) => {
     if (typeof window === 'undefined') return;
     const next = [m, ...readRecents().filter((r) => r.slug !== m.slug)].slice(0, RECENTS_MAX);
+    let stored = true;
     try {
       window.localStorage.setItem(RECENTS_KEY, JSON.stringify(next));
     } catch {
-      // ignore storage failures
+      // storage unavailable — keep the list in memory
+      stored = false;
     }
     setRecents(next);
-    window.dispatchEvent(new Event(EVENT));
+    announce(stored ? undefined : { recents: next });
   }, []);
 
   return [recents, pushRecent];
