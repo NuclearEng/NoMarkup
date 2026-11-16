@@ -1114,7 +1114,7 @@ struct ProviderCategoriesEditView: View {
                             }
                         }
                         .buttonStyle(.borderedProminent)
-                        .tint(BrandTheme.gold)
+                        .tint(BrandTheme.goldBright)
                         .foregroundStyle(BrandTheme.ctaLabelOnGold)
                         .disabled(isSaving)
                         .listRowBackground(BrandTheme.navyElevated)

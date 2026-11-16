@@ -15,6 +15,7 @@ enum SpotlightIndex {
     private static let viewJobActivityType = "com.nomarkup.app.viewJob"
     private static let viewListingActivityType = "com.nomarkup.app.viewListing"
 
+    // SAFETY: donationLock guards bridgeInstalled and lastDonationKey. The swizzle can run off the main actor.
     nonisolated(unsafe) private static var bridgeInstalled = false
     nonisolated(unsafe) private static let donationLock = NSLock()
     nonisolated(unsafe) private static var lastDonationKey: String?
@@ -22,6 +23,8 @@ enum SpotlightIndex {
     /// Install once at launch. No-op below iOS 18.
     static func installActivityDonationBridge() {
         guard #available(iOS 18.0, *) else { return }
+        donationLock.lock()
+        defer { donationLock.unlock() }
         guard !bridgeInstalled else { return }
         guard
             let original = class_getInstanceMethod(

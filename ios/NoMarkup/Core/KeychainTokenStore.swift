@@ -3,7 +3,7 @@ import Security
 
 /// Minimal Keychain-backed token store for access / refresh tokens.
 /// Not a full session manager — Stage B will wire refresh + rotation.
-final class KeychainTokenStore: @unchecked Sendable {
+final class KeychainTokenStore: Sendable {
     enum Key: String {
         case accessToken = "com.nomarkup.auth.accessToken"
         case refreshToken = "com.nomarkup.auth.refreshToken"

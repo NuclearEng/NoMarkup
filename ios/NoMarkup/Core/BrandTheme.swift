@@ -802,6 +802,7 @@ private struct BrandSectionHeaderModifier: ViewModifier {
 struct BrandGhostButtonStyle: ButtonStyle {
     /// A11Y.3: solid fill + composite border under Reduce Transparency.
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -821,9 +822,8 @@ struct BrandGhostButtonStyle: ButtonStyle {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .strokeBorder(ghostBorder(pressed: configuration.isPressed), lineWidth: 1)
             )
-            .scaleEffect(configuration.isPressed ? 0.98 : 1)
-            // ButtonStyle has no Reduce Motion env; short press feedback is OK at system default.
-            .animation(.easeOut(duration: 0.15), value: configuration.isPressed)
+            .scaleEffect(reduceMotion ? 1 : (configuration.isPressed ? 0.98 : 1))
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: configuration.isPressed)
             .background(AuditPressProbe(isPressed: configuration.isPressed, path: "brand.ghost"))
     }
 
@@ -841,6 +841,7 @@ struct BrandGhostButtonStyle: ButtonStyle {
 struct BrandPrimaryButtonStyle: ButtonStyle {
     /// A11Y.3: opaque rim under Reduce Transparency (fill is already opaque).
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -873,9 +874,9 @@ struct BrandPrimaryButtonStyle: ButtonStyle {
                     )
             )
             .shadow(color: BrandTheme.goldFill.opacity(configuration.isPressed ? 0.15 : 0.35), radius: 16, y: 6)
-            .scaleEffect(configuration.isPressed ? 0.985 : 1)
+            .scaleEffect(reduceMotion ? 1 : (configuration.isPressed ? 0.985 : 1))
             .opacity(configuration.isPressed ? 0.94 : 1)
-            .animation(.easeOut(duration: 0.15), value: configuration.isPressed)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: configuration.isPressed)
             .background(AuditPressProbe(isPressed: configuration.isPressed, path: "brand.primary"))
     }
 }
@@ -1391,7 +1392,7 @@ struct BrandPriceText: View {
             .foregroundStyle(color)
             .contentTransition(.numericText())
             .brandMoneyFlash(token: flashToken, isDown: isDown)
-            .animation(.easeOut(duration: 0.2), value: cents)
+            .brandAnimation(.easeOut(duration: 0.2), value: cents)
             .accessibilityLabel(cents.map { MoneyFormat.usd(cents: $0) } ?? "Price unavailable")
     }
 }
@@ -1658,7 +1659,7 @@ struct DollarAmountField: View {
                         .font(.caption.weight(.semibold).monospacedDigit())
                         .foregroundStyle(BrandTheme.success)
                         .contentTransition(.numericText())
-                        .animation(.easeOut(duration: 0.15), value: cents)
+                        .brandAnimation(.easeOut(duration: 0.15), value: cents)
                         .accessibilityLabel("Will submit \(MoneyFormat.usd(cents: cents))")
                 } else if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     Text("Enter a dollar amount (example 125.00) — not cents")

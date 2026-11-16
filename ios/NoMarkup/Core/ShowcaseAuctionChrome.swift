@@ -58,7 +58,7 @@ struct ShowcaseAuctionJobMeta: View {
                 Text(categoryLine.uppercased())
                     .font(.caption2.weight(.semibold).monospaced())
                     .tracking(0.8)
-                    .foregroundStyle(BrandTheme.gold)
+                    .foregroundStyle(BrandTheme.goldBright)
                     .lineLimit(1)
             }
             Text(title)
@@ -184,7 +184,7 @@ struct ShowcaseBidRowChrome: View {
                     if let rating, rating > 0 {
                         Text(String(format: "★ %.1f", rating))
                             .font(.caption2.weight(.medium).monospacedDigit())
-                            .foregroundStyle(BrandTheme.gold)
+                            .foregroundStyle(BrandTheme.goldBright)
                     }
                     if let trustText, trustText != "—" {
                         Text("Trust \(trustText)")

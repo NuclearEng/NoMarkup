@@ -1961,7 +1961,7 @@ struct ContractDetailView: View {
                 }
             }
             .buttonStyle(.borderedProminent)
-            .tint(BrandTheme.gold)
+            .tint(BrandTheme.goldBright)
             .foregroundStyle(BrandTheme.ctaLabelOnGold)
             .disabled(
                 isSubmittingChangeOrder
@@ -3373,7 +3373,7 @@ private struct ContractConfirmationsModifier: ViewModifier {
                 titleVisibility: .visible
             ) {
                 Button("Pay \(payEscrowAmountLabel)", action: onPayEscrow)
-                Button("Not now", role: .cancel) {}
+                Button("Cancel", role: .cancel) {}
             } message: {
                 if let payEscrowRecurringDisclosure, !payEscrowRecurringDisclosure.isEmpty {
                     Text(payEscrowRecurringDisclosure)
