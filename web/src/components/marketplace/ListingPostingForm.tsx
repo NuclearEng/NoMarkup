@@ -39,6 +39,11 @@ import { useImageUpload } from '@/hooks/useImageUpload';
 import { useCreateListing } from '@/hooks/useListings';
 import { getApiErrorMessage } from '@/lib/api';
 import { getAccessToken } from '@/lib/auth';
+import {
+  describeAiAutofill,
+  planAiAutofill,
+  type AiAutofillField,
+} from '@/lib/listing-ai-autofill';
 import { scorePhotoQuality } from '@/lib/photo-quality';
 import { cn } from '@/lib/utils';
 import {
@@ -159,6 +164,8 @@ export function ListingPostingForm({ onPublishSuccess }: ListingPostingFormProps
     'idle' | 'analyzing' | 'applied' | 'unavailable' | 'error'
   >('idle');
   const [aiSummary, setAiSummary] = useState<ListingImageAnalysisResult | null>(null);
+  // Fields the last analysis really filled; the notice names only these.
+  const [aiApplied, setAiApplied] = useState<AiAutofillField[]>([]);
   // Display name of the chosen category, captured from the picker's onChange so
   // the Review step can show it without a hardcoded id→name map (categories are
   // DB-driven now). May be empty if the value came from AI (id only).
@@ -315,7 +322,7 @@ export function ListingPostingForm({ onPublishSuccess }: ListingPostingFormProps
         setAiState('error');
         return;
       }
-      applyAnalysis(data);
+      setAiApplied(applyAnalysis(data));
       setAiSummary(data);
       setAiState('applied');
     } catch {
@@ -324,38 +331,18 @@ export function ListingPostingForm({ onPublishSuccess }: ListingPostingFormProps
     }
   }
 
-  function applyAnalysis(result: ListingImageAnalysisResult) {
+  function applyAnalysis(result: ListingImageAnalysisResult): AiAutofillField[] {
     const current = form.getValues();
-    // Only fill empty fields — never clobber what the user has already typed.
-    if (!current.title.trim()) {
-      form.setValue('title', result.title.slice(0, 120), {
-        shouldValidate: true,
-        shouldDirty: true,
-      });
+    // Only empty fields are filled — never clobber what the user already typed.
+    const { patch, applied } = planAiAutofill(current, result);
+    const opts = { shouldValidate: true, shouldDirty: true };
+    if (patch.title !== undefined) form.setValue('title', patch.title, opts);
+    if (patch.description !== undefined) form.setValue('description', patch.description, opts);
+    if (patch.categoryId !== undefined) form.setValue('categoryId', patch.categoryId, opts);
+    if (patch.startingPriceDollars !== undefined) {
+      form.setValue('startingPriceDollars', patch.startingPriceDollars, opts);
     }
-    if (!current.description.trim()) {
-      form.setValue('description', result.description, {
-        shouldValidate: true,
-        shouldDirty: true,
-      });
-    }
-    // Categories are DB-driven now, so we no longer validate the suggestion
-    // against a hardcoded allowlist. Accept any non-empty suggested id/slug as a
-    // best-effort prefill — the picker shows it as the current value so the
-    // seller can confirm or override, and the gateway validates it server-side.
-    if (!current.categoryId && result.categorySlug.trim()) {
-      form.setValue('categoryId', result.categorySlug, {
-        shouldValidate: true,
-        shouldDirty: true,
-      });
-    }
-    if (!current.startingPriceDollars || current.startingPriceDollars === 0) {
-      const dollars = Math.max(1, Math.round(result.suggestedStartingPriceCents / 100));
-      form.setValue('startingPriceDollars', dollars, {
-        shouldValidate: true,
-        shouldDirty: true,
-      });
-    }
+    return applied;
   }
 
   function handleFileInput(e: ChangeEvent<HTMLInputElement>) {
@@ -644,9 +631,12 @@ export function ListingPostingForm({ onPublishSuccess }: ListingPostingFormProps
                           className="mt-0.5 h-4 w-4 shrink-0 text-[var(--brand-gold)]"
                           aria-hidden="true"
                         />
-                        <span>
-                          AI suggested a title, category, and starting price
-                          {aiSummary.suggestedStartingPriceCents > 0 ? (
+                        <span data-testid="ai-autofill-notice">
+                          {aiApplied.length > 0
+                            ? `AI suggested ${describeAiAutofill(aiApplied)}`
+                            : 'AI suggested nothing new: your own entries were kept'}
+                          {aiApplied.includes('starting price') &&
+                          aiSummary.suggestedStartingPriceCents > 0 ? (
                             <>
                               {' '}
                               (
