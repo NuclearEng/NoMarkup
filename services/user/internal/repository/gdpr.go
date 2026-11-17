@@ -383,6 +383,45 @@ func (r *PostgresRepository) FinalizeAccountDeletion(ctx context.Context, userID
 		return nil, err
 	}
 
+	// 9a. contract_work_sessions (migrations 123 / 138) — proof-of-work
+	//     check-in / check-out. KEEP the row, its timestamps and duration: they
+	//     are contract evidence (the escrow-release gate and dispute record),
+	//     retained for the life of the contract exactly as `contracts` is.
+	//     NULL the coordinates: a check-in point is geo-fenced to within 500 m
+	//     of the customer's home and is a timestamped location trace of the
+	//     provider, so it is erased when EITHER party is — the same reasoning
+	//     that clears jobs.service_location_encrypted above. The legacy
+	//     plaintext ordinates are cleared with their ciphertext.
+	if err := exec("contract_work_sessions", `
+		UPDATE contract_work_sessions
+		   SET check_in_location_encrypted  = NULL,
+		       check_out_location_encrypted = NULL,
+		       check_in_lat  = NULL,
+		       check_in_lng  = NULL,
+		       check_out_lat = NULL,
+		       check_out_lng = NULL,
+		       updated_at    = now()
+		 WHERE (provider_id = $1
+		        OR contract_id IN (SELECT id FROM contracts WHERE customer_id = $1))
+		   AND (check_in_location_encrypted IS NOT NULL
+		        OR check_out_location_encrypted IS NOT NULL
+		        OR check_in_lat IS NOT NULL OR check_in_lng IS NOT NULL
+		        OR check_out_lat IS NOT NULL OR check_out_lng IS NOT NULL)`, userID); err != nil {
+		return nil, err
+	}
+
+	// 9b. contract_completion_photos (migration 123) — DELETE the rows this
+	//     user uploaded. Completion photos are uploaded under the imaging
+	//     `job_photo` context, i.e. to job-photos/{uploader}/, which the
+	//     post-commit ImagingService/DeleteUserObjects step removes for this
+	//     user; the rows would otherwise point at deleted objects. Same
+	//     decision as job_photos above. Photos uploaded by the OTHER party are
+	//     that party's evidence and are kept.
+	if err := exec("contract_completion_photos", `
+		DELETE FROM contract_completion_photos WHERE uploaded_by = $1`, userID); err != nil {
+		return nil, err
+	}
+
 	// 10. payments — KEEP. Tax/AML retention is mandatory (IRS retains 7 yr,
 	//     Stripe disputes 18 mo). No free-text fields owned by the user, so
 	//     no anonymization is needed at this layer.
@@ -432,6 +471,13 @@ func (r *PostgresRepository) FinalizeAccountDeletion(ctx context.Context, userID
 	//     above, but belt-and-braces: revoke the credentials too).
 	if err := exec("refresh_tokens", `
 		DELETE FROM refresh_tokens WHERE user_id = $1`, userID); err != nil {
+		return nil, err
+	}
+
+	// calendar_feed_tokens (migration 140) — opaque ICS bearer credentials.
+	// DELETE for the same reason as refresh_tokens: no credential survives.
+	if err := exec("calendar_feed_tokens", `
+		DELETE FROM calendar_feed_tokens WHERE user_id = $1`, userID); err != nil {
 		return nil, err
 	}
 
