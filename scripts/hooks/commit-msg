@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# commit-msg: stamp the commit with `Verified-by: <checks> | none`.
+#
+# The value comes only from scripts/verify-record.mjs's record of checks that
+# exited 0 on exactly the file contents being committed (written by
+# `node scripts/verify-record.mjs run ...` and `scripts/reliability-check.mjs
+# --record`). Any `Verified-by:` line the author typed is replaced. Observe
+# mode: the hook never blocks a commit. Install with `make install-hooks`.
+set -u
+msg_file="$1"
+root="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+stamper="${root}/scripts/verify-record.mjs"
+if [ ! -f "${stamper}" ] || ! command -v node >/dev/null 2>&1; then
+  exit 0
+fi
+if ! node "${stamper}" stamp "${msg_file}"; then
+  echo "commit-msg: could not compute Verified-by (commit left unstamped)" >&2
+fi
+exit 0

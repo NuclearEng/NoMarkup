@@ -1,7 +1,8 @@
 .PHONY: up down dev dev-full dev-infra dev-status dev-logs migrate-up migrate-down seed proto-gen proto-gen-go proto-gen-rust \
        verify-proto setup-tools test lint fmt build-gateway build-web build-engines build-services build build-all clean \
        ios-archive-lint ios-archive founder-secrets-check origin-check encrypt-pii encrypt-pii-dry-run \
-       e2e-catalog e2e-ios-catalog generate-catalog check-catalog
+       e2e-catalog e2e-ios-catalog generate-catalog check-catalog \
+       reliability-check install-hooks uninstall-hooks
 
 # ── Native Dev (bin/dev) ─────────────────────────────────────
 
@@ -11,6 +12,19 @@ generate-catalog:
 
 check-catalog: generate-catalog
 	git diff --exit-code -- docs/workflows/catalog.json docs/workflows/pages.json
+
+# Diff-triggered reliability checklist (docs/reliability-checklist.md): lists
+# the items the diff vs origin/main triggers and runs the automated ones.
+reliability-check:
+	node scripts/reliability-check.mjs --run --record
+
+# Opt-in: commit-msg hook that stamps `Verified-by:` from the verification
+# record (scripts/verify-record.mjs). Observe mode — it never blocks a commit.
+install-hooks:
+	bash scripts/hooks/install.sh
+
+uninstall-hooks:
+	bash scripts/hooks/install.sh --uninstall
 
 # Catalog-driven E2E. CI (no SEED_PASSWORD) runs the VCR/backendless path.
 # Full login + hop walk needs bin/dev + SEED_PASSWORD.

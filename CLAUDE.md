@@ -60,6 +60,22 @@ How work is PROVEN here — surfaced up top because these get skipped at exactly
   do not gate; numerical code is proptest-covered (§5/§7).
 - **Prove behavior by the real artifact** (rendered page / actual response), not source
   string-matching; data-fetching UI checked in all four states (loading/error/empty/success) (§4/§7).
+- **Before committing, use the `verify` skill** (`.claude/skills/verify/SKILL.md`): the fastest
+  reliable checks for the areas the diff touches, then run the change itself. After three failed fix
+  rounds on the same check, stop and hand a human the evidence.
+- **Diff-triggered checklist:** `node scripts/reliability-check.mjs --run --record` (or
+  `make reliability-check`) prints only the `docs/reliability-checklist.md` items this diff triggers —
+  each one a past incident — and runs the automatable ones. CI runs the base branch's copy on every PR.
+- **Flaky-test policy — no sleeps, retries or skips to make a test pass.** A flaky test is a bug in the
+  test or the code: find the root cause and fix it (wait for the condition, isolate the data, make the
+  timing deterministic), or delete the test and write down why in the commit. Do not add `sleep` /
+  `waitForTimeout` / `time.Sleep` as a fix, do not add retries (Playwright `retries`, retry loops,
+  `-count` reruns), and do not `skip` a failing test. A skip is legitimate only for a missing
+  precondition the reason names (no `DATABASE_URL`, no physical device), and must never hide a test
+  that can no longer run. Existing exceptions are listed in `docs/flaky-test-audit.md`.
+- **Commit stamp (opt-in):** `make install-hooks` adds a `commit-msg` hook that appends
+  `Verified-by: <checks> | none` from the verification record (`scripts/verify-record.mjs`) — only
+  checks that exited 0 on exactly the committed contents count; a hand-typed `Verified-by:` is replaced.
 
 ---
 
@@ -353,7 +369,8 @@ JS <200KB gz · per-route <50KB gz · hero image <200KB (WebP/AVIF).
 - **PR size**: < 400 lines changed. Larger → stacked PRs.
 - **Main branch**: always deployable. Never push directly.
 - **Pre-commit:** **Claude Code hooks** enforce many project rules in agent sessions. There is **no
-  Husky** git pre-commit package installed unless added later — do not claim Husky is the gate.
+  Husky** git pre-commit package installed unless added later — do not claim Husky is the gate. The
+  only repo git hook is the opt-in `commit-msg` stamp (`make install-hooks`), which never blocks.
 - **CI**: lint → type check → unit → (selected) integration → build. Deploy is fail-closed until
   `DEPLOY_PROVISIONED`. **No force-push to main/master** (policy / hooks where configured).
 
