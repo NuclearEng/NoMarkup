@@ -28,23 +28,6 @@ func TestSearchRetryBackoff(t *testing.T) {
 	}
 }
 
-func TestSearchRetryNextScore(t *testing.T) {
-	t.Parallel()
-	now := time.Date(2026, 7, 27, 12, 0, 0, 0, time.UTC)
-	// attempt 1 → +30s
-	got := SearchRetryNextScore(now, 1)
-	want := float64(now.Add(30 * time.Second).Unix())
-	if got != want {
-		t.Errorf("SearchRetryNextScore(attempt=1) = %v, want %v", got, want)
-	}
-	// attempt 6 → +15m cap
-	got = SearchRetryNextScore(now, 6)
-	want = float64(now.Add(15 * time.Minute).Unix())
-	if got != want {
-		t.Errorf("SearchRetryNextScore(attempt=6) = %v, want %v", got, want)
-	}
-}
-
 func TestMarshalUnmarshalSearchRetryMember_roundTrip(t *testing.T) {
 	t.Parallel()
 	in := SearchRetryTask{

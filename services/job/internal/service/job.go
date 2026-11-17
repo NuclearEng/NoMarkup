@@ -23,8 +23,8 @@ type JobService struct {
 	matching *MatchingService
 	notifier NotificationSender
 	// retryQ is optional (ARC-16). When non-nil, Meilisearch failures that
-	// exhaust in-process retries are escalated to a Redis-backed durable
-	// queue. nil-safe — search still fails soft without Redis.
+	// exhaust in-process retries are escalated to a Postgres-backed durable
+	// queue. nil-safe — search still fails soft without it.
 	retryQ *SearchRetryQueue
 }
 
@@ -436,7 +436,7 @@ func (s *JobService) AdminRemoveJob(ctx context.Context, jobID, reason, adminID 
 // indexJobWithRetry attempts to index a job in Meilisearch with up to 3 retries
 // using exponential backoff (1s, 2s, 4s). Runs in a goroutine so it does not
 // block the response to the caller. On exhaustion, escalates to the durable
-// Redis retry queue (ARC-16) when wired; otherwise dead-letters with metric.
+// Postgres retry outbox (ARC-16) when wired; otherwise dead-letters with metric.
 func (s *JobService) indexJobWithRetry(job *domain.Job, operation string) {
 	jobID := job.ID
 
@@ -489,7 +489,7 @@ func (s *JobService) indexJobWithRetry(job *domain.Job, operation string) {
 
 // removeJobFromSearchWithRetry attempts to delete a job from the Meilisearch
 // index with up to 3 retries (exponential backoff 1s, 2s, 4s). Runs in a
-// goroutine. On exhaustion, escalates to the durable Redis retry queue
+// goroutine. On exhaustion, escalates to the durable Postgres retry outbox
 // (ARC-16) when wired; otherwise dead-letters with metric + ERROR log.
 func (s *JobService) removeJobFromSearchWithRetry(jobID, operation string) {
 	go func() {

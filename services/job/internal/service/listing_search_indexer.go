@@ -18,7 +18,7 @@
 //	close (no bids) → RemoveListing  (status flips to 'expired')
 //
 // The retry pattern (3-attempt exponential backoff, fire-and-forget
-// goroutine + durable Redis escalation on exhaustion) is identical to
+// goroutine + durable Postgres outbox escalation on exhaustion) is identical to
 // JobService.indexJobWithRetry. We use the same structured-log levels
 // and ARC-16 durable queue so the alerting pipeline picks up failures
 // uniformly across both index types.
@@ -468,7 +468,7 @@ func buildListingDoc(l *domain.Listing, hydrate ListingHydrator, trustRanking bo
 
 // indexListingWithRetry mirrors job.go's indexJobWithRetry: 3 attempts
 // with exponential backoff (1s, 2s, 4s) inside a goroutine so callers
-// don't block. On exhaustion, escalates to the durable Redis queue
+// don't block. On exhaustion, escalates to the durable Postgres outbox
 // (ARC-16) when retryQ is non-nil.
 func indexListingWithRetry(se *ListingSearchEngine, l *domain.Listing, hydrate ListingHydrator, operation string, retryQ *SearchRetryQueue) {
 	if se == nil || l == nil {
@@ -519,7 +519,7 @@ func indexListingWithRetry(se *ListingSearchEngine, l *domain.Listing, hydrate L
 }
 
 // removeListingFromSearchWithRetry mirrors removeJobFromSearchWithRetry.
-// On exhaustion, escalates to the durable Redis queue (ARC-16).
+// On exhaustion, escalates to the durable Postgres outbox (ARC-16).
 func removeListingFromSearchWithRetry(se *ListingSearchEngine, listingID, operation string, retryQ *SearchRetryQueue) {
 	if se == nil || listingID == "" {
 		return

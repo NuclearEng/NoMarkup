@@ -40,7 +40,7 @@ type ListingService struct {
 	// already has — search still works against title/description.
 	hydrate ListingHydrator
 	// retryQ is optional (ARC-16). When non-nil, Meilisearch failures that
-	// exhaust in-process retries escalate to the shared Redis durable queue.
+	// exhaust in-process retries escalate to the shared Postgres durable outbox.
 	retryQ *SearchRetryQueue
 }
 
