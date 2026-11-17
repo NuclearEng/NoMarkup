@@ -257,8 +257,9 @@ func New(
 	// the secret via POST /api/v1/me/calendar-feed (inside the auth block).
 	// Session JWTs in ?token= are rejected. optionalAuth populates claims when
 	// a cookie/Bearer is present; ?feed= is resolved inside the handler.
-	// Redis backs the feed hash — thread it here so main.go's constructor
-	// signature stays unchanged.
+	// Feed hashes live in Postgres (migration 140); Redis is threaded here
+	// only as the read-only fallback for pre-140 tokens (removal note in
+	// handler/calendar_feed_store.go).
 	calendarExportHandler.WithCache(cacheClient)
 	r.Get("/api/v1/me/calendar.ics", optionalAuth(authMW, calendarExportHandler.ExportICS))
 

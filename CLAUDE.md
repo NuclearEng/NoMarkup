@@ -228,7 +228,10 @@ These are non-negotiable. The hooks enforce many automatically.
   `.insurance_policy_number`; `provider_employees.email` / `.phone` / `.license_number` /
   `.insurance_policy_number` / `.date_of_birth_encrypted`; `provider_licenses.license_number`;
   `properties.address` / `.notes` / `.location_encrypted`; `jobs.service_address` /
-  `.service_location_encrypted`.
+  `.service_location_encrypted`; `contract_work_sessions.check_in_location_encrypted` /
+  `.check_out_location_encrypted` (`138`; the legacy `check_*_lat/lng` are drained to NULL).
+  **Redis holds no records** — only caches, windows and short-lived state
+  (`volatile-lru` makes every TTL'd key evictable); see `docs/operations/redis-state.md`.
   **Geometry is coarsened, not encrypted** — a point beside an encrypted address is the same secret
   in another encoding, but it cannot be encrypted because GiST cannot index ciphertext. So
   `jobs.service_location`, `jobs.approximate_location` and `properties.location` are snapped at rest

@@ -176,15 +176,23 @@ func main() {
 	listingHydrate := buildListingHydrator(pool, trustRanking)
 	listingService := service.NewListingService(listingRepo).WithSearch(listingSearchEngine, listingHydrate)
 
+	// ARC-16: durable search reindex retry outbox (jobs + listings share one
+	// table, search_retry_outbox, migration 141). Always wired when the job
+	// service has a database — it no longer depends on REDIS_URL, so a Redis
+	// OOM can no longer drop an escalated index/remove.
+	searchRetryQ := service.NewSearchRetryQueue(pool).
+		WithJobHandlers(repo, searchEngine).
+		WithListingHandlers(listingRepo, listingSearchEngine, listingHydrate)
+	jobService = jobService.WithSearchRetryQueue(searchRetryQ)
+	listingService = listingService.WithSearchRetryQueue(searchRetryQ)
+	slog.Info("search durable retry queue enabled (ARC-16, postgres outbox)")
+
 	// Optional Redis client — auction-close notification seam (auction_won /
-	// auction_expired) + ARC-16 durable Meilisearch reindex retry queue.
-	// Search is fail-soft (not money): without REDIS_URL, in-process 3-shot
-	// retries still run and exhaustion dead-letters with a pageable metric.
+	// auction_expired) + the one-time drain of the legacy search:retry ZSET.
 	// Wire it only if REDIS_URL is set.
-	var searchRetryQ *service.SearchRetryQueue
 	if redisURL := os.Getenv("REDIS_URL"); redisURL != "" {
 		if opt, perr := redis.ParseURL(redisURL); perr != nil {
-			slog.Warn("redis: invalid REDIS_URL, auction notifications + search durable retry disabled", "error", perr)
+			slog.Warn("redis: invalid REDIS_URL, auction notifications disabled", "error", perr)
 		} else {
 			rdb := redis.NewClient(opt)
 			defer func() { _ = rdb.Close() }()
@@ -194,16 +202,23 @@ func main() {
 			listingService = listingService.WithRedis(rdb)
 			slog.Info("auction-close: redis notification seam enabled")
 
-			// ARC-16: durable search reindex queue (jobs + listings share one ZSET).
-			searchRetryQ = service.NewSearchRetryQueue(rdb).
-				WithJobHandlers(repo, searchEngine).
-				WithListingHandlers(listingRepo, listingSearchEngine, listingHydrate)
-			jobService = jobService.WithSearchRetryQueue(searchRetryQ)
-			listingService = listingService.WithSearchRetryQueue(searchRetryQ)
-			slog.Info("search durable retry queue enabled (ARC-16)")
+			// REMOVAL NOTE: one-time migration of in-flight tasks from the
+			// legacy Redis ZSET search:retry into the outbox. Delete this block
+			// (and search_retry_redis_drain.go) one release after the outbox
+			// ships, once `EXISTS search:retry` is 0 in production.
+			drainCtx, drainCancel := context.WithTimeout(context.Background(), 30*time.Second)
+			st, derr := searchRetryQ.DrainLegacySearchRetryRedis(drainCtx, rdb)
+			drainCancel()
+			if derr != nil {
+				slog.Warn("legacy search:retry drain failed; will retry next start", "error", derr)
+			} else if st.Seen > 0 {
+				slog.Info("legacy search:retry drained into search_retry_outbox",
+					"seen", st.Seen, "imported", st.Imported, "duplicate", st.Duplicate,
+					"corrupt", st.Corrupt, "failed", st.Failed)
+			}
 		}
 	} else {
-		slog.Info("REDIS_URL unset: search durable retry disabled (in-process retries + dead-letter metric only)")
+		slog.Info("REDIS_URL unset: auction notifications disabled")
 	}
 
 	// Wire up provider matching engine.
@@ -390,9 +405,10 @@ func main() {
 		envInt("RECURRING_PAYMENT_RETRY_BATCH", 100),
 	)
 
-	// ARC-16: durable Meilisearch reindex worker. Claims due tasks from the
-	// Redis ZSET every 30s (default), re-fetches entity state from Postgres,
-	// and re-applies index/remove. No-ops when REDIS_URL was unset.
+	// ARC-16: durable Meilisearch reindex worker. Claims due rows from
+	// search_retry_outbox every 30s (default; FOR UPDATE SKIP LOCKED, so every
+	// replica can run it), re-fetches entity state from Postgres, and
+	// re-applies index/remove.
 	service.RunSearchRetryCron(
 		sigCtx,
 		searchRetryQ,

@@ -16,7 +16,7 @@ var (
 	searchRetryEnqueuedTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "search_retry_enqueued_total",
-			Help: "Search index/remove tasks escalated to the durable Redis retry queue after in-process retries exhausted.",
+			Help: "Search index/remove tasks escalated to the durable Postgres retry outbox (search_retry_outbox) after in-process retries exhausted.",
 		},
 		[]string{"index", "op"},
 	)
@@ -24,7 +24,7 @@ var (
 	searchRetryEnqueueFailedTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "search_retry_enqueue_failed_total",
-			Help: "Durable enqueue attempts that failed (Redis error) or were skipped (no queue). Task may be lost until the next lifecycle event or full rebuild.",
+			Help: "Durable enqueue/reschedule writes that failed (database error) or were skipped (no queue). Task may be lost until the next lifecycle event or full rebuild.",
 		},
 		[]string{"index", "op", "reason"},
 	)
@@ -48,16 +48,15 @@ var (
 	searchRetryQueueDepth = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "search_retry_queue_depth",
-			Help: "Current number of pending search retry tasks in the Redis ZSET (updated each worker tick).",
+			Help: "Current number of pending (not dead-lettered) search retry tasks in search_retry_outbox (updated each worker tick).",
 		},
 	)
 )
 
 // Closed label values for search_retry_enqueue_failed_total reason=.
 const (
-	searchRetryReasonNoQueue  = "no_queue"
-	searchRetryReasonRedisErr = "redis_error"
-	searchRetryReasonMarshal  = "marshal_error"
+	searchRetryReasonNoQueue = "no_queue"
+	searchRetryReasonDBErr   = "db_error"
 )
 
 // Closed label values for search_retry_processed_total result=.

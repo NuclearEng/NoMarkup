@@ -5,21 +5,39 @@
 // logged — a process restart or prolonged Meilisearch outage silently dropped
 // the update until a full rebuild.
 //
-// Fix (minimal, Redis-backed — matches docs/TODOS.md and existing job-service
-// REDIS_URL wiring used for auction notifications):
+// Fix:
 //
 //  1. In-process 3-attempt exponential backoff stays first-line (fast path).
-//  2. On exhaustion, enqueue a compact task into a Redis ZSET scored by next
-//     attempt unix time. Survives restarts; multi-replica safe enough for
-//     search (Meilisearch upsert/delete is idempotent — double-claim is OK).
-//  3. Background cron (default 30s) claims due members, re-fetches the entity
-//     from Postgres (source of truth), and re-applies index or remove.
+//  2. On exhaustion, enqueue a compact task into the Postgres outbox
+//     search_retry_outbox (migration 141). Survives restarts; one pending row
+//     per (index, entity, op).
+//  3. Background cron (default 30s) claims due rows with FOR UPDATE SKIP
+//     LOCKED + a claim-token lease (two workers never get the same row),
+//     re-fetches the entity from Postgres (source of truth), and re-applies
+//     index or remove outside any transaction.
 //  4. After max durable attempts: ERROR dead-letter log + Prometheus counter
-//     (pageable). Search is not money — we fail-soft, never block writers.
+//     (pageable); the row is kept with dead_lettered_at for 30 days. Search is
+//     not money — we fail-soft, never block writers.
 //
-// When REDIS_URL is unset the queue is nil: in-process retries still run, and
-// exhaustion is recorded as dead-letter with reason=no_queue so the gap is
-// visible rather than silent.
+// Why Postgres and not Redis (until 2026-11 this was the Redis ZSET
+// `search:retry`): production Redis runs volatile-lru. The ZSET had no TTL so
+// it was never evicted, but at maxmemory every ZADD fails with OOM, so the
+// escalation itself was dropped exactly when the platform was under pressure.
+//
+// Why the enqueue is NOT in the job/listing write transaction: escalation is
+// the tail of a goroutine that runs after the write already committed and
+// after three in-process Meilisearch attempts (up to ~3s later). There is no
+// open transaction to join, and making every repository write emit an outbox
+// row would turn this retry path into the primary indexing path — a much
+// larger redesign. The durability gap that mattered is closed anyway: the
+// write that triggered indexing just succeeded against the same Postgres, so
+// the enqueue no longer depends on a second store with a memory ceiling. The
+// remaining window is a process crash during the in-process retries (≤ ~3s),
+// unchanged from before.
+//
+// The queue is wired whenever the job service has a database pool. A nil queue
+// (unit tests, misconfigured composition root) still records exhaustion as a
+// dead-letter with reason=no_queue so the gap is visible rather than silent.
 package service
 
 import (
@@ -30,15 +48,10 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/redis/go-redis/v9"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/nomarkup/nomarkup/services/job/internal/domain"
 )
-
-// Redis ZSET holding pending search retry tasks. Score = next attempt unix
-// seconds; member = JSON SearchRetryTask. Fixed key so multi-replica pods share
-// one queue and a crashed pod's backlog is picked up by the next.
-const searchRetryRedisKey = "search:retry"
 
 // Search index UIDs used as task labels (must match Meilisearch index names).
 const (
@@ -71,11 +84,14 @@ type SearchRetryTask struct {
 	Attempts  int    `json:"attempts"`            // durable attempts already spent
 }
 
-// SearchRetryQueue is a Redis-backed durable queue + worker for Meilisearch
+// SearchRetryQueue is a Postgres-backed durable queue + worker for Meilisearch
 // index/remove retries. All fields optional-safe: nil queue means no durable
 // path (callers still log + metric).
 type SearchRetryQueue struct {
-	rdb *redis.Client
+	store searchRetryStore
+
+	// execute applies one task; defaults to executeTask. Tests override it.
+	execute func(ctx context.Context, task SearchRetryTask) error
 
 	// Re-fetch + apply hooks. Set at wire-up; nil-safe per call site.
 	jobRepo        domain.JobRepository
@@ -85,10 +101,19 @@ type SearchRetryQueue struct {
 	listingHydrate ListingHydrator
 }
 
-// NewSearchRetryQueue builds a queue. rdb must be non-nil; callers should
-// skip construction when REDIS_URL is unset.
-func NewSearchRetryQueue(rdb *redis.Client) *SearchRetryQueue {
-	return &SearchRetryQueue{rdb: rdb}
+// NewSearchRetryQueue builds a queue on the search_retry_outbox table.
+// Returns nil when pool is nil so callers keep the no_queue dead-letter path.
+func NewSearchRetryQueue(pool *pgxpool.Pool) *SearchRetryQueue {
+	if pool == nil {
+		return nil
+	}
+	return newSearchRetryQueueWithStore(pgSearchRetryStore{pool: pool})
+}
+
+func newSearchRetryQueueWithStore(store searchRetryStore) *SearchRetryQueue {
+	q := &SearchRetryQueue{store: store}
+	q.execute = q.executeTask
+	return q
 }
 
 // WithJobHandlers wires Postgres re-fetch + Meilisearch for jobs.
@@ -112,31 +137,20 @@ func (q *SearchRetryQueue) WithListingHandlers(repo domain.ListingRepository, se
 	return q
 }
 
-// Enqueue schedules a durable retry. Immediate next-attempt (score=now) so the
-// next worker tick picks it up. Fail-soft: returns error for the caller to
-// metric/log; never panics.
+// Enqueue schedules a durable retry, due immediately so the next worker tick
+// picks it up. A pending task for the same entity/op is reset (fresh budget).
+// Fail-soft: returns error for the caller to metric/log; never panics.
 func (q *SearchRetryQueue) Enqueue(ctx context.Context, task SearchRetryTask) error {
-	if q == nil || q.rdb == nil {
-		return fmt.Errorf("search retry queue: redis unwired")
+	if q == nil || q.store == nil {
+		return fmt.Errorf("search retry queue: store unwired")
 	}
 	if err := validateSearchRetryTask(task); err != nil {
 		return err
 	}
-	if task.Attempts < 0 {
-		task.Attempts = 0
-	}
-	member, err := marshalSearchRetryMember(task)
-	if err != nil {
+	// A fresh escalation always starts a fresh durable budget.
+	task.Attempts = 0
+	if err := q.store.Enqueue(ctx, task); err != nil {
 		return err
-	}
-	// Score = now so the next 30s tick (or an immediate ProcessDue) claims it.
-	// Slight skew via Attempts is unnecessary on first enqueue.
-	score := float64(time.Now().UTC().Unix())
-	if err := q.rdb.ZAdd(ctx, searchRetryRedisKey, redis.Z{
-		Score:  score,
-		Member: member,
-	}).Err(); err != nil {
-		return fmt.Errorf("search retry enqueue: %w", err)
 	}
 	searchRetryEnqueuedTotal.WithLabelValues(task.Index, task.Op).Inc()
 	return nil
@@ -149,10 +163,10 @@ func escalateToDurableQueue(q *SearchRetryQueue, task SearchRetryTask) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	if q == nil || q.rdb == nil {
+	if q == nil || q.store == nil {
 		searchRetryEnqueueFailedTotal.WithLabelValues(task.Index, task.Op, searchRetryReasonNoQueue).Inc()
 		searchRetryDeadLetterTotal.WithLabelValues(task.Index, task.Op).Inc()
-		slog.Error("SEARCH RETRY DEAD-LETTER — durable queue unavailable (REDIS_URL unset or unwired); entity may drift from search until rebuild",
+		slog.Error("SEARCH RETRY DEAD-LETTER — durable queue unavailable (no database pool wired); entity may drift from search until rebuild",
 			"index", task.Index,
 			"op", task.Op,
 			"entity_id", task.EntityID,
@@ -163,7 +177,7 @@ func escalateToDurableQueue(q *SearchRetryQueue, task SearchRetryTask) {
 	}
 
 	if err := q.Enqueue(ctx, task); err != nil {
-		reason := searchRetryReasonRedisErr
+		reason := searchRetryReasonDBErr
 		searchRetryEnqueueFailedTotal.WithLabelValues(task.Index, task.Op, reason).Inc()
 		searchRetryDeadLetterTotal.WithLabelValues(task.Index, task.Op).Inc()
 		slog.Error("SEARCH RETRY DEAD-LETTER — durable enqueue failed; entity may drift from search until rebuild",
@@ -185,64 +199,83 @@ func escalateToDurableQueue(q *SearchRetryQueue, task SearchRetryTask) {
 	)
 }
 
-// ProcessDue claims and processes up to limit tasks whose score <= now.
-// Returns the number of tasks claimed (including skips / reschedules / dead-letters).
-// Fail-soft on Redis errors so a tick never takes down the job service.
+// ProcessDue claims and processes up to limit due tasks. Returns the number of
+// tasks claimed (including skips / reschedules / dead-letters). Fail-soft on
+// store errors so a tick never takes down the job service.
 func (q *SearchRetryQueue) ProcessDue(ctx context.Context, limit int64) (int, error) {
-	if q == nil || q.rdb == nil {
-		return 0, fmt.Errorf("search retry queue: redis unwired")
+	if q == nil || q.store == nil {
+		return 0, fmt.Errorf("search retry queue: store unwired")
 	}
 	if limit <= 0 {
 		limit = 50
 	}
 
-	now := float64(time.Now().UTC().Unix())
-	members, err := q.rdb.ZRangeByScoreWithScores(ctx, searchRetryRedisKey, &redis.ZRangeBy{
-		Min:    "-inf",
-		Max:    fmt.Sprintf("%f", now),
-		Offset: 0,
-		Count:  limit,
-	}).Result()
+	claimed, err := q.store.Claim(ctx, int(limit))
 	if err != nil {
-		return 0, fmt.Errorf("search retry claim: %w", err)
+		return 0, err
 	}
 
-	// Depth gauge: total pending (due + future), not just this batch.
-	if card, cerr := q.rdb.ZCard(ctx, searchRetryRedisKey).Result(); cerr == nil {
-		searchRetryQueueDepth.Set(float64(card))
+	for _, c := range claimed {
+		if verr := validateSearchRetryTask(c.Task); verr != nil {
+			// CHECK constraints make this unreachable; drop rather than loop.
+			slog.Error("search retry: invalid outbox row dropped", "id", c.ID, "error", verr)
+			if _, derr := q.store.Complete(ctx, c.ID, c.Token); derr != nil {
+				slog.Error("search retry: drop invalid row failed", "id", c.ID, "error", derr)
+			}
+			continue
+		}
+		q.applyTask(ctx, c)
 	}
 
-	processed := 0
-	for _, z := range members {
-		member, ok := z.Member.(string)
-		if !ok {
-			// Unexpected type — drop to avoid poison loops.
-			_ = q.rdb.ZRem(ctx, searchRetryRedisKey, z.Member).Err()
-			continue
-		}
-		// Claim: ZREM must return 1. If 0, another replica already claimed.
-		n, remErr := q.rdb.ZRem(ctx, searchRetryRedisKey, member).Result()
-		if remErr != nil || n == 0 {
-			continue
-		}
-		processed++
-
-		task, perr := unmarshalSearchRetryMember(member)
-		if perr != nil {
-			slog.Error("search retry: corrupt queue member dropped", "member", member, "error", perr)
-			continue
-		}
-		q.applyTask(ctx, task)
+	// Depth gauge: total pending (due + future + leased), not just this batch.
+	if n, cerr := q.store.PendingCount(ctx); cerr == nil {
+		searchRetryQueueDepth.Set(float64(n))
+	} else {
+		slog.Warn("search retry: depth query failed", "error", cerr)
 	}
-	return processed, nil
+
+	// Opportunistic, bounded retention prune of old dead letters (same
+	// pattern as notification_send_ledger: no dedicated sweeper).
+	if n, perr := q.store.PruneDeadLetters(ctx, searchRetryDeadLetterRetention, searchRetryPruneBatch); perr != nil {
+		slog.Warn("search retry: dead-letter prune failed", "error", perr)
+	} else if n > 0 {
+		slog.Info("search retry: pruned expired dead letters", "rows", n)
+	}
+
+	return len(claimed), nil
 }
 
-// applyTask re-fetches entity state and applies index/remove, then reschedules
-// or dead-letters on failure.
-func (q *SearchRetryQueue) applyTask(ctx context.Context, task SearchRetryTask) {
-	err := q.executeTask(ctx, task)
-	if err == nil {
-		searchRetryProcessedTotal.WithLabelValues(task.Index, task.Op, searchRetryResultSuccess).Inc()
+// applyTask re-fetches entity state and applies index/remove, then completes,
+// reschedules or dead-letters the claimed row. Every write is guarded by the
+// claim token: if the row was re-enqueued while we worked, our outcome is
+// discarded and the fresh task runs on a later tick.
+func (q *SearchRetryQueue) applyTask(ctx context.Context, c claimedSearchRetryTask) {
+	task := c.Task
+	exec := q.execute
+	if exec == nil {
+		exec = q.executeTask
+	}
+	err := exec(ctx, task)
+	if err == nil || errors.Is(err, errSearchRetrySkip) {
+		result := searchRetryResultSuccess
+		if err != nil {
+			result = searchRetryResultSkip
+		}
+		if _, cerr := q.store.Complete(ctx, c.ID, c.Token); cerr != nil {
+			// Lease expiry will re-run an idempotent upsert/delete; not a loss.
+			slog.Warn("search retry: complete failed; row will be retried after lease",
+				"id", c.ID, "index", task.Index, "entity_id", task.EntityID, "error", cerr)
+		}
+		searchRetryProcessedTotal.WithLabelValues(task.Index, task.Op, result).Inc()
+		if result == searchRetryResultSkip {
+			slog.Info("search durable retry skipped (entity no longer needs this op)",
+				"index", task.Index,
+				"op", task.Op,
+				"entity_id", task.EntityID,
+				"operation", task.Operation,
+			)
+			return
+		}
 		slog.Info("search durable retry succeeded",
 			"index", task.Index,
 			"op", task.Op,
@@ -253,21 +286,13 @@ func (q *SearchRetryQueue) applyTask(ctx context.Context, task SearchRetryTask) 
 		return
 	}
 
-	// Skip (entity gone / not indexable) is success-shaped for queue purposes.
-	if err == errSearchRetrySkip {
-		searchRetryProcessedTotal.WithLabelValues(task.Index, task.Op, searchRetryResultSkip).Inc()
-		slog.Info("search durable retry skipped (entity no longer needs this op)",
-			"index", task.Index,
-			"op", task.Op,
-			"entity_id", task.EntityID,
-			"operation", task.Operation,
-		)
-		return
-	}
-
-	next := task
-	next.Attempts++
-	if next.Attempts >= maxSearchRetryDurableAttempts {
+	attempts := task.Attempts + 1
+	lastErr := sanitizeSearchRetryError(err)
+	if attempts >= maxSearchRetryDurableAttempts {
+		if _, derr := q.store.DeadLetter(ctx, c.ID, c.Token, attempts, lastErr); derr != nil {
+			slog.Error("search retry: dead-letter write failed; row will be retried after lease",
+				"id", c.ID, "error", derr)
+		}
 		searchRetryProcessedTotal.WithLabelValues(task.Index, task.Op, searchRetryResultDeadLetter).Inc()
 		searchRetryDeadLetterTotal.WithLabelValues(task.Index, task.Op).Inc()
 		slog.Error("SEARCH RETRY DEAD-LETTER — durable attempts exhausted; run reindex or wait for next lifecycle write",
@@ -275,28 +300,20 @@ func (q *SearchRetryQueue) applyTask(ctx context.Context, task SearchRetryTask) 
 			"op", task.Op,
 			"entity_id", task.EntityID,
 			"operation", task.Operation,
-			"attempts", next.Attempts,
+			"attempts", attempts,
 			"max_attempts", maxSearchRetryDurableAttempts,
 			"error", err,
 		)
 		return
 	}
 
-	// Reschedule with exponential backoff from pure helper.
-	score := SearchRetryNextScore(time.Now().UTC(), next.Attempts)
-	member, merr := marshalSearchRetryMember(next)
-	if merr != nil {
-		searchRetryEnqueueFailedTotal.WithLabelValues(task.Index, task.Op, searchRetryReasonMarshal).Inc()
-		searchRetryDeadLetterTotal.WithLabelValues(task.Index, task.Op).Inc()
-		slog.Error("SEARCH RETRY DEAD-LETTER — reschedule marshal failed",
-			"index", task.Index, "op", task.Op, "entity_id", task.EntityID, "error", merr)
-		return
-	}
-	if zerr := q.rdb.ZAdd(ctx, searchRetryRedisKey, redis.Z{Score: score, Member: member}).Err(); zerr != nil {
-		searchRetryEnqueueFailedTotal.WithLabelValues(task.Index, task.Op, searchRetryReasonRedisErr).Inc()
-		searchRetryDeadLetterTotal.WithLabelValues(task.Index, task.Op).Inc()
-		slog.Error("SEARCH RETRY DEAD-LETTER — reschedule ZADD failed",
-			"index", task.Index, "op", task.Op, "entity_id", task.EntityID, "error", zerr)
+	backoff := SearchRetryBackoff(attempts)
+	if _, rerr := q.store.Reschedule(ctx, c.ID, c.Token, attempts, backoff, lastErr); rerr != nil {
+		// The lease still expires, so the task is retried — just without the
+		// attempt being counted. Not a drop.
+		searchRetryEnqueueFailedTotal.WithLabelValues(task.Index, task.Op, searchRetryReasonDBErr).Inc()
+		slog.Error("search retry: reschedule write failed; row will be retried after lease",
+			"index", task.Index, "op", task.Op, "entity_id", task.EntityID, "error", rerr)
 		return
 	}
 	searchRetryProcessedTotal.WithLabelValues(task.Index, task.Op, searchRetryResultReschedule).Inc()
@@ -305,8 +322,8 @@ func (q *SearchRetryQueue) applyTask(ctx context.Context, task SearchRetryTask) 
 		"op", task.Op,
 		"entity_id", task.EntityID,
 		"operation", task.Operation,
-		"attempts", next.Attempts,
-		"next_score", score,
+		"attempts", attempts,
+		"next_retry_in", backoff.String(),
 		"error", err,
 	)
 }
@@ -398,10 +415,11 @@ func (q *SearchRetryQueue) executeListingTask(ctx context.Context, task SearchRe
 }
 
 // RunSearchRetryCron starts the durable search-retry worker. Stops on ctx cancel.
-// Interval defaults to 30s; initialDelay keeps deploy storms from stampeding Redis.
+// Interval defaults to 30s; initialDelay keeps deploy storms from stampeding
+// the database. Safe on every replica: claims use FOR UPDATE SKIP LOCKED.
 func RunSearchRetryCron(ctx context.Context, q *SearchRetryQueue, interval, initialDelay time.Duration, batchLimit int64) {
-	if q == nil || q.rdb == nil {
-		slog.Info("search durable retry cron disabled (no Redis queue)")
+	if q == nil || q.store == nil {
+		slog.Info("search durable retry cron disabled (no database queue)")
 		return
 	}
 	if interval <= 0 {
@@ -419,7 +437,7 @@ func RunSearchRetryCron(ctx context.Context, q *SearchRetryQueue, interval, init
 			"interval", interval.String(),
 			"initial_delay", initialDelay.String(),
 			"batch_limit", batchLimit,
-			"redis_key", searchRetryRedisKey,
+			"store", "postgres:search_retry_outbox",
 			"max_durable_attempts", maxSearchRetryDurableAttempts,
 		)
 		select {
@@ -473,12 +491,6 @@ func SearchRetryBackoff(attempts int) time.Duration {
 		return cap
 	}
 	return d
-}
-
-// SearchRetryNextScore returns the ZSET score (unix seconds) for the next
-// attempt after `attempts` durable failures have already been recorded.
-func SearchRetryNextScore(now time.Time, attempts int) float64 {
-	return float64(now.Add(SearchRetryBackoff(attempts)).UTC().Unix())
 }
 
 func validateSearchRetryTask(task SearchRetryTask) error {

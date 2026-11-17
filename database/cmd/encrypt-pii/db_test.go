@@ -43,6 +43,10 @@ func reset(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
 	ctx := context.Background()
 	for _, stmt := range []string{
+		`DELETE FROM contract_completion_photos`,
+		`DELETE FROM contract_work_sessions`,
+		`DELETE FROM contracts`,
+		`DELETE FROM bids`,
 		`DELETE FROM jobs`,
 		`DELETE FROM provider_licenses`,
 		`DELETE FROM provider_employees`,

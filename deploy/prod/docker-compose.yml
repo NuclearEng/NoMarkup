@@ -103,13 +103,20 @@ services:
       - ${REDIS_MAXMEMORY:-256mb}
       # volatile-lru: only keys with a TTL are evicted under memory pressure;
       # a write that needs memory when nothing evictable is left fails with OOM.
-      # Note that almost every key the app writes carries a TTL (caches, rate
-      # limits, idempotency records, idle-session/OTP/passkey state, calendar
-      # feed tokens), so all of those ARE evictable here — the policy mainly
-      # protects the TTL-less durable search retry queue
-      # (search:retry). Size REDIS_MAXMEMORY so eviction never
-      # happens in normal operation and alert on evicted_keys; if you split
-      # Redis, run the session/idempotency/queue instance with noeviction.
+      # Redis holds ONLY reconstructible or short-lived state: read caches
+      # (feature flags 30s, trust scores 5m, category tree), rate-limit
+      # windows, idempotency records (24h), idle-session / OTP / passkey
+      # ceremony state, instant-match offers (20m), viewer/spectator presence,
+      # and pub/sub fan-out. Every key carries a TTL, so every key is
+      # evictable, and eviction only degrades (a cache miss, a re-login, a
+      # re-sent OTP) — it never loses a record. Durable state lives in
+      # Postgres: work-session evidence (migration 123/138), calendar feed
+      # tokens (140) and the search retry outbox (141) moved there because
+      # this policy made them evictable or un-enqueueable.
+      # Full inventory: docs/operations/redis-state.md. Still size
+      # REDIS_MAXMEMORY so eviction never happens in normal operation and
+      # alert on evicted_keys: evicting idempotency or rate-limit keys
+      # weakens those controls while it lasts.
       - --maxmemory-policy
       - ${REDIS_MAXMEMORY_POLICY:-volatile-lru}
     environment:
