@@ -235,9 +235,11 @@ Workflow: `.github/workflows/security-scan.yml` (PR + weekly cron).
 
 | Scanner | What fails CI | Residual (not gated) |
 |---------|---------------|----------------------|
-| **npm audit** (`web/`) | Production deps only (`npm audit --omit=dev --audit-level=high`) — **high + critical** | **moderate / low** severities; **all `devDependencies`** (test/lint/build tooling). A full `npm audit` without flags may still list findings — that is expected under this policy. |
+| **npm audit** (`web/`) | Production deps only, **high + critical** — `node web/scripts/check-npm-audit.mjs` (same policy as `npm audit --omit=dev --audit-level=high`) except advisories in `web/audit-allowlist.json` (exact dependency paths, reachability evidence, removal condition, review-by ≤ 60 days; a new path, a stale entry or a passed review-by fails — RC-47) | **moderate / low** severities; **all `devDependencies`** (test/lint/build tooling). A full `npm audit` without flags may still list findings — that is expected under this policy. |
 | **govulncheck** | Each Go module in the matrix (`gateway`, user/job/payment/chat/notification) | n/a (fail on known vulns in reachable code) |
 | **cargo audit** | `engines/` workspace advisories | May need `ignore` for accepted advisories if ever needed — document in workflow if so |
+
+Current npm allowlist: `GHSA-fc5q-39xc-vjpf` (picomatch ReDoS, no fixed release; build-time only via `@sentry/nextjs`; review by 2027-01-15).
 
 **Do not claim** “npm audit clean” or “zero dependency CVEs” without stating this residual. Tightening (e.g. include moderate, or scan devDeps) is a deliberate ratchet after triage, not a silent default.
 
