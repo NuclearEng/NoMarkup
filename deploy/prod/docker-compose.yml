@@ -101,12 +101,15 @@ services:
       - ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
       - --maxmemory
       - ${REDIS_MAXMEMORY:-256mb}
-      # volatile-lru: only keys with a TTL (cache entries) are evicted under
-      # memory pressure. allkeys-lru could silently evict rate-limit windows,
-      # idempotency records and session/MFA state. Everything the app writes
-      # for rate limiting/idempotency also carries a TTL, so keep REDIS_MAXMEMORY
-      # generous; if you split Redis, run the rate-limit/idempotency instance
-      # with noeviction instead.
+      # volatile-lru: only keys with a TTL are evicted under memory pressure;
+      # a write that needs memory when nothing evictable is left fails with OOM.
+      # Note that almost every key the app writes carries a TTL (caches, rate
+      # limits, idempotency records, idle-session/OTP/passkey state, calendar
+      # feed tokens), so all of those ARE evictable here — the policy mainly
+      # protects the TTL-less durable search retry queue
+      # (search:retry). Size REDIS_MAXMEMORY so eviction never
+      # happens in normal operation and alert on evicted_keys; if you split
+      # Redis, run the session/idempotency/queue instance with noeviction.
       - --maxmemory-policy
       - ${REDIS_MAXMEMORY_POLICY:-volatile-lru}
     environment:
