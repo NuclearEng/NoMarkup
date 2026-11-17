@@ -339,3 +339,12 @@ enforced elsewhere (say where in the commit that removes it).
 - **Check:** each committed xcconfig is referenced and set as a base configuration, so `$(VAR)` in Info.plist expands.
 - **Run:** `node "$RC_TOOLS/checks.mjs" xcconfig-wired`
 - **Source:** 222f3897 (Stripe / Google / Facebook keys in Info.plist always expanded to empty).
+
+## Playwright (added after the iOS items to keep the numbering)
+
+### RC-46 · Playwright test code launches a fixed engine
+- **Paths:** `web/tests/**` `web/playwright.config.ts`
+- **Added:** `\b(chromium|firefox|webkit)\.(launch|launchPersistentContext|launchServer|connect)\(`
+- **Check:** global setup and helpers take the browser from the project (the `page` / `browser` fixture, or an engine named in `config.projects`); the nightly cross-browser job installs only `firefox` or `webkit`, so a hard-coded engine fails it before any spec runs. Prove with `npx playwright install firefox` alone, then `npx playwright test --project=firefox`.
+- **Run:** `node "$RC_TOOLS/checks.mjs" playwright-fixed-engine`
+- **Source:** fix/cross-browser-e2e (nightly run 44117234961: `chromium_headless_shell-1217 … Executable doesn't exist` at `global-setup.ts:26` in both the firefox and webkit jobs).

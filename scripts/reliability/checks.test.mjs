@@ -15,6 +15,7 @@ import {
   checkImagePrefixLowercase,
   checkMigrationPairs,
   checkNoGoogleFonts,
+  checkPlaywrightFixedEngine,
   checkPlaywrightRunners,
   checkSecretShapes,
   checkSiteUrl,
@@ -142,6 +143,17 @@ test('no-google-fonts: imports and URLs fail, comments that mention the module d
     'web/src/app/ok.tsx': '// self-hosted, never fonts.googleapis.com\n',
   });
   assert.deepEqual(checkNoGoogleFonts(root), ['web/src/app/layout.tsx:2: fetches Google Fonts', 'web/src/styles/globals.css:1: fetches Google Fonts']);
+});
+
+test('playwright-fixed-engine: a hard-coded engine launch in test code fails, a comment or a config-chosen engine passes', () => {
+  const root = fixture({
+    'web/tests/e2e/global-setup.ts': "import { chromium } from '@playwright/test';\n// chromium.launch() used to live here\nconst browser = await chromium.launch();\n",
+    'web/tests/e2e/helpers/ok.ts': 'const browser = await ENGINES[name].launch();\n',
+    'web/playwright.config.ts': "export default defineConfig({ globalSetup: './tests/e2e/global-setup.ts' });\n",
+  });
+  const problems = checkPlaywrightFixedEngine(root);
+  assert.equal(problems.length, 1);
+  assert.match(problems[0], /^web\/tests\/e2e\/global-setup\.ts:3: calls chromium\.launch\(\)/);
 });
 
 test('site-url: only site-url.ts and server/env.ts may read NEXT_PUBLIC_SITE_URL', () => {
