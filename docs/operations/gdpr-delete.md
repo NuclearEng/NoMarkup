@@ -105,6 +105,9 @@ windows). The constant lives at
 | `job_photos` | DELETE rows. | Same reasoning as portfolio images. |
 | `bids` | KEEP. Strip `note`/`comment`/`message` keys from `bid_updates` JSON. | Bids back the contract money trail — every awarded contract has a bid behind it. We don't drop them but redact freeform text. |
 | `contracts` | KEEP. cancellation_reason → NULL when the user cancelled. | Tax / IRS / Stripe-dispute retention requires keeping the ledger. |
+| `contract_work_sessions` (123/138) | KEEP rows, timestamps and duration. NULL `check_{in,out}_location_encrypted` and the legacy `check_*_lat/lng` when the user is the provider OR the contract's customer. | Proof-of-work is contract evidence (escrow-release gate, disputes), retained for the life of the contract like `contracts`. The points are geo-fenced to within 500 m of the customer's home and are a location trace of the provider, so either party's erasure removes them. |
+| `contract_completion_photos` (123) | DELETE rows the user uploaded. Rows uploaded by the other party are kept. | Uploaded under `job-photos/{uploader}/`, which `DeleteUserObjects` removes; same decision as `job_photos`. The other party's photos are their evidence. |
+| `calendar_feed_tokens` (140) | DELETE. | Bearer credential for the ICS feed, like `refresh_tokens`. |
 | `payments` | KEEP, untouched. | Legal retention requirement (IRS 7yr, Stripe 18mo). The columns the user can write to are all numeric/enum — no free-text PII to redact. |
 | `reviews` | review_text → "[Deleted]". reviewer_id stays (NOT NULL FK + UNIQUE constraint with contract_id) but points at the now-anonymized user row. | Ratings have legitimate platform interest; published-review integrity for the reviewee is preserved. Comment is redacted because the reviewer wrote it about another party. |
 | `review_responses` | response_text → "[Deleted]". | Same reasoning as reviews. |
