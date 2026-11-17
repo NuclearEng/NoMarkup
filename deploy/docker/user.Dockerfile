@@ -45,7 +45,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     echo "  [2/3] ✔ Compiled in ${ELAPSED}s · ${SIZE}"
 
 # ── Runtime ──────────────────────────────────────────────────
-FROM alpine:3.20
+FROM alpine:3.24
 RUN apk --no-cache add ca-certificates && \
     addgroup -S app && adduser -S app -G app -u 10001
 COPY --from=builder --chown=app:app /server /server
