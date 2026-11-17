@@ -78,6 +78,11 @@
 //	             non-NULL DATE always means "not yet processed", which is
 //	             exactly what pii_plaintext_audit (107) tests.
 //
+//	ordinates  — a plaintext DOUBLE PRECISION lat/lng pair drained into a
+//	             sibling *_encrypted TEXT column, both ordinates NULLed in the
+//	             same UPDATE (138: contract_work_sessions check-in/out). See
+//	             ordinates.go.
+//
 //	geometry   — an exact point encrypted into a sibling *_encrypted column
 //	             while the geometry itself is coarsened to a privacy grid
 //	             (104/105: jobs.service_location + approximate_location,
@@ -716,6 +721,21 @@ func preflight(ctx context.Context, db querier, kr keyring) error {
 		}
 	}
 
+	// The encrypted siblings of migration 138's ordinate pairs. A plaintext
+	// pair beside an unopenable sibling would be overwritten by the drain, so
+	// the sibling must be classified here too.
+	for _, spec := range ordinateSpecs {
+		err := scanOrdinateTable(ctx, db, spec, func(r ordinateRow) error {
+			for i, p := range r.pairs {
+				classifyCol(p.enc, fmt.Sprintf("%s.%s id=%s", spec.name, spec.pairs[i].encCol, r.id))
+			}
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+	}
+
 	log.Printf("preflight: empty=%d current=%d rekey=%d plaintext=%d unknown=%d",
 		totals[classEmpty], totals[classCurrent], totals[classRekey],
 		totals[classPlaintext], totals[classUnknown])
@@ -895,6 +915,13 @@ func run(ctx context.Context, db querier, kr keyring, dryRun bool) error {
 	}
 	for _, spec := range geoSpecs {
 		st, err := reconcileGeoTable(ctx, db, spec, kr, dryRun)
+		if err != nil {
+			return err
+		}
+		total.add(st)
+	}
+	for _, spec := range ordinateSpecs {
+		st, err := reconcileOrdinateTable(ctx, db, spec, kr, dryRun)
 		if err != nil {
 			return err
 		}
