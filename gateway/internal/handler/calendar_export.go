@@ -12,7 +12,8 @@ package handler
 //
 // Calendar apps hit the ICS URL without cookies or an Authorization
 // header, so the SPA first POSTs calendar-feed to mint an opaque 90-day
-// secret. Only SHA-256(secret) is stored (Redis). Session JWTs in
+// secret. Only SHA-256(secret) is stored (Postgres calendar_feed_tokens,
+// migration 140 — see calendar_feed_store.go). Session JWTs in
 // ?token= are rejected — a 15-minute access token must not live in
 // browser history, proxy logs, or a calendar client's subscription URL.
 //
@@ -49,52 +50,12 @@ const calendarFeedTTL = 90 * 24 * time.Hour
 // calendarFeedSecretBytes is the raw entropy minted into ?feed=.
 const calendarFeedSecretBytes = 32
 
-// errCalendarFeedUnavailable is returned when Redis cannot persist a feed hash.
-var errCalendarFeedUnavailable = errors.New("calendar feed store unavailable")
-
 // calendarFeedStore maps SHA-256(secret) → user_id. The plaintext secret is
-// never stored. Implementations must not log either value.
+// never stored. Implementations must not log either value. The durable
+// implementation is pgCalendarFeedStore (calendar_feed_store.go).
 type calendarFeedStore interface {
 	Put(ctx context.Context, hashHex, userID string, ttl time.Duration) error
 	Get(ctx context.Context, hashHex string) (userID string, ok bool)
-}
-
-// redisCalendarFeedStore persists feed hashes in Redis via cache.Client.
-type redisCalendarFeedStore struct {
-	cache *cache.Client
-}
-
-func calendarFeedKey(hashHex string) string {
-	return cache.Key("calfeed", hashHex)
-}
-
-func (s redisCalendarFeedStore) Put(ctx context.Context, hashHex, userID string, ttl time.Duration) error {
-	if s.cache == nil {
-		return errCalendarFeedUnavailable
-	}
-	rdb := s.cache.Redis()
-	if rdb == nil {
-		return errCalendarFeedUnavailable
-	}
-	if err := rdb.Set(ctx, calendarFeedKey(hashHex), userID, ttl).Err(); err != nil {
-		return fmt.Errorf("store calendar feed: %w", err)
-	}
-	return nil
-}
-
-func (s redisCalendarFeedStore) Get(ctx context.Context, hashHex string) (string, bool) {
-	if s.cache == nil {
-		return "", false
-	}
-	rdb := s.cache.Redis()
-	if rdb == nil {
-		return "", false
-	}
-	userID, err := rdb.Get(ctx, calendarFeedKey(hashHex)).Result()
-	if err != nil || userID == "" {
-		return "", false
-	}
-	return userID, true
 }
 
 // CalendarExportHandler exposes the iCal feed and the feed-token mint.
@@ -121,10 +82,14 @@ type CalendarExportHandler struct {
 // key parity. Mirrors NewDataExportHandler.
 //
 // publicKey is unused; kept so main.go's three-argument call still compiles.
-// Call WithCache to wire Redis for ?feed= mint/lookup.
+// Feed tokens live in Postgres (db); with a nil db, minting 503s and ?feed=
+// lookups 401. WithCache adds the read-only legacy Redis fallback.
 func NewCalendarExportHandler(db *pgxpool.Pool, publicKey *rsa.PublicKey, cipher ...*crypto.Cipher) *CalendarExportHandler {
 	h := &CalendarExportHandler{db: db}
 	_ = publicKey
+	if db != nil {
+		h.feeds = pgCalendarFeedStore{db: db}
+	}
 	if len(cipher) > 0 && cipher[0] != nil {
 		h.cipher = cipher[0]
 		return h
@@ -141,13 +106,19 @@ func NewCalendarExportHandler(db *pgxpool.Pool, publicKey *rsa.PublicKey, cipher
 	return h
 }
 
-// WithCache attaches the gateway Redis client used to persist opaque feed
-// tokens. Safe to call with nil (mint then 503s; ?feed= lookups 401).
+// WithCache attaches the gateway Redis client as a READ-ONLY fallback for feed
+// tokens minted before migration 140, which lived only in Redis. A legacy hit
+// is copied into Postgres with its remaining TTL and the Redis key dropped.
+// See legacyRedisCalendarFeedStore for the removal note. Safe with nil, and a
+// no-op without a database (there is no durable store to migrate into).
 func (h *CalendarExportHandler) WithCache(c *cache.Client) *CalendarExportHandler {
-	if h == nil {
+	if h == nil || h.db == nil || c == nil {
 		return h
 	}
-	h.feeds = redisCalendarFeedStore{cache: c}
+	h.feeds = calendarFeedStoreWithLegacy{
+		primary: pgCalendarFeedStore{db: h.db},
+		legacy:  legacyRedisCalendarFeedStore{cache: c},
+	}
 	return h
 }
 
@@ -387,7 +358,7 @@ func (h *CalendarExportHandler) resolveCaller(r *http.Request) (string, string, 
 }
 
 // MintFeed handles POST /api/v1/me/calendar-feed. It mints a 32-byte opaque
-// secret, stores SHA-256(secret) → user_id in Redis (90 days), and returns
+// secret, stores SHA-256(secret) → user_id in Postgres (90 days), and returns
 // the public ICS URL. The raw secret is never logged.
 func (h *CalendarExportHandler) MintFeed(w http.ResponseWriter, r *http.Request) {
 	claims, ok := middleware.GetClaims(r.Context())
