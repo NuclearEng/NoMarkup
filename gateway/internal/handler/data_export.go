@@ -218,6 +218,8 @@ func (h *DataExportHandler) ExportMyData(w http.ResponseWriter, r *http.Request)
 		{"followed_sellers", h.exportFollows},
 		{"referrals", h.exportReferrals},
 		{"request_activity", h.exportRequestActivity},
+		{"work_sessions", h.exportWorkSessions},
+		{"completion_photos", h.exportCompletionPhotos},
 	}
 
 	for _, s := range sections {
@@ -916,6 +918,82 @@ func (h *DataExportHandler) exportRequestActivity(ctx context.Context, userID st
 			"status":      status,
 			"duration_ms": durationMs,
 			"created_at":  createdAt.UTC().Format(time.RFC3339),
+		}, nil
+	})
+}
+
+// exportWorkSessions returns the provider's own on-site check-in / check-out
+// records (contract_work_sessions, migrations 123 / 138), including the points
+// they recorded: the provider's own location data. The point is decrypted from
+// check_*_location_encrypted, or rendered from the legacy plaintext ordinates
+// on a row not yet drained by encrypt-pii.
+func (h *DataExportHandler) exportWorkSessions(ctx context.Context, userID string) (interface{}, bool, error) {
+	return h.queryRows(ctx, `
+		SELECT id::text, contract_id::text, checked_in_at, checked_out_at, duration_minutes,
+		       check_in_location_encrypted, check_in_lat, check_in_lng,
+		       check_out_location_encrypted, check_out_lat, check_out_lng
+		  FROM contract_work_sessions
+		 WHERE provider_id = $1
+		 ORDER BY checked_in_at DESC
+		 LIMIT $2`, userID, func(rows scanner) (map[string]interface{}, error) {
+		var (
+			id, contractID string
+			checkedIn      time.Time
+			checkedOut     *time.Time
+			duration       *int64
+			inEnc, outEnc  *string
+			inLat, inLng   *float64
+			outLat, outLng *float64
+		)
+		if err := rows.Scan(&id, &contractID, &checkedIn, &checkedOut, &duration,
+			&inEnc, &inLat, &inLng, &outEnc, &outLat, &outLng); err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{
+			"id":                 id,
+			"contract_id":        contractID,
+			"checked_in_at":      checkedIn.UTC().Format(time.RFC3339),
+			"checked_out_at":     fmtTimePtr(checkedOut),
+			"duration_minutes":   derefInt(duration),
+			"check_in_location":  h.exportWorkSessionPoint(inEnc, inLat, inLng),
+			"check_out_location": h.exportWorkSessionPoint(outEnc, outLat, outLng),
+		}, nil
+	})
+}
+
+// exportWorkSessionPoint renders one recorded point as "<lat>,<lng>".
+func (h *DataExportHandler) exportWorkSessionPoint(enc *string, lat, lng *float64) interface{} {
+	if enc != nil && *enc != "" {
+		return h.decryptPII(enc)
+	}
+	if lat != nil && lng != nil {
+		return formatWorkSessionPoint(*lat, *lng)
+	}
+	return nil
+}
+
+// exportCompletionPhotos returns the before/after completion photos the user
+// uploaded (contract_completion_photos, migration 123).
+func (h *DataExportHandler) exportCompletionPhotos(ctx context.Context, userID string) (interface{}, bool, error) {
+	return h.queryRows(ctx, `
+		SELECT id::text, contract_id::text, phase, url, created_at
+		  FROM contract_completion_photos
+		 WHERE uploaded_by = $1
+		 ORDER BY created_at DESC
+		 LIMIT $2`, userID, func(rows scanner) (map[string]interface{}, error) {
+		var (
+			id, contractID, phase, url string
+			createdAt                  time.Time
+		)
+		if err := rows.Scan(&id, &contractID, &phase, &url, &createdAt); err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{
+			"id":          id,
+			"contract_id": contractID,
+			"phase":       phase,
+			"url":         url,
+			"uploaded_at": createdAt.UTC().Format(time.RFC3339),
 		}, nil
 	})
 }
