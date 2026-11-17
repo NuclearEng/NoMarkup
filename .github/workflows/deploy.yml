@@ -89,6 +89,7 @@ jobs:
           VERSION: ${{ steps.version.outputs.VERSION }}
         run: |
           set -euo pipefail
+          IMAGE_PREFIX="$(printf '%s' "${IMAGE_PREFIX}" | tr '[:upper:]' '[:lower:]')"  # registry names must be lowercase
           images=(
             "web:deploy/docker/web.Dockerfile:"
             "gateway:deploy/docker/gateway.Dockerfile:"
@@ -146,6 +147,7 @@ jobs:
           IMAGE_PREFIX: ${{ env.IMAGE_PREFIX }}
         run: |
           set -euo pipefail
+          IMAGE_PREFIX="$(printf '%s' "${IMAGE_PREFIX}" | tr '[:upper:]' '[:lower:]')"  # registry names must be lowercase
           for img in gateway web user job payment chat notification \
                      bidding fraud imaging pricing trust underwriting migrate; do
             kustomize edit set image "ghcr.io/nomarkup/${img}=${REGISTRY}/${IMAGE_PREFIX}/${img}:${VERSION}"
@@ -174,6 +176,7 @@ jobs:
           IMAGE_PREFIX: ${{ env.IMAGE_PREFIX }}
         run: |
           set -euo pipefail
+          IMAGE_PREFIX="$(printf '%s' "${IMAGE_PREFIX}" | tr '[:upper:]' '[:lower:]')"  # registry names must be lowercase
           JOB_NAME="db-migrate-${VERSION//./-}"
           MIGRATE_IMAGE="${REGISTRY}/${IMAGE_PREFIX}/migrate:${VERSION}"
           # Delete any prior Job with this exact release name (re-runs).

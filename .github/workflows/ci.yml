@@ -1150,6 +1150,8 @@ jobs:
           IMAGE_PREFIX: ${{ vars.DOCKER_IMAGE_PREFIX || format('{0}/nomarkup', github.repository_owner) }}
         run: |
           set -euo pipefail
+          # Registry repository names must be lowercase; the owner login is "NuclearEng".
+          IMAGE_PREFIX="$(printf '%s' "${IMAGE_PREFIX}" | tr '[:upper:]' '[:lower:]')"
           images=(
             "web:deploy/docker/web.Dockerfile:"
             "gateway:deploy/docker/gateway.Dockerfile:"
