@@ -888,12 +888,18 @@ func (h *ListingsHandler) PingViewer(w http.ResponseWriter, r *http.Request) {
 	// ZADD with current timestamp, then ZREMRANGEBYSCORE to evict viewers
 	// older than 30 seconds. Combined watcher_count also considers live WS
 	// spectators so browse/detail/ping and spectate agree on social proof.
-	rdb.ZAdd(ctx, key, redis.Z{Score: now, Member: viewerID})
-	rdb.ZRemRangeByScore(ctx, key,
-		"-inf",
-		fmt.Sprintf("%f", now-30_000),
-	)
-	rdb.Expire(ctx, key, 5*time.Minute) // janitor
+	// MULTI/EXEC so the set never exists without its janitor TTL.
+	if _, err := rdb.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+		pipe.ZAdd(ctx, key, redis.Z{Score: now, Member: viewerID})
+		pipe.ZRemRangeByScore(ctx, key,
+			"-inf",
+			fmt.Sprintf("%f", now-30_000),
+		)
+		pipe.Expire(ctx, key, 5*time.Minute) // janitor
+		return nil
+	}); err != nil {
+		slog.WarnContext(ctx, "listing ping: redis viewer update failed", "error", err)
+	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"listing_id":    id,
