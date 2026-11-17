@@ -80,7 +80,10 @@ vi.mock('@/components/payments/PaymentConfirmation', () => ({
 const { ContractOneShotPay } = await import('@/components/contracts/ContractOneShotPay');
 
 const REAL_SECRET = ['pi', '3Test', 'secret', 'abc'].join('_');
-const DEV_SECRET = 'dev_secret_1';
+// Built from parts at runtime, like REAL_SECRET: fabricated fixtures that no
+// secret scanner should read as a credential (docs/security/secret-scanning.md).
+const DEV_SECRET = ['dev', 'secret', '1'].join('_');
+const SETUP_INTENT_SECRET = ['seti', '123', 'secret', 'abc'].join('_');
 
 function payment(overrides: Partial<Payment>): Payment {
   return {
@@ -297,7 +300,7 @@ describe('ContractOneShotPay — starting a payment', () => {
 
   it.each([
     ['is missing', undefined],
-    ['is not a PaymentIntent secret', 'seti_123_secret_abc'],
+    ['is not a PaymentIntent secret', SETUP_INTENT_SECRET],
   ])('does not open checkout when the client secret %s', async (_label, secret) => {
     const user = userEvent.setup();
     hooks.create.mutateAsync.mockReturnValue(created({ id: 'pay-9', client_secret: secret }));

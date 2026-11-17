@@ -193,14 +193,18 @@ describe('confirmation secret helpers', () => {
   });
 
   it('returns the secret when present', () => {
+    // Fabricated, built from parts so no secret scanner reads them as
+    // credentials (docs/security/secret-scanning.md).
+    const createdToken = ['pi', '123', 'secret', 'abc'].join('_');
+    const changedToken = ['pi', '456', 'secret', 'def'].join('_');
     const created: CreateSubscriptionResult = {
       subscription: subscription('incomplete'),
-      client_secret: 'pi_123_secret_abc',
+      client_secret: createdToken,
     };
-    expect(subscriptionConfirmationSecret(created)).toBe('pi_123_secret_abc');
+    expect(subscriptionConfirmationSecret(created)).toBe(createdToken);
     expect(
-      changeTierConfirmationSecret({ ...changeResult, ...{ client_secret: 'pi_456_secret_def' } }),
-    ).toBe('pi_456_secret_def');
+      changeTierConfirmationSecret({ ...changeResult, ...{ client_secret: changedToken } }),
+    ).toBe(changedToken);
   });
 
   it('ignores a secret that is not a string', () => {

@@ -75,6 +75,13 @@ final class MoneyFormatTests: XCTestCase {
 // MARK: - Listing promotion pricebook / decode (Wave 5)
 
 final class ListingPromotionTests: XCTestCase {
+    // Fabricated values shaped like the two kinds of setup secret the client
+    // tells apart ("seti_…_secret_…" from Stripe, "dev_promote_…" from the dev
+    // stub). Joined at runtime so secret scanners do not read them as
+    // credentials (docs/security/secret-scanning.md).
+    private static let fakeStripeSetupSecret = ["seti", "abc123", "secret", "xyz"].joined(separator: "_")
+    private static let fakeDevSetupSecret = ["dev", "promote", "22222222-2222-2222-2222-222222222222"].joined(separator: "_")
+
     func testPricebookMatchesGatewayTiers() {
         XCTAssertEqual(ListingPromotionTier.all.count, 3)
         XCTAssertEqual(ListingPromotionTier.expectedAmountCents(for: 24), 500)
@@ -95,7 +102,7 @@ final class ListingPromotionTests: XCTestCase {
           "listing_id": "22222222-2222-2222-2222-222222222222",
           "duration_hours": 24,
           "amount_cents": 500,
-          "stripe_client_secret": "seti_abc123_secret_xyz",
+          "stripe_client_secret": "\(Self.fakeStripeSetupSecret)",
           "promoted_until_estimate": "2026-08-03T12:00:00Z",
           "status": "pending"
         }
@@ -111,7 +118,7 @@ final class ListingPromotionTests: XCTestCase {
           "listing_id": "22222222-2222-2222-2222-222222222222",
           "duration_hours": 72,
           "amount_cents": 1200,
-          "stripe_client_secret": "dev_promote_22222222-2222-2222-2222-222222222222",
+          "stripe_client_secret": "\(Self.fakeDevSetupSecret)",
           "status": "pending"
         }
         """.data(using: .utf8)!
@@ -130,7 +137,7 @@ final class ListingPromotionTests: XCTestCase {
           "listing_id": "22222222-2222-2222-2222-222222222222",
           "duration_hours": 24,
           "amount_cents": 1,
-          "stripe_client_secret": "seti_abc123_secret_xyz",
+          "stripe_client_secret": "\(Self.fakeStripeSetupSecret)",
           "status": "pending"
         }
         """.data(using: .utf8)!

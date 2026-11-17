@@ -53,7 +53,10 @@ function failingFields(schema: z.ZodMiniType, input: unknown): string[] {
   return [...new Set(result.error.issues.map((issue) => String(issue.path[0])))].sort();
 }
 
-const STRONG_PASSWORD = 'Sup3r$ecret';
+// Not a credential: an obviously fake value that still meets the strength rules
+// (upper, lower, digit, special, length), built from parts so secret scanners
+// do not flag it (docs/security/secret-scanning.md).
+const STRONG_PASSWORD = ['Test', 'password', 'not', 'real', '1!'].join('-');
 
 describe('legalIntakeSchema', () => {
   const valid = {

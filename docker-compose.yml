@@ -27,23 +27,27 @@ services:
       DEFAULT_POOL_SIZE: 100
       MAX_CLIENT_CONN: 500
       MAX_DB_CONNECTIONS: 150
-      # Every Go service sends statement_timeout, lock_timeout and
-      # idle_in_transaction_session_timeout in the connection startup packet
-      # (RES-02, */internal/observability/postgres.go). PgBouncer rejects any
-      # startup parameter it does not track ("FATAL: unsupported startup
-      # parameter: lock_timeout", SQLSTATE 08P01), so without this list no Go
-      # service can open a connection: user/job/payment/notification exit 1
-      # and the gateway /readyz stays 503. extra_float_digits is the image
-      # default and must be repeated because this variable replaces it.
+      # Session timeouts (statement_timeout 10s, lock_timeout 3s,
+      # idle_in_transaction_session_timeout 30s) are role-level defaults set
+      # by migration 137, so they hold on every server connection this pooler
+      # opens and the Go services no longer send them (RES-02,
+      # */internal/observability/postgres.go; docs/operations/pgbouncer.md).
+      #
+      # The list below stays as a guard: PgBouncer refuses a connection whose
+      # startup packet carries a parameter it does not track ("FATAL:
+      # unsupported startup parameter: lock_timeout", SQLSTATE 08P01), which is
+      # how four services failed to start before. A DATABASE_URL that pins one
+      # of these, or DB_TIMEOUTS_IN_STARTUP_PACKET=true, would otherwise bring
+      # that back. Ignored parameters are dropped, not forwarded.
+      # extra_float_digits is the image default and must be repeated because
+      # this variable replaces it.
       IGNORE_STARTUP_PARAMETERS: "extra_float_digits,statement_timeout,lock_timeout,idle_in_transaction_session_timeout"
-      # "Ignored" means the three GUCs above never reach Postgres through the
-      # pooler, so bound pooled traffic here instead, with the same values the
-      # services ask for (seconds): query_timeout ~ statement_timeout (10s),
-      # idle_transaction_timeout ~ idle_in_transaction_session_timeout (30s).
-      # PgBouncer has no lock_timeout equivalent; a lock wait is cut by the
-      # 10s query timeout. Migrations and the seed connect to Postgres
-      # directly (:5433) and are deliberately not subject to these.
-      QUERY_TIMEOUT: 10
+      # Pooler-side backstops (seconds) for the case where the role defaults
+      # are missing. query_timeout sits above the 10s statement_timeout so
+      # Postgres cancels the statement cleanly first; PgBouncer's version
+      # drops the whole server connection. Migrations and the seed connect to
+      # Postgres directly (:5433) and are not subject to these.
+      QUERY_TIMEOUT: 15
       IDLE_TRANSACTION_TIMEOUT: 30
     ports:
       - "6432:5432"

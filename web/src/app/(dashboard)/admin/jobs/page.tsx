@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { toast } from 'sonner';
 
 import { ActionConfirmDialog } from '@/components/admin/ActionConfirmDialog';
 import type { Column } from '@/components/admin/DataTable';
@@ -19,6 +20,7 @@ import {
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { useAdminJobs, useRemoveJob, useSuspendJob } from '@/hooks/useAdmin';
+import { getApiErrorMessage } from '@/lib/api';
 import { JOB_STATUS_CLASSES } from '@/lib/status-badge-classes';
 import { cn, formatCents } from '@/lib/utils';
 import type { Job, JobStatus } from '@/types';
@@ -65,10 +67,16 @@ export default function AdminJobsPage() {
   async function handleConfirmAction() {
     if (!actionTarget) return;
     const mutation = actionTarget.action === 'suspend' ? suspendMutation : removeMutation;
-    await mutation.mutateAsync({
-      jobId: actionTarget.job.id,
-      reason,
-    });
+    try {
+      await mutation.mutateAsync({
+        jobId: actionTarget.job.id,
+        reason,
+      });
+    } catch (err) {
+      // Keep the dialog and the typed reason so the admin can retry.
+      toast.error(getApiErrorMessage(err, `Failed to ${actionTarget.action} job`));
+      return;
+    }
     setActionTarget(null);
     setReason('');
   }

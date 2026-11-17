@@ -1,0 +1,29 @@
+# GitGuardian configuration (ggshield config format, version 2).
+# Policy and background: docs/security/secret-scanning.md
+#
+# What this file does and does not do:
+#   * ggshield (local scans, pre-commit, CI) reads it.
+#   * GitGuardian's documentation does not say that the GitHub pull-request
+#     check runs read it. For those, path exclusions are a workspace setting
+#     (Settings > Secrets detection > filepath exclusions) and a flagged
+#     fixture is closed in the dashboard as a test credential.
+#
+# Policy: no path is exempt from scanning. Test code is scanned like service
+# code, so a real credential pasted into a test is still caught. Fixtures that
+# have to look like a credential are written so they do not trip detectors
+# (built from parts at runtime, or an obviously fake value) instead of being
+# hidden behind an ignore rule. Do not add web/src, services, gateway, engines
+# or any whole test tree here.
+version: 2
+
+secret:
+  # Deliberately empty. An entry needs a comment naming the fixture generator
+  # that makes every file under the path fabricated by construction.
+  ignored_paths: []
+
+  # Deliberately empty. A flagged value is fixed in the tree or resolved in the
+  # dashboard; it is not silenced by match here.
+  ignored_matches: []
+
+  # Report secrets even when the dashboard already knows them.
+  ignore_known_secrets: false

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { Market } from '@/types';
 
@@ -8,6 +8,10 @@ const STORAGE_KEY = 'nm.selectedMarket';
 const RECENTS_KEY = 'nm.recentMarkets';
 const RECENTS_MAX = 5;
 const EVENT = 'nm:selectedMarket';
+// Recents announce on their own event: a selected-market write that succeeds
+// (clearing the pick works even when storage refuses new values) must not make
+// the recents list re-read storage and drop what it holds in memory.
+const RECENTS_EVENT = 'nm:recentMarkets';
 
 /**
  * When localStorage refuses a write (private mode, quota) the value cannot be
@@ -20,9 +24,9 @@ interface MemoryFallback {
   recents?: Market[];
 }
 
-function announce(fallback?: MemoryFallback): void {
+function announce(name: string, fallback?: MemoryFallback): void {
   window.dispatchEvent(
-    fallback ? new CustomEvent<MemoryFallback>(EVENT, { detail: fallback }) : new Event(EVENT),
+    fallback ? new CustomEvent<MemoryFallback>(name, { detail: fallback }) : new Event(name),
   );
 }
 
@@ -86,7 +90,7 @@ export function useSelectedMarket(): [Market | null, (m: Market | null) => void]
       stored = false;
     }
     setMarketState(m);
-    announce(stored ? undefined : { selected: m });
+    announce(EVENT, stored ? undefined : { selected: m });
   }, []);
 
   return [market, setMarket];
@@ -107,10 +111,17 @@ function readRecents(): Market[] {
  * useRecentMarkets tracks the last few markets the user picked (most-recent
  * first, deduped by slug, capped). Powers the "Recent" shortcut in the city
  * picker so returning users don't re-search. localStorage-backed, hydrated after
- * mount, kept in sync via the same custom event as the selected market.
+ * mount, kept in sync within the tab by its own custom event.
  */
 export function useRecentMarkets(): [Market[], (m: Market) => void] {
   const [recents, setRecents] = useState<Market[]>([]);
+  // The list held in memory while localStorage refuses writes; null while
+  // storage is the source. Storage cannot be re-read in that state (it is empty
+  // or stale), so the next pick has to build on this. Without it every pick
+  // started again from the empty stored list and the "list" only ever held the
+  // newest market. A ref, not state: pushRecent must see the latest list
+  // without being re-created.
+  const memoryRecents = useRef<Market[] | null>(null);
 
   useEffect(() => {
     setRecents(readRecents());
@@ -119,20 +130,26 @@ export function useRecentMarkets(): [Market[], (m: Market) => void] {
   useEffect(() => {
     const sync = (event: Event) => {
       const fallback = fallbackOf(event);
-      if (!fallback) setRecents(readRecents());
-      else if (fallback.recents !== undefined) setRecents(fallback.recents);
+      if (!fallback) {
+        memoryRecents.current = null;
+        setRecents(readRecents());
+      } else if (fallback.recents !== undefined) {
+        memoryRecents.current = fallback.recents;
+        setRecents(fallback.recents);
+      }
     };
-    window.addEventListener(EVENT, sync);
+    window.addEventListener(RECENTS_EVENT, sync);
     window.addEventListener('storage', sync);
     return () => {
-      window.removeEventListener(EVENT, sync);
+      window.removeEventListener(RECENTS_EVENT, sync);
       window.removeEventListener('storage', sync);
     };
   }, []);
 
   const pushRecent = useCallback((m: Market) => {
     if (typeof window === 'undefined') return;
-    const next = [m, ...readRecents().filter((r) => r.slug !== m.slug)].slice(0, RECENTS_MAX);
+    const current = memoryRecents.current ?? readRecents();
+    const next = [m, ...current.filter((r) => r.slug !== m.slug)].slice(0, RECENTS_MAX);
     let stored = true;
     try {
       window.localStorage.setItem(RECENTS_KEY, JSON.stringify(next));
@@ -140,8 +157,9 @@ export function useRecentMarkets(): [Market[], (m: Market) => void] {
       // storage unavailable — keep the list in memory
       stored = false;
     }
+    memoryRecents.current = stored ? null : next;
     setRecents(next);
-    announce(stored ? undefined : { recents: next });
+    announce(RECENTS_EVENT, stored ? undefined : { recents: next });
   }, []);
 
   return [recents, pushRecent];
