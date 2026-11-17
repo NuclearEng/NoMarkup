@@ -18,6 +18,9 @@ COPY proto/gen/go/ proto/gen/go/
 # Without it `go mod download` fails: "reading /app/pkg/grpmtls/go.mod: no such
 # file or directory".
 COPY pkg/grpmtls/ pkg/grpmtls/
+# Sign in with Apple client-secret minting (stdlib only):
+#   replace github.com/nomarkup/nomarkup/pkg/appleauth => ../../pkg/appleauth
+COPY pkg/appleauth/ pkg/appleauth/
 
 # Copy service module files and download dependencies.
 COPY services/user/go.mod services/user/go.sum services/user/

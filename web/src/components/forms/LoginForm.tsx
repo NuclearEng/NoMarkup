@@ -39,6 +39,7 @@ type LoginFormValues = z.infer<typeof loginSchema>;
 
 const OAUTH_MFA_CHALLENGE_KEY = 'nomarkup:oauth_mfa_challenge';
 const POST_LOGIN_NEXT_KEY = 'nomarkup:post_login_next';
+const OAUTH_MFA_PENDING_COOKIE = 'oauth_mfa_pending';
 
 export function LoginForm() {
   const router = useRouter();
@@ -53,19 +54,25 @@ export function LoginForm() {
   const totpInputRef = useRef<HTMLInputElement>(null);
 
   // Gateway OAuth init/callback redirects land here with ?error=<code>.
-  // MFA-enabled OAuth accounts set a 60s oauth_mfa_challenge cookie (not a
-  // query param, which would log the challenge). Persist in sessionStorage so
-  // Strict Mode remount / refresh does not consume-and-lose the token.
+  // MFA-enabled OAuth accounts get a 60s HttpOnly oauth_mfa_challenge cookie
+  // (never a query param, never JS-readable) plus a non-secret
+  // oauth_mfa_pending flag. When the flag is present we redeem the challenge
+  // once via POST /api/v1/auth/oauth/mfa-challenge and persist it in
+  // sessionStorage so Strict Mode remount / refresh does not lose it.
   useEffect(() => {
+    let cancelled = false;
     const message = messageForOAuthError(searchParams.get('error'));
     if (message) {
       setFormError(message);
     }
-    const challenge = restoreOAuthMfaChallenge();
-    if (challenge) {
+    void restoreOAuthMfaChallenge().then((challenge) => {
+      if (cancelled || !challenge) return;
       setMfaChallengeToken(challenge);
       setMfaStep(true);
-    }
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [searchParams]);
 
   const form = useForm<LoginFormValues>({
@@ -357,19 +364,48 @@ function clearCookie(name: string): void {
   document.cookie = name + '=; path=/; max-age=0; samesite=strict' + secure;
 }
 
-function restoreOAuthMfaChallenge(): string | null {
+const OAUTH_MFA_EXCHANGE_PATH = '/api/v1/auth/oauth/mfa-challenge';
+
+// Shared across Strict Mode double-invocation so the one-time server
+// redemption happens exactly once per page load.
+let pendingOAuthMfaExchange: Promise<string | null> | null = null;
+
+async function restoreOAuthMfaChallenge(): Promise<string | null> {
+  // Legacy builds set a JS-readable challenge cookie; never trust or keep it.
+  clearCookie('oauth_mfa_challenge');
   const stored = readSessionItem(OAUTH_MFA_CHALLENGE_KEY);
   if (stored) return stored;
-  const cookie = readCookie('oauth_mfa_challenge');
-  if (!cookie || cookie.trim() === '') return null;
-  writeSessionItem(OAUTH_MFA_CHALLENGE_KEY, cookie);
-  // Cookie is short-lived (60s); storage is the source of truth until MFA
-  // succeeds or the user hits Back.
-  clearCookie('oauth_mfa_challenge');
-  return cookie;
+  if (readCookie(OAUTH_MFA_PENDING_COOKIE) !== '1' && !pendingOAuthMfaExchange) return null;
+  pendingOAuthMfaExchange ??= exchangeOAuthMfaChallenge().finally(() => {
+    // Allow a later OAuth round-trip in the same SPA session to redeem again.
+    setTimeout(() => {
+      pendingOAuthMfaExchange = null;
+    }, 0);
+  });
+  return pendingOAuthMfaExchange;
+}
+
+async function exchangeOAuthMfaChallenge(): Promise<string | null> {
+  clearCookie(OAUTH_MFA_PENDING_COOKIE);
+  try {
+    const res = await fetch(OAUTH_MFA_EXCHANGE_PATH, {
+      method: 'POST',
+      credentials: 'include',
+      cache: 'no-store',
+    });
+    if (!res.ok) return null;
+    const body = (await res.json()) as { mfa_challenge_token?: unknown };
+    const token = typeof body.mfa_challenge_token === 'string' ? body.mfa_challenge_token : '';
+    if (token.trim() === '') return null;
+    // Storage is the source of truth until MFA succeeds or the user hits Back.
+    writeSessionItem(OAUTH_MFA_CHALLENGE_KEY, token);
+    return token;
+  } catch {
+    return null;
+  }
 }
 
 function clearOAuthMfaChallenge(): void {
   removeSessionItem(OAUTH_MFA_CHALLENGE_KEY);
-  clearCookie('oauth_mfa_challenge');
+  clearCookie(OAUTH_MFA_PENDING_COOKIE);
 }

@@ -25,6 +25,11 @@ on:
     # Weekly Monday 6am UTC — catches new CVEs even without code changes
     - cron: "0 6 * * 1"
 
+# Least-privilege default for GITHUB_TOKEN; jobs that need more (e.g. GHCR
+# push) declare job-level permissions explicitly.
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -60,7 +65,10 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache-dependency-path: ${{ matrix.dir }}/go.sum
       - name: Install govulncheck
-        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+        run: go install golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}
+        env:
+          # Pinned for reproducible scans; bump deliberately (requires Go >= 1.26).
+          GOVULNCHECK_VERSION: v1.9.0
       - name: Run govulncheck
         working-directory: ${{ matrix.dir }}
         run: govulncheck ./...

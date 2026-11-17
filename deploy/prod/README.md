@@ -211,13 +211,16 @@ Production policy: **forward-only** (`up`). Do not run `down` against prod data.
 ```bash
 cd /opt/nomarkup
 git pull   # or unpack a release tarball
+export IMAGE_TAG="$(git rev-parse --short=12 HEAD)"   # required; or set IMAGE_TAG in .env
 
 docker compose -f deploy/prod/docker-compose.yml --env-file deploy/prod/.env build
 docker compose -f deploy/prod/docker-compose.yml --env-file deploy/prod/.env run --rm migrate
 docker compose -f deploy/prod/docker-compose.yml --env-file deploy/prod/.env up -d
 ```
 
-Pin images later with `IMAGE_REGISTRY` + `IMAGE_TAG` in `.env` and `docker compose pull` instead of building on the box.
+`IMAGE_TAG` is **required** (no `:latest` fallback); `scripts/prod/deploy.sh` defaults it to the git short sha. To pin registry images, set `IMAGE_REGISTRY` + `IMAGE_TAG` in `.env` and use `docker compose pull` instead of building on the box.
+
+**gRPC mTLS:** run `deploy/prod/gen-mtls-certs.sh`, then deploy with `MTLS=1 ./scripts/prod/deploy.sh` (adds `docker-compose.mtls.yml`). See [MTLS.md](MTLS.md).
 
 ---
 

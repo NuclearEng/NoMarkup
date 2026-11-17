@@ -64,43 +64,36 @@ describe('AuthRestorer', () => {
     expect(setAccessTokenMock).not.toHaveBeenCalled();
   });
 
-  it('hydrates auth store from oauth_access_token cookie when present', async () => {
-    parseJwtPayloadMock.mockReturnValue({
-      sub: 'user-1',
-      email: 'oauth@example.com',
-      roles: ['customer'],
-    });
-    document.cookie = 'oauth_access_token=token-abc; path=/';
-    render(<AuthRestorer />);
-    await waitFor(() => {
-      expect(setAccessTokenMock).toHaveBeenCalledWith('token-abc');
-    });
-    await waitFor(() => {
-      expect(setStateMock).toHaveBeenCalled();
-    });
-    const lastCall = setStateMock.mock.calls.at(-1)?.[0] as Record<string, unknown> | undefined;
-    expect(lastCall).toBeDefined();
-    expect((lastCall as { isAuthenticated: boolean }).isAuthenticated).toBe(true);
-    expect((lastCall as { accessToken: string }).accessToken).toBe('token-abc');
-    // Refresh should NOT be invoked when oauth path was used
-    expect(refreshTokenMock).not.toHaveBeenCalled();
-  });
-
-  it('does not hydrate when oauth token cannot be parsed', async () => {
-    parseJwtPayloadMock.mockReturnValue(null);
-    document.cookie = 'oauth_access_token=bad-token; path=/';
+  it('never reads an access token from a JS-visible cookie (legacy oauth_access_token ignored)', async () => {
+    parseJwtPayloadMock.mockReturnValue({ sub: 'u', email: 'e', roles: ['customer'] });
+    document.cookie = 'oauth_access_token=tok-legacy; path=/';
     render(<AuthRestorer />);
     await waitFor(() => {
       expect(setStateMock).toHaveBeenCalledWith({ isHydrating: false });
     });
     expect(setAccessTokenMock).not.toHaveBeenCalled();
-    // setState may be invoked elsewhere — but never with isAuthenticated:true
-    const authedCall = setStateMock.mock.calls.find((args) => {
-      const arg = args[0] as { isAuthenticated?: boolean } | undefined;
-      return arg?.isAuthenticated === true;
-    });
-    expect(authedCall).toBeUndefined();
+    expect(parseJwtPayloadMock).not.toHaveBeenCalled();
     expect(refreshTokenMock).not.toHaveBeenCalled();
+  });
+
+  it('clears legacy oauth handoff cookies on mount', async () => {
+    document.cookie = 'oauth_access_token=tok-2; path=/';
+    document.cookie = 'oauth_token_expires=9999; path=/';
+    render(<AuthRestorer />);
+    await waitFor(() => {
+      expect(document.cookie).not.toContain('oauth_access_token=');
+    });
+    expect(document.cookie).not.toContain('oauth_token_expires=');
+  });
+
+  it('after OAuth (has_session set) exchanges the HttpOnly refresh cookie via refreshToken()', async () => {
+    document.cookie = 'has_session=1; path=/';
+    document.cookie = 'oauth_access_token=tok-3; path=/';
+    render(<AuthRestorer />);
+    await waitFor(() => {
+      expect(refreshTokenMock).toHaveBeenCalledTimes(1);
+    });
+    expect(setAccessTokenMock).not.toHaveBeenCalled();
   });
 
   it('only attempts restoration once per mount (StrictMode-style double effect)', async () => {
@@ -110,39 +103,6 @@ describe('AuthRestorer', () => {
     await waitFor(() => {
       expect(refreshTokenMock).toHaveBeenCalledTimes(1);
     });
-  });
-
-  it('clears oauth_access_token and oauth_token_expires cookies after consuming them', async () => {
-    parseJwtPayloadMock.mockReturnValue({
-      sub: 'u-2',
-      email: 'foo@bar.com',
-      roles: ['provider'],
-    });
-    document.cookie = 'oauth_access_token=tok-2; path=/';
-    document.cookie = 'oauth_token_expires=9999; path=/';
-    render(<AuthRestorer />);
-    await waitFor(() => {
-      expect(setAccessTokenMock).toHaveBeenCalledWith('tok-2');
-    });
-    // Both cookies should be cleared after consumption.
-    expect(document.cookie).not.toContain('oauth_access_token=');
-    expect(document.cookie).not.toContain('oauth_token_expires=');
-  });
-
-  it('uses the oauth path even when has_session cookie is also present', async () => {
-    parseJwtPayloadMock.mockReturnValue({
-      sub: 'u-3',
-      email: 'a@b.com',
-      roles: ['customer'],
-    });
-    document.cookie = 'has_session=1; path=/';
-    document.cookie = 'oauth_access_token=tok-3; path=/';
-    render(<AuthRestorer />);
-    await waitFor(() => {
-      expect(setAccessTokenMock).toHaveBeenCalledWith('tok-3');
-    });
-    // Oauth path returns early — never hits refreshToken.
-    expect(refreshTokenMock).not.toHaveBeenCalled();
   });
 
   it('attempts restoration only once even under React StrictMode (effect runs twice)', async () => {
@@ -155,31 +115,6 @@ describe('AuthRestorer', () => {
     await waitFor(() => {
       expect(refreshTokenMock).toHaveBeenCalledTimes(1);
     });
-  });
-
-  it('decodes URL-encoded cookie values', async () => {
-    parseJwtPayloadMock.mockReturnValue({
-      sub: 'u-4',
-      email: 'enc@example.com',
-      roles: ['customer'],
-    });
-    // Encoded value: "tok+with/special=chars"
-    const encoded = encodeURIComponent('tok+with/special=chars');
-    document.cookie = `oauth_access_token=${encoded}; path=/`;
-    render(<AuthRestorer />);
-    await waitFor(() => {
-      expect(setAccessTokenMock).toHaveBeenCalledWith('tok+with/special=chars');
-    });
-  });
-
-  it('uses the raw cookie value when decodeURIComponent fails', async () => {
-    parseJwtPayloadMock.mockReturnValue(null);
-    document.cookie = 'oauth_access_token=%E0%A4%A; path=/';
-    render(<AuthRestorer />);
-    await waitFor(() => {
-      expect(parseJwtPayloadMock).toHaveBeenCalledWith('%E0%A4%A');
-    });
-    expect(setAccessTokenMock).not.toHaveBeenCalled();
   });
 
   it('returns null cookie value when no matching cookie exists (negative match path)', async () => {

@@ -160,7 +160,7 @@ func (s *StripeService) createConnectedAccountV2(ctx context.Context, email, bus
 	slog.Info("created connect account via accounts v2",
 		"account_id", out.ID,
 		"dashboard", out.Dashboard,
-		"email", email,
+		"email_domain", email[strings.LastIndex(email, "@")+1:],
 	)
 	return out.ID, nil
 }

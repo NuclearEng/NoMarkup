@@ -3,13 +3,17 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/nomarkup/nomarkup/pkg/appleauth"
 )
 
 const appleTokenEndpoint = "https://appleid.apple.com/auth/token"
@@ -19,8 +23,8 @@ const appleTokenEndpoint = "https://appleid.apple.com/auth/token"
 var appleTokenHTTPClient = &http.Client{Timeout: 10 * time.Second}
 
 // exchangeAppleAuthorizationCodeFn posts an authorization code to Apple and
-// returns the refresh token. Tests replace it. Production must not invent a
-// client secret: the caller passes APPLE_CLIENT_SECRET.
+// returns the refresh token. Tests replace it. The caller passes the client
+// secret from appleClientSecret; it is never accepted from the request.
 var exchangeAppleAuthorizationCodeFn = exchangeAppleAuthorizationCode
 
 type appleTokenResponse struct {
@@ -72,8 +76,20 @@ func nativeAppleClientID() string {
 	return strings.TrimSpace(os.Getenv("APPLE_CLIENT_ID"))
 }
 
-func appleClientSecret() string {
-	return strings.TrimSpace(os.Getenv("APPLE_CLIENT_SECRET"))
+// appleClientSecret returns the client_secret for clientID. A static
+// APPLE_CLIENT_SECRET wins; otherwise an ES256 JWT is minted per call from
+// APPLE_TEAM_ID / APPLE_KEY_ID / APPLE_PRIVATE_KEY, so the web Services ID and
+// the native bundle id each get a secret whose `sub` matches, and nothing
+// expires after 6 months. Returns "" when neither is configured.
+func appleClientSecret(clientID string) string {
+	secret, err := appleauth.ClientSecretFromEnv(clientID)
+	if err != nil {
+		if !errors.Is(err, appleauth.ErrNotConfigured) {
+			slog.Error("apple sign-in: mint client secret failed", "error", err)
+		}
+		return ""
+	}
+	return secret
 }
 
 func appleRefreshStoreRequired() bool {

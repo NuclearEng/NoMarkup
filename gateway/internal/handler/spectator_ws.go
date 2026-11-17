@@ -315,15 +315,12 @@ func (h *SpectatorWSHandler) checkIPLimit(ctx context.Context, ip string) bool {
 	}
 
 	key := cache.Key("spectator_ip", ip)
-	count, err := rdb.Incr(ctx, key).Result()
+	// INCR + EXPIRE in one script: the counter can never be left without a
+	// TTL (it would then be unevictable under volatile-lru and lock the IP out).
+	count, err := cache.IncrWithTTL(ctx, rdb, key, spectatorIPKeyTTL)
 	if err != nil {
 		slog.Warn("spectator ws: redis Incr error, allowing connection", "error", err)
 		return true
-	}
-
-	// Set TTL on first increment.
-	if count == 1 {
-		rdb.Expire(ctx, key, spectatorIPKeyTTL)
 	}
 
 	if count > maxSpectatorConnectionsPerIP {
@@ -332,7 +329,9 @@ func (h *SpectatorWSHandler) checkIPLimit(ctx context.Context, ip string) bool {
 		// so a rejected attempt consumes no slot — otherwise sustained over-cap
 		// attempts from one IP leak the counter and lock the IP out for the TTL.
 		// (We keep the atomic Incr-then-check to avoid a GET/Incr TOCTOU.)
-		rdb.Decr(ctx, key)
+		if _, err := cache.DecrIfExists(ctx, rdb, key); err != nil {
+			slog.Warn("spectator ws: redis Decr error", "error", err)
+		}
 		return false
 	}
 
@@ -350,8 +349,14 @@ func (h *SpectatorWSHandler) registerSpectator(ctx context.Context, jobID, spect
 	}
 
 	key := cache.Key("spectators", jobID)
-	rdb.SAdd(ctx, key, spectatorID)
-	rdb.Expire(ctx, key, spectatorKeyTTL)
+	// MULTI/EXEC so the set never exists without its TTL.
+	if _, err := rdb.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+		pipe.SAdd(ctx, key, spectatorID)
+		pipe.Expire(ctx, key, spectatorKeyTTL)
+		return nil
+	}); err != nil {
+		slog.Warn("spectator ws: redis register error", "error", err)
+	}
 }
 
 // unregisterSpectator removes a spectator from the tracking set and decrements the IP counter.
@@ -378,7 +383,11 @@ func (h *SpectatorWSHandler) unregisterSpectator(jobID, spectatorID string) {
 	if idx := lastIndexByte(spectatorID, ':'); idx > 0 {
 		ip := spectatorID[:idx]
 		ipKey := cache.Key("spectator_ip", ip)
-		rdb.Decr(ctx, ipKey)
+		// The IP window (5m) is usually gone by disconnect; a plain DECR would
+		// then create the key at -1 with no TTL. DecrIfExists leaves it absent.
+		if _, err := cache.DecrIfExists(ctx, rdb, ipKey); err != nil {
+			slog.Warn("spectator ws: redis Decr error", "error", err)
+		}
 	}
 }
 

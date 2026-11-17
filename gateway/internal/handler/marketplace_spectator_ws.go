@@ -265,12 +265,10 @@ func (h *MarketplaceSpectatorWSHandler) checkIPLimit(ctx context.Context, ip str
 		return true
 	}
 	key := cache.Key("listing_spectator_ip", ip)
-	count, err := rdb.Incr(ctx, key).Result()
+	// INCR + EXPIRE atomically (see SpectatorWSHandler.checkIPLimit).
+	count, err := cache.IncrWithTTL(ctx, rdb, key, listingSpectatorIPKeyTTL)
 	if err != nil {
 		return true
-	}
-	if count == 1 {
-		rdb.Expire(ctx, key, listingSpectatorIPKeyTTL)
 	}
 	if count > maxListingSpectatorPerIP {
 		// Over the cap: the connection is rejected and never registers, so the
@@ -278,7 +276,7 @@ func (h *MarketplaceSpectatorWSHandler) checkIPLimit(ctx context.Context, ip str
 		// so a rejected attempt consumes no slot — otherwise sustained over-cap
 		// attempts from one IP leak the counter and lock the IP out for the TTL.
 		// (Atomic Incr-then-check is preserved to avoid a GET/Incr TOCTOU.)
-		rdb.Decr(ctx, key)
+		_, _ = cache.DecrIfExists(ctx, rdb, key)
 		return false
 	}
 	return true
@@ -293,8 +291,12 @@ func (h *MarketplaceSpectatorWSHandler) registerSpectator(ctx context.Context, l
 		return
 	}
 	key := cache.Key("listing_spectators", listingID)
-	rdb.SAdd(ctx, key, spectatorID)
-	rdb.Expire(ctx, key, listingSpectatorKeyTTL)
+	// MULTI/EXEC so the set never exists without its TTL.
+	_, _ = rdb.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+		pipe.SAdd(ctx, key, spectatorID)
+		pipe.Expire(ctx, key, listingSpectatorKeyTTL)
+		return nil
+	})
 }
 
 func (h *MarketplaceSpectatorWSHandler) unregisterSpectator(listingID, spectatorID string) {
@@ -313,7 +315,8 @@ func (h *MarketplaceSpectatorWSHandler) unregisterSpectator(listingID, spectator
 	rdb.SRem(ctx, key, spectatorID)
 	if idx := lastIndexByte(spectatorID, ':'); idx > 0 {
 		ip := spectatorID[:idx]
-		rdb.Decr(ctx, cache.Key("listing_spectator_ip", ip))
+		// DecrIfExists: never recreate an expired window at -1 without a TTL.
+		_, _ = cache.DecrIfExists(ctx, rdb, cache.Key("listing_spectator_ip", ip))
 	}
 }
 

@@ -7,11 +7,12 @@
  * signature, exp, iss, aud — same checks as the Go gateway) and each user is
  * held to a small sliding-window budget keyed by the JWT `sub` claim.
  *
- * Token sources, in order:
- *   1. `Authorization: Bearer <jwt>` — the normal client path (access JWT
- *      lives in memory on the client, see web/src/lib/auth.ts).
- *   2. `oauth_access_token` cookie — the short-lived (60s) cookie the gateway
- *      sets right after an OAuth callback; it contains the same access JWT.
+ * Token source: `Authorization: Bearer <jwt>` only (access JWT lives in
+ * memory on the client, see web/src/lib/auth.ts). The legacy JS-readable
+ * `oauth_access_token` cookie is no longer issued or accepted.
+ *
+ * Rate limiting is shared across web replicas via Redis (REST) when
+ * configured, falling back to the per-process limiter (see rate-limit-shared.ts).
  *
  * Session-indicator cookies (`has_session`, `refresh_token`) are deliberately
  * NOT accepted here: they prove a session exists but are not verifiable by
@@ -20,7 +21,7 @@
 
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { consumeRateLimit } from './rate-limit';
+import { consumeSharedRateLimit } from './rate-limit-shared';
 import { verifyAccessToken } from './verify-jwt';
 
 // 10 requests per user per minute — generous for a human filling in a form,
@@ -37,8 +38,6 @@ function extractToken(request: NextRequest): string | null {
     const match = /^Bearer\s+(\S+)$/i.exec(auth.trim());
     if (match?.[1]) return match[1];
   }
-  const oauthCookie = request.cookies.get('oauth_access_token')?.value;
-  if (oauthCookie) return oauthCookie;
   return null;
 }
 
@@ -47,7 +46,7 @@ function extractToken(request: NextRequest): string | null {
  * Returns `{ ok: true, userId }` or a ready-to-return 401/429 response
  * matching the routes' existing `{ error: string }` shape.
  */
-export function gateAiRoute(request: NextRequest): AiRouteGateResult {
+export async function gateAiRoute(request: NextRequest): Promise<AiRouteGateResult> {
   const token = extractToken(request);
   if (!token) {
     return {
@@ -64,7 +63,7 @@ export function gateAiRoute(request: NextRequest): AiRouteGateResult {
     };
   }
 
-  const decision = consumeRateLimit(`ai-analyze:${verified.claims.sub}`, AI_RATE_LIMIT);
+  const decision = await consumeSharedRateLimit(`ai-analyze:${verified.claims.sub}`, AI_RATE_LIMIT);
   if (!decision.allowed) {
     return {
       ok: false,

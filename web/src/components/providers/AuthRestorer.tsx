@@ -2,19 +2,16 @@
 
 import { useEffect, useRef } from 'react';
 
-import { parseJwtPayload, setAccessToken } from '@/lib/auth';
 import { looksLikeSessionFlag } from '@/lib/session-flag';
 import { useAuthStore } from '@/stores/auth-store';
-import type { UserRole } from '@/types';
 
 /**
  * Silently attempts to restore authentication state.
  *
- * On mount it first checks for short-lived OAuth callback cookies (set by the
- * gateway when a user completes Google/Apple sign-in). If found, those are
- * consumed and the auth store is hydrated immediately.
- *
- * Otherwise it falls back to the normal refresh-token flow.
+ * When the gateway's signed has_session flag is present (password login or
+ * OAuth callback), it exchanges the HttpOnly refresh cookie for an in-memory
+ * access token via POST /api/v1/auth/refresh. No credential is ever read
+ * from a JS-visible cookie.
  *
  * Unlike AuthGuard, this component never redirects unauthenticated users.
  * It is meant to be placed in the root layout so that auth state persists
@@ -28,9 +25,14 @@ export function AuthRestorer() {
     if (attempted.current) return;
     attempted.current = true;
 
-    // Check for OAuth callback cookies first.
-    const oauthToken = getCookie('oauth_access_token');
-    if (!oauthToken && !looksLikeSessionFlag(getCookie('has_session'))) {
+    // Clear legacy JS-readable OAuth handoff cookies from older gateway
+    // builds. The gateway no longer sends the access token to page scripts:
+    // after OAuth it sets the HttpOnly refresh cookie + signed has_session,
+    // and we exchange that for an access token via POST /api/v1/auth/refresh.
+    deleteCookie('oauth_access_token');
+    deleteCookie('oauth_token_expires');
+
+    if (!looksLikeSessionFlag(getCookie('has_session'))) {
       // No server-set session sentinel — don't hit /auth/refresh and avoid a
       // guaranteed 400 in the console on every public page load. Client only
       // does a structural check (v1.* or legacy "1"); HMAC verify is edge-only.
@@ -38,41 +40,7 @@ export function AuthRestorer() {
       return;
     }
 
-    if (oauthToken) {
-      // Clear the short-lived cookies immediately.
-      deleteCookie('oauth_access_token');
-      deleteCookie('oauth_token_expires');
-
-      const payload = parseJwtPayload(oauthToken);
-      if (!payload) {
-        // Malformed callback token must not leave AuthGuard on the hydrating
-        // skeleton forever — isHydrating starts true in the store.
-        useAuthStore.setState({ isHydrating: false });
-        return;
-      }
-
-      setAccessToken(oauthToken);
-      useAuthStore.setState({
-        user: {
-          id: payload.sub,
-          email: payload.email,
-          displayName: '',
-          avatarUrl: null,
-          roles: payload.roles as UserRole[],
-          status: 'active',
-          emailVerified: true,
-          phoneVerified: false,
-          mfaEnabled: false,
-          createdAt: new Date().toISOString(),
-        },
-        accessToken: oauthToken,
-        isAuthenticated: true,
-        isHydrating: false,
-      });
-      return;
-    }
-
-    // No OAuth cookies — fall back to normal refresh.
+    // Exchange the HttpOnly refresh cookie (POST) for an in-memory access token.
     void refreshToken();
   }, [refreshToken]);
 

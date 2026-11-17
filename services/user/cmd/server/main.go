@@ -28,6 +28,7 @@ import (
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 
+	"github.com/nomarkup/nomarkup/pkg/appleauth"
 	imagingv1 "github.com/nomarkup/nomarkup/proto/imaging/v1"
 	notificationv1 "github.com/nomarkup/nomarkup/proto/notification/v1"
 	paymentv1 "github.com/nomarkup/nomarkup/proto/payment/v1"
@@ -252,9 +253,10 @@ func main() {
 	// AWS SDK dependency. Unset IMAGING_SERVICE_ADDR skips S3 cleanup.
 	//
 	// Sign in with Apple revoke reads oauth_accounts.apple_refresh_token
-	// (migration 136) and posts it to Apple with APPLE_CLIENT_SECRET.
-	// The secret is never generated here. A missing secret fails that call
-	// when a token is stored; deletion still completes and logs the error.
+	// (migration 136) and posts it to Apple with APPLE_CLIENT_SECRET, or with
+	// a secret minted from the .p8 key when that is unset. A missing secret
+	// fails that call when a token is stored; deletion still completes and
+	// logs the error.
 	var stripeDeleter service.StripeDeleter
 	if paymentAddr := os.Getenv("PAYMENT_SERVICE_ADDR"); paymentAddr != "" {
 		dialOpt, dialErr := meshClientDialOption()
@@ -309,6 +311,35 @@ func main() {
 		slog.Info("GDPR lifecycle emails wired via notification service")
 	} else {
 		slog.Warn("notification client unavailable; GDPR lifecycle emails will log Error until NOTIFICATION_SERVICE_ADDR is set")
+	}
+	// Sign in with Apple token revocation on account deletion (App Store
+	// Review Guideline 5.1.1(v)). The revoker resolves the client secret per
+	// call: a static APPLE_CLIENT_SECRET, or one minted from APPLE_TEAM_ID /
+	// APPLE_KEY_ID / APPLE_PRIVATE_KEY (.p8 PEM). Outside development, a
+	// partial key config (or APPLE_REVOCATION_REQUIRED=true with no usable
+	// secret) is fatal; SIWA with no secret at all logs at Error on every boot.
+	appleCfg := appleauth.ConfigFromEnv()
+	_, appleKeyErr := appleauth.New(appleCfg)
+	appleStaticSecret := strings.TrimSpace(os.Getenv("APPLE_CLIENT_SECRET")) != ""
+	switch {
+	case appleCfg.ClientID == "":
+		slog.Warn("sign in with apple is not configured (APPLE_CLIENT_ID unset); no Apple grants to revoke")
+	case appleStaticSecret || appleKeyErr == nil:
+		slog.Info("sign in with apple revocation enabled for account deletion", "minted_secret", !appleStaticSecret)
+	case !isDevelopmentEnv() &&
+		(appleCfg.TeamID != "" || appleCfg.KeyID != "" || strings.TrimSpace(appleCfg.PrivateKeyPEM) != "" ||
+			strings.EqualFold(strings.TrimSpace(os.Getenv("APPLE_REVOCATION_REQUIRED")), "true")):
+		// Partially configured (or explicitly required): fail closed instead
+		// of silently skipping revocation. Fully absent keys only log loudly
+		// below so a deploy that predates the Apple key provisioning boots.
+		slog.Error("Apple token revocation is misconfigured; refusing to start (App Review 5.1.1(v))",
+			"missing", appleCfg.MissingEnv(), "error", appleKeyErr)
+		os.Exit(1)
+	case !isDevelopmentEnv():
+		slog.Error("sign in with apple revocation NOT configured; deleted accounts will keep their Apple grant",
+			"missing", appleCfg.MissingEnv())
+	default:
+		slog.Warn("sign in with apple revocation disabled (development)", "missing", appleCfg.MissingEnv())
 	}
 	appleRevoker := service.NewAppleOAuthRevoker(repo)
 	erasureService := service.NewErasure(repo, stripeDeleter, objectStore, appleRevoker, gdprMailer)

@@ -45,3 +45,6 @@ keys/
 deploy/k8s
 deploy/terraform
 deploy/monitoring
+
+# gRPC mTLS private keys (deploy/prod/gen-mtls-certs.sh) never enter build context
+deploy/prod/mtls/

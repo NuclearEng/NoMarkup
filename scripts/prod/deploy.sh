@@ -18,6 +18,9 @@
 #   SKIP_BUILD=1    skip docker compose build
 #   SKIP_MIGRATE=1  skip migrate service even if defined
 #   EXTRA_COMPOSE_ARGS  extra args appended to compose commands
+#   MTLS=1          also apply deploy/prod/docker-compose.mtls.yml (gRPC mTLS;
+#                   generate certs first with deploy/prod/gen-mtls-certs.sh)
+#   IMAGE_TAG       image tag (required by compose; defaults to git short sha)
 #
 # No secrets in this script — load them via compose env_file / host env.
 set -euo pipefail
@@ -41,6 +44,15 @@ log()  { printf '[deploy] %s\n' "$*"; }
 die()  { printf '[deploy] ERROR: %s\n' "$*" >&2; exit 1; }
 
 cd "${REPO_ROOT}"
+
+# deploy/prod/docker-compose.yml requires IMAGE_TAG (no :latest). Default to
+# the checked-out commit so local builds get an immutable, traceable tag.
+if [[ -z "${IMAGE_TAG:-}" ]] && ! grep -qs '^IMAGE_TAG=' deploy/prod/.env .env.prod .env 2>/dev/null; then
+  IMAGE_TAG="$(git rev-parse --short=12 HEAD 2>/dev/null || true)"
+  [[ -n "${IMAGE_TAG}" ]] || die "IMAGE_TAG is not set and git HEAD is unavailable"
+  export IMAGE_TAG
+  log "IMAGE_TAG not set; using git sha ${IMAGE_TAG}"
+fi
 
 compose_path="${REPO_ROOT}/${COMPOSE_FILE}"
 if [[ ! -f "${compose_path}" ]]; then
@@ -70,6 +82,9 @@ done
 
 compose() {
   local args=(compose -p "${COMPOSE_PROJECT}" -f "${COMPOSE_FILE}")
+  if [[ "${MTLS:-0}" == "1" ]]; then
+    args+=(-f "$(dirname "${COMPOSE_FILE}")/docker-compose.mtls.yml")
+  fi
   if [[ -n "${ENV_FILE}" ]]; then
     args+=(--env-file "${ENV_FILE}")
   fi
@@ -91,6 +106,12 @@ if [[ -n "${ENV_FILE}" ]]; then
   log "using env file: ${ENV_FILE}"
 else
   log "no .env file found at deploy/prod/.env, .env.prod, or .env (compose may still supply env_file)"
+fi
+
+if [[ "${MTLS:-0}" == "1" ]]; then
+  mtls_dir="${MTLS_CERTS_DIR:-$(dirname "${COMPOSE_FILE}")/mtls}"
+  [[ -s "${mtls_dir}/gateway/tls.crt" ]] || die "MTLS=1 but no certs in ${mtls_dir} — run deploy/prod/gen-mtls-certs.sh"
+  log "mTLS overlay enabled (certs: ${mtls_dir})"
 fi
 
 log "validating compose config"

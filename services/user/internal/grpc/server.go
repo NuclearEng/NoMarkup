@@ -253,7 +253,7 @@ func (s *Server) ResendVerification(ctx context.Context, req *userv1.ResendVerif
 	user, token, err := s.auth.ResendVerification(ctx, req.GetEmail())
 	if err != nil {
 		// Log but don't reveal whether the email exists.
-		slog.Info("resend verification attempted", "email", req.GetEmail(), "error", err)
+		slog.Info("resend verification attempted", "email", service.RedactEmail(req.GetEmail()), "error", err)
 		return &userv1.ResendVerificationResponse{}, nil
 	}
 

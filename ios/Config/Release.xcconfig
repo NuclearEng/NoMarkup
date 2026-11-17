@@ -1,0 +1,2 @@
+#include "Shared.xcconfig"
+// Release: Secrets.xcconfig MUST set the live pk_live_ key and production client IDs.

@@ -182,6 +182,8 @@ func New(
 		r.Get("/callback/google", oauthHandler.GoogleOAuthCallback)
 		r.Get("/oauth/apple", oauthHandler.InitAppleOAuth)
 		r.Post("/callback/apple", oauthHandler.AppleOAuthCallback)
+		// One-time redemption of the HttpOnly oauth_mfa_challenge cookie.
+		r.Post("/oauth/mfa-challenge", oauthHandler.ExchangeOAuthMFAChallenge)
 		// Native SIWA (AuthenticationServices identityToken → JWT pair).
 		r.Post("/apple/native", oauthHandler.NativeAppleSignIn)
 		// Native Google (ASWebAuthenticationSession + PKCE id_token → JWT pair).
@@ -453,7 +455,7 @@ func New(
 	r.With(authMW.Handler).Get("/api/v1/listings/mine", listingsHandler.MyListings)
 	r.With(authMW.Handler).Get("/api/v1/listings/bids/mine", listingsHandler.MyListingBids)
 	r.Get("/api/v1/listings/{id}", listingsHandler.GetListing)
-	r.Get("/api/v1/listings/{id}/bids", listingsHandler.GetListingBids)
+	r.Get("/api/v1/listings/{id}/bids", optionalAuth(authMW, listingsHandler.GetListingBids))
 	// Goods-side auction replay — public, mirrors the services-side
 	// /api/v1/auctions/{jobId}/replay surface. PII-stripped.
 	r.Get("/api/v1/listings/{id}/replay", listingReplayHandler.GetListingReplay)

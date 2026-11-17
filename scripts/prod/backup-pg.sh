@@ -77,6 +77,10 @@ for candidate in \
   fi
 done
 
+# The prod compose file requires IMAGE_TAG to interpolate; exec/ps don't use
+# it, so any value works when it isn't already set by the env file.
+export IMAGE_TAG="${IMAGE_TAG:-$(git -C "${REPO_ROOT}" rev-parse --short=12 HEAD 2>/dev/null || echo backup)}"
+
 compose() {
   local args=(compose -p "${COMPOSE_PROJECT}" -f "${COMPOSE_FILE}")
   if [[ -f "${REPO_ROOT}/deploy/prod/.env" ]]; then

@@ -1,0 +1,109 @@
+# mTLS overlay for deploy/prod/docker-compose.yml — arms gRPC mutual TLS on
+# every mesh hop (gateway → services → engines).
+#
+#   deploy/prod/gen-mtls-certs.sh            # once; creates deploy/prod/mtls/
+#   docker compose -f deploy/prod/docker-compose.yml \
+#                  -f deploy/prod/docker-compose.mtls.yml \
+#                  --env-file deploy/prod/.env up -d
+#   # or: MTLS=1 ./scripts/prod/deploy.sh
+#
+# Kept as an overlay so the base prod file (and dev compose) still boot without
+# certs. pkg/grpmtls and engines/telemetry fail closed: GRPC_MTLS=true with a
+# missing/unreadable cert stops the process instead of falling back to
+# plaintext. Healthchecks use the HTTP observability ports, so they are
+# unaffected. Optional per-service caller allowlists: set
+# MESH_PEER_ALLOWLIST_<SVC> in .env (e.g. MESH_PEER_ALLOWLIST_PAYMENT=gateway,job,user).
+# See deploy/prod/MTLS.md.
+
+x-mtls-env: &mtls-env
+  GRPC_MTLS: "true"
+  GRPC_TLS_CERT_FILE: /mtls/tls.crt
+  GRPC_TLS_KEY_FILE: /mtls/tls.key
+  GRPC_TLS_CA_FILE: /mtls/ca.crt
+  GRPC_TLS_SERVER_NAME: nomarkup-mesh
+
+services:
+  gateway:
+    environment:
+      <<: *mtls-env
+      GRPC_MTLS_SERVICE_NAME: gateway
+      MESH_PEER_ALLOWLIST: ${MESH_PEER_ALLOWLIST_GATEWAY:-}
+    volumes:
+      - ${MTLS_CERTS_DIR:-./mtls}/gateway:/mtls:ro
+  user:
+    environment:
+      <<: *mtls-env
+      GRPC_MTLS_SERVICE_NAME: user
+      MESH_PEER_ALLOWLIST: ${MESH_PEER_ALLOWLIST_USER:-}
+    volumes:
+      - ${MTLS_CERTS_DIR:-./mtls}/user:/mtls:ro
+  job:
+    environment:
+      <<: *mtls-env
+      GRPC_MTLS_SERVICE_NAME: job
+      MESH_PEER_ALLOWLIST: ${MESH_PEER_ALLOWLIST_JOB:-}
+    volumes:
+      - ${MTLS_CERTS_DIR:-./mtls}/job:/mtls:ro
+  payment:
+    environment:
+      <<: *mtls-env
+      GRPC_MTLS_SERVICE_NAME: payment
+      MESH_PEER_ALLOWLIST: ${MESH_PEER_ALLOWLIST_PAYMENT:-}
+    volumes:
+      - ${MTLS_CERTS_DIR:-./mtls}/payment:/mtls:ro
+  chat:
+    environment:
+      <<: *mtls-env
+      GRPC_MTLS_SERVICE_NAME: chat
+      MESH_PEER_ALLOWLIST: ${MESH_PEER_ALLOWLIST_CHAT:-}
+    volumes:
+      - ${MTLS_CERTS_DIR:-./mtls}/chat:/mtls:ro
+  notification:
+    environment:
+      <<: *mtls-env
+      GRPC_MTLS_SERVICE_NAME: notification
+      MESH_PEER_ALLOWLIST: ${MESH_PEER_ALLOWLIST_NOTIFICATION:-}
+    volumes:
+      - ${MTLS_CERTS_DIR:-./mtls}/notification:/mtls:ro
+  bidding:
+    environment:
+      <<: *mtls-env
+      GRPC_MTLS_SERVICE_NAME: bidding
+      MESH_PEER_ALLOWLIST: ${MESH_PEER_ALLOWLIST_BIDDING:-}
+    volumes:
+      - ${MTLS_CERTS_DIR:-./mtls}/bidding:/mtls:ro
+  fraud:
+    environment:
+      <<: *mtls-env
+      GRPC_MTLS_SERVICE_NAME: fraud
+      MESH_PEER_ALLOWLIST: ${MESH_PEER_ALLOWLIST_FRAUD:-}
+    volumes:
+      - ${MTLS_CERTS_DIR:-./mtls}/fraud:/mtls:ro
+  trust:
+    environment:
+      <<: *mtls-env
+      GRPC_MTLS_SERVICE_NAME: trust
+      MESH_PEER_ALLOWLIST: ${MESH_PEER_ALLOWLIST_TRUST:-}
+    volumes:
+      - ${MTLS_CERTS_DIR:-./mtls}/trust:/mtls:ro
+  imaging:
+    environment:
+      <<: *mtls-env
+      GRPC_MTLS_SERVICE_NAME: imaging
+      MESH_PEER_ALLOWLIST: ${MESH_PEER_ALLOWLIST_IMAGING:-}
+    volumes:
+      - ${MTLS_CERTS_DIR:-./mtls}/imaging:/mtls:ro
+  underwriting:
+    environment:
+      <<: *mtls-env
+      GRPC_MTLS_SERVICE_NAME: underwriting
+      MESH_PEER_ALLOWLIST: ${MESH_PEER_ALLOWLIST_UNDERWRITING:-}
+    volumes:
+      - ${MTLS_CERTS_DIR:-./mtls}/underwriting:/mtls:ro
+  pricing:
+    environment:
+      <<: *mtls-env
+      GRPC_MTLS_SERVICE_NAME: pricing
+      MESH_PEER_ALLOWLIST: ${MESH_PEER_ALLOWLIST_PRICING:-}
+    volumes:
+      - ${MTLS_CERTS_DIR:-./mtls}/pricing:/mtls:ro

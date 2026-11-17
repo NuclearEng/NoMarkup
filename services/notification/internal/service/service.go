@@ -798,7 +798,7 @@ func (s *Service) Unsubscribe(ctx context.Context, token string) (string, error)
 	}
 
 	slog.Info("user unsubscribed from email notifications",
-		"email", userEmail,
+		"email_domain", emailDomain(userEmail),
 	)
 
 	return userEmail, nil

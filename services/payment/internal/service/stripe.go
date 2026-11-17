@@ -252,7 +252,7 @@ func (s *StripeService) CreateStripeAccount(ctx context.Context, email, business
 		return s.testCreateAccount(ctx, email, businessName)
 	}
 	if s.devMode {
-		slog.Info("dev mode: stub CreateStripeAccount", "email", email)
+		slog.Info("dev mode: stub CreateStripeAccount", "email_domain", email[strings.LastIndex(email, "@")+1:])
 		return "acct_dev_" + email, nil
 	}
 

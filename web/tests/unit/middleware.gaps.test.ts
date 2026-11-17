@@ -42,7 +42,6 @@ describe('protected pages — session indicators', () => {
 
   it.each([
     ['a refresh_token cookie', { cookie: 'refresh_token=abc' }],
-    ['an oauth_access_token cookie', { cookie: 'oauth_access_token=abc' }],
     ['a bearer Authorization header', { authorization: 'Bearer abc.def.ghi' }],
     ['a lower-case bearer scheme', { authorization: 'bearer abc' }],
   ])('lets the request through with %s', async (_name, init) => {
@@ -57,6 +56,9 @@ describe('protected pages — session indicators', () => {
     ['an empty refresh_token cookie', { cookie: 'refresh_token=' }],
     ['a Basic Authorization header', { authorization: 'Basic dXNlcjpwdw==' }],
     ['"Bearer" with no token', { authorization: 'Bearer ' }],
+    // The JS-readable oauth_access_token handoff cookie is no longer issued or
+    // accepted (the OAuth callback hands off via the HttpOnly refresh cookie).
+    ['only the legacy oauth_access_token cookie', { cookie: 'oauth_access_token=abc' }],
   ])('still redirects with %s', async (_name, init) => {
     const res = await middleware(request('/settings', init));
 

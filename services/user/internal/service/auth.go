@@ -141,7 +141,7 @@ func (a *Auth) Register(ctx context.Context, input domain.RegisterInput) (string
 
 	slog.Info("user registered",
 		"user_id", user.ID,
-		"email", user.Email,
+		"email", RedactEmail(user.Email),
 		"email_auto_verified", a.skipEmailVerification,
 	)
 	return user.ID, pair, verificationToken, nil
@@ -160,23 +160,23 @@ func (a *Auth) Login(ctx context.Context, input domain.LoginInput) (string, *dom
 
 	switch user.Status {
 	case "suspended":
-		slog.WarnContext(ctx, "login rejected: account suspended", "user_id", user.ID, "email", user.Email)
+		slog.WarnContext(ctx, "login rejected: account suspended", "user_id", user.ID, "email", RedactEmail(user.Email))
 		return "", nil, false, "", domain.ErrAccountSuspended
 	case "banned":
-		slog.WarnContext(ctx, "login rejected: account banned", "user_id", user.ID, "email", user.Email)
+		slog.WarnContext(ctx, "login rejected: account banned", "user_id", user.ID, "email", RedactEmail(user.Email))
 		return "", nil, false, "", domain.ErrAccountBanned
 	case "deactivated":
-		slog.WarnContext(ctx, "login rejected: account deactivated", "user_id", user.ID, "email", user.Email)
+		slog.WarnContext(ctx, "login rejected: account deactivated", "user_id", user.ID, "email", RedactEmail(user.Email))
 		return "", nil, false, "", domain.ErrAccountDeactivated
 	}
 
 	if !verifyPassword(input.Password, user.PasswordHash) {
-		slog.WarnContext(ctx, "login rejected: invalid credentials", "email", user.Email)
+		slog.WarnContext(ctx, "login rejected: invalid credentials", "email", RedactEmail(user.Email))
 		return "", nil, false, "", domain.ErrInvalidCredentials
 	}
 
 	if !user.EmailVerified {
-		slog.WarnContext(ctx, "login rejected: email not verified", "user_id", user.ID, "email", user.Email)
+		slog.WarnContext(ctx, "login rejected: email not verified", "user_id", user.ID, "email", RedactEmail(user.Email))
 		return "", nil, false, "", domain.ErrEmailNotVerified
 	}
 
@@ -196,7 +196,7 @@ func (a *Auth) Login(ctx context.Context, input domain.LoginInput) (string, *dom
 		return "", nil, false, "", fmt.Errorf("login user: %w", err)
 	}
 
-	slog.Info("user logged in", "user_id", user.ID, "email", user.Email)
+	slog.Info("user logged in", "user_id", user.ID, "email", RedactEmail(user.Email))
 	return user.ID, pair, false, "", nil
 }
 

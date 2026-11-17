@@ -831,6 +831,16 @@ func (h *ListingsHandler) GetListingBids(w http.ResponseWriter, r *http.Request)
 		currentCents = bids[0].AmountCents
 	}
 
+	// Anonymous viewers get pseudonymous bidders ("Bidder 1", "Bidder 2", …)
+	// so the public endpoint never leaks user IDs or display names. Signed-in
+	// callers (route wrapped with optionalAuth) keep real IDs so clients can
+	// highlight their own bids. bidder_count is computed above from real IDs.
+	if _, authed := middleware.GetClaims(r.Context()); !authed {
+		maskBidders(bids)
+	}
+	// Response differs by caller; never let a shared cache serve one to the other.
+	w.Header().Add("Vary", "Authorization")
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"bids":              bids,
 		"current_bid_cents": currentCents,
@@ -878,12 +888,18 @@ func (h *ListingsHandler) PingViewer(w http.ResponseWriter, r *http.Request) {
 	// ZADD with current timestamp, then ZREMRANGEBYSCORE to evict viewers
 	// older than 30 seconds. Combined watcher_count also considers live WS
 	// spectators so browse/detail/ping and spectate agree on social proof.
-	rdb.ZAdd(ctx, key, redis.Z{Score: now, Member: viewerID})
-	rdb.ZRemRangeByScore(ctx, key,
-		"-inf",
-		fmt.Sprintf("%f", now-30_000),
-	)
-	rdb.Expire(ctx, key, 5*time.Minute) // janitor
+	// MULTI/EXEC so the set never exists without its janitor TTL.
+	if _, err := rdb.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+		pipe.ZAdd(ctx, key, redis.Z{Score: now, Member: viewerID})
+		pipe.ZRemRangeByScore(ctx, key,
+			"-inf",
+			fmt.Sprintf("%f", now-30_000),
+		)
+		pipe.Expire(ctx, key, 5*time.Minute) // janitor
+		return nil
+	}); err != nil {
+		slog.WarnContext(ctx, "listing ping: redis viewer update failed", "error", err)
+	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"listing_id":    id,
@@ -1162,4 +1178,20 @@ func effectiveListingStatus(rawStatus string, auctionEndsAt *time.Time) string {
 		return "ended"
 	}
 	return rawStatus
+}
+
+// maskBidders replaces bidder identity with stable per-response pseudonyms.
+// The same bidder gets the same label across rows; numbering follows first
+// appearance in the (highest-first) list.
+func maskBidders(bids []listingBidJSON) {
+	labels := make(map[string]int, len(bids))
+	for i := range bids {
+		n, ok := labels[bids[i].BidderID]
+		if !ok {
+			n = len(labels) + 1
+			labels[bids[i].BidderID] = n
+		}
+		bids[i].BidderID = fmt.Sprintf("bidder-%d", n)
+		bids[i].BidderDisplayName = fmt.Sprintf("Bidder %d", n)
+	}
 }

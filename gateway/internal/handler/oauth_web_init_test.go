@@ -241,8 +241,15 @@ func TestWriteOAuthMFARedirect_PreservesNextQuery(t *testing.T) {
 	if strings.Contains(loc, "chal") || strings.Contains(loc, "mfa") {
 		t.Fatalf("challenge must not appear in query: %q", loc)
 	}
-	if cookieNamed(t, rec, "oauth_mfa_challenge") == nil {
+	c := cookieNamed(t, rec, "oauth_mfa_challenge")
+	if c == nil {
 		t.Fatal("expected oauth_mfa_challenge cookie")
+	}
+	if !c.HttpOnly || c.Path != "/api/v1/auth" {
+		t.Fatalf("challenge cookie must be HttpOnly and scoped to /api/v1/auth: %+v", c)
+	}
+	if p := cookieNamed(t, rec, "oauth_mfa_pending"); p == nil || p.HttpOnly || p.Value != "1" {
+		t.Fatalf("expected non-secret JS-readable oauth_mfa_pending=1 flag, got %+v", p)
 	}
 }
 
@@ -266,4 +273,43 @@ func TestInitFacebookOAuth_NotConfigured(t *testing.T) {
 	if strings.Contains(loc, "facebook.com") {
 		t.Fatalf("must not redirect to Facebook without client_id: %q", loc)
 	}
+}
+
+func TestExchangeOAuthMFAChallenge(t *testing.T) {
+	h := NewOAuthHandler(nil, true, "test-session-secret")
+
+	t.Run("redeems once and clears cookies", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/oauth/mfa-challenge", nil)
+		req.AddCookie(&http.Cookie{Name: "oauth_mfa_challenge", Value: "chal-123"})
+		rec := httptest.NewRecorder()
+		h.ExchangeOAuthMFAChallenge(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200", rec.Code)
+		}
+		if !strings.Contains(rec.Body.String(), `"mfa_challenge_token":"chal-123"`) {
+			t.Fatalf("body = %s", rec.Body.String())
+		}
+		if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+			t.Fatalf("Cache-Control = %q, want no-store", got)
+		}
+		c := cookieNamed(t, rec, "oauth_mfa_challenge")
+		if c == nil || c.MaxAge >= 0 || !c.HttpOnly || c.Path != "/api/v1/auth" {
+			t.Fatalf("challenge cookie not cleared correctly: %+v", c)
+		}
+		if p := cookieNamed(t, rec, "oauth_mfa_pending"); p == nil || p.MaxAge >= 0 {
+			t.Fatalf("pending flag not cleared: %+v", p)
+		}
+	})
+
+	t.Run("no cookie is 404", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/oauth/mfa-challenge", nil)
+		rec := httptest.NewRecorder()
+		h.ExchangeOAuthMFAChallenge(rec, req)
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("status = %d, want 404", rec.Code)
+		}
+		if strings.Contains(rec.Body.String(), "mfa_challenge_token") {
+			t.Fatalf("unexpected token in body: %s", rec.Body.String())
+		}
+	})
 }
