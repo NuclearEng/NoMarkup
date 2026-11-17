@@ -24,7 +24,7 @@ import { ALERT_STATUS } from '@/types';
 
 function confidenceColor(confidence: number): string {
   if (confidence >= 0.8) return 'bg-destructive';
-  if (confidence >= 0.5) return 'bg-status-disputed';
+  if (confidence >= 0.5) return 'bg-status-elevated';
   return 'bg-trust-medium';
 }
 

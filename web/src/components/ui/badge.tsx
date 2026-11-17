@@ -18,7 +18,8 @@ const badgeVariants = cva(
         awarded: 'border-blue-500/30 bg-blue-500/15 text-blue-400',
         'in-progress': 'border-amber-500/30 bg-amber-500/15 text-amber-400',
         completed: 'border-emerald-500/30 bg-emerald-500/15 text-emerald-400',
-        disputed: 'border-red-500/30 bg-red-500/15 text-red-400',
+        // Contested, not ended: its own token so it never matches `cancelled`.
+        disputed: 'border-status-disputed/30 bg-status-disputed/15 text-status-disputed',
         cancelled: 'border-red-500/30 bg-red-500/15 text-red-400',
         pending: 'border-amber-500/30 bg-amber-500/15 text-amber-400',
       },

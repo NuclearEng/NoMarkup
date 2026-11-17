@@ -145,7 +145,7 @@ export const JobCard = memo(function JobCard({ job }: JobCardProps) {
 
   const urgencyBorder =
     urgency === 'critical'
-      ? 'border-destructive/50 shadow-[0_0_30px_hsl(var(--status-disputed)/0.18)]'
+      ? 'border-destructive/50 shadow-[0_0_30px_color-mix(in_srgb,var(--destructive)_18%,transparent)]'
       : urgency === 'urgent'
         ? 'border-brand-gold/40 shadow-[0_0_24px_var(--brand-gold-glow)]'
         : 'border-[var(--brand-gold)]/10';

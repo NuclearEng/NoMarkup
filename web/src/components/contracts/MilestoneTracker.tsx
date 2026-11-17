@@ -178,12 +178,12 @@ function MilestoneCard({
 
           {/* Revision notes from last request */}
           {milestone.status === MILESTONE_STATUS.REVISION_REQUESTED && milestone.revision_notes ? (
-            <div className="rounded-lg border border-status-disputed/30 bg-status-disputed/10 p-3">
-              <div className="flex items-center gap-1.5 text-xs font-medium text-status-disputed">
+            <div className="rounded-lg border border-status-elevated/30 bg-status-elevated/10 p-3">
+              <div className="flex items-center gap-1.5 text-xs font-medium text-status-elevated">
                 <MessageSquare className="h-3 w-3" aria-hidden="true" />
                 Revision Notes
               </div>
-              <p className="mt-1 text-sm text-status-disputed">{milestone.revision_notes}</p>
+              <p className="mt-1 text-sm text-status-elevated">{milestone.revision_notes}</p>
             </div>
           ) : null}
 

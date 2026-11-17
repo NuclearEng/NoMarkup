@@ -1,4 +1,6 @@
 // ListingPostingForm — the six-step "Sell something" wizard, driven end to end.
+// Order: Photos → Category → Details → Pickup → Auction → Review. Photos come
+// first so the analysis of the first photo can prefill the steps after it.
 //
 // MOCKED: the create-listing mutation, the storage upload hook, photo-quality
 // scoring, the AI analyze route (global fetch), and three heavy UI leaves
@@ -68,6 +70,29 @@ vi.mock('@/hooks/useCategories', () => ({
         icon: null,
         sortOrder: 0,
         children: [],
+      },
+      {
+        id: 'cat-electronics',
+        parentId: 'goods',
+        name: 'Electronics',
+        slug: 'goods-electronics',
+        level: 2,
+        description: null,
+        icon: null,
+        sortOrder: 1,
+        children: [
+          {
+            id: 'cat-audio',
+            parentId: 'cat-electronics',
+            name: 'Audio',
+            slug: 'goods-electronics-audio',
+            level: 3,
+            description: null,
+            icon: null,
+            sortOrder: 0,
+            children: [],
+          },
+        ],
       },
     ],
     isLoading: false,
@@ -227,29 +252,31 @@ function tileUrls(): (string | null)[] {
   return tiles().map((t) => t.getAttribute('data-url'));
 }
 
-async function toDetails(user: UserEvent) {
-  await user.click(screen.getByRole('button', { name: 'Furniture' }));
+/** Step 1 (Photos) → step 2 (Category). */
+async function toCategory(user: UserEvent, files: File[] = [photo('a.jpg')]) {
+  addPhotos(files);
+  await screen.findByTestId('photo-grid');
   await next(user, 2);
 }
 
-async function toPhotos(
+async function toDetails(user: UserEvent, files?: File[]) {
+  await toCategory(user, files);
+  await user.click(screen.getByRole('button', { name: 'Furniture' }));
+  await next(user, 3);
+}
+
+async function toPickup(
   user: UserEvent,
+  files?: File[],
   details: { title?: string; description?: string } = {},
 ) {
-  await toDetails(user);
+  await toDetails(user, files);
   fireEvent.change(screen.getByLabelText('Title'), {
     target: { value: details.title ?? TITLE },
   });
   fireEvent.change(screen.getByLabelText('Description'), {
     target: { value: details.description ?? DESCRIPTION },
   });
-  await next(user, 3);
-}
-
-async function toPickup(user: UserEvent, files: File[] = [photo('a.jpg')]) {
-  await toPhotos(user);
-  addPhotos(files);
-  await screen.findByTestId('photo-grid');
   await next(user, 4);
 }
 
@@ -263,6 +290,24 @@ async function toReview(user: UserEvent, files?: File[]) {
   await toAuction(user, files);
   fireEvent.change(screen.getByPlaceholderText('50.00'), { target: { value: '49.99' } });
   await next(user, 6);
+}
+
+/** From step 1 with photos already added, fill every later step up to Review. */
+async function finishFromPhotos(user: UserEvent) {
+  await next(user, 2);
+  await user.click(screen.getByRole('button', { name: 'Furniture' }));
+  await next(user, 3);
+  fireEvent.change(screen.getByLabelText('Title'), { target: { value: TITLE } });
+  fireEvent.change(screen.getByLabelText('Description'), { target: { value: DESCRIPTION } });
+  await next(user, 4);
+  fireEvent.change(screen.getByLabelText('Pickup zip'), { target: { value: '94110' } });
+  await next(user, 5);
+  fireEvent.change(screen.getByPlaceholderText('50.00'), { target: { value: '5' } });
+  await next(user, 6);
+}
+
+function aiTags(): HTMLElement[] {
+  return screen.queryAllByTestId('ai-suggested-tag');
 }
 
 function publishButton(): HTMLElement {
@@ -326,15 +371,27 @@ afterEach(() => {
 });
 
 describe('ListingPostingForm — step validation', () => {
-  it('requires a category before leaving step 1', async () => {
+  it('starts on Photos and requires at least one photo before leaving step 1', async () => {
     const user = userEvent.setup();
     render(<ListingPostingForm />);
+    expect(screen.getByText('Photos — Start with 1–10 photos')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Back/ })).toBeDisabled();
     await user.click(screen.getByRole('button', { name: /^Next/ }));
-    expect(await screen.findByText('Category is required')).toBeInTheDocument();
+    expect(await screen.findByText('At least one photo is required')).toBeInTheDocument();
     expectStep(1);
   });
 
-  it('advances to Details once a category is picked, and Back returns to Category', async () => {
+  it('requires a category before leaving step 2', async () => {
+    const user = userEvent.setup();
+    render(<ListingPostingForm />);
+    await toCategory(user);
+    expect(screen.getByText('Category — What are you selling?')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /^Next/ }));
+    expect(await screen.findByText('Category is required')).toBeInTheDocument();
+    expectStep(2);
+  });
+
+  it('advances to Details once a category is picked, and Back walks to Category then Photos', async () => {
     const user = userEvent.setup();
     render(<ListingPostingForm />);
     await toDetails(user);
@@ -342,6 +399,8 @@ describe('ListingPostingForm — step validation', () => {
     const back = screen.getByRole('button', { name: /Back/ });
     expect(back).toBeEnabled();
     await user.click(back);
+    expectStep(2);
+    await user.click(screen.getByRole('button', { name: /Back/ }));
     expectStep(1);
     expect(screen.getByRole('button', { name: /Back/ })).toBeDisabled();
   });
@@ -355,16 +414,40 @@ describe('ListingPostingForm — step validation', () => {
     await user.click(screen.getByRole('button', { name: /^Next/ }));
     expect(await screen.findByText('Title must be at least 5 characters')).toBeInTheDocument();
     expect(screen.getByText('Description must be at least 20 characters')).toBeInTheDocument();
-    expectStep(2);
+    expectStep(3);
   });
 
-  it('requires at least one photo', async () => {
+  it('names each step in the new order next to the progress bar', async () => {
     const user = userEvent.setup();
     render(<ListingPostingForm />);
-    await toPhotos(user);
-    await user.click(screen.getByRole('button', { name: /^Next/ }));
-    expect(await screen.findByText('At least one photo is required')).toBeInTheDocument();
-    expectStep(3);
+    expect(screen.getByLabelText('Listing creation progress')).toBeInTheDocument();
+    const seen: string[] = [];
+    const heading = () =>
+      screen.getByText(/^Step \d of 6$/).nextElementSibling?.textContent ?? '';
+    seen.push(heading());
+    await toCategory(user);
+    seen.push(heading());
+    await user.click(screen.getByRole('button', { name: 'Furniture' }));
+    await next(user, 3);
+    seen.push(heading());
+    fireEvent.change(screen.getByLabelText('Title'), { target: { value: TITLE } });
+    fireEvent.change(screen.getByLabelText('Description'), { target: { value: DESCRIPTION } });
+    await next(user, 4);
+    seen.push(heading());
+    fireEvent.change(screen.getByLabelText('Pickup zip'), { target: { value: '94110' } });
+    await next(user, 5);
+    seen.push(heading());
+    fireEvent.change(screen.getByPlaceholderText('50.00'), { target: { value: '5' } });
+    await next(user, 6);
+    seen.push(heading());
+    expect(seen).toEqual([
+      'Photos — Start with 1–10 photos',
+      'Category — What are you selling?',
+      'Details — Title and description',
+      'Pickup — Where to pick up',
+      'Auction — Starting price + duration',
+      'Review — Confirm and publish',
+    ]);
   });
 
   it('rejects a malformed pickup zip', async () => {
@@ -528,9 +611,6 @@ describe('ListingPostingForm — publish', () => {
     fireEvent.change(screen.getByLabelText('Title'), { target: { value: TITLE } });
     fireEvent.change(screen.getByLabelText('Description'), { target: { value: DESCRIPTION } });
     fireEvent.change(screen.getByLabelText('Condition'), { target: { value: 'like_new' } });
-    await next(user, 3);
-    addPhotos([photo('a.jpg')]);
-    await screen.findByTestId('photo-grid');
     await next(user, 4);
     fireEvent.change(screen.getByLabelText('Pickup zip'), { target: { value: '94110' } });
     fireEvent.change(screen.getByLabelText('Pickup address (private)'), {
@@ -579,9 +659,6 @@ describe('ListingPostingForm — publish', () => {
 
     fireEvent.change(screen.getByLabelText('Title'), { target: { value: TITLE } });
     fireEvent.change(screen.getByLabelText('Description'), { target: { value: DESCRIPTION } });
-    await next(user, 3);
-    addPhotos([photo('a.jpg')]);
-    await screen.findByTestId('photo-grid');
     await next(user, 4);
     fireEvent.change(screen.getByLabelText('Pickup zip'), { target: { value: '94110' } });
     await next(user, 5);
@@ -597,15 +674,10 @@ describe('ListingPostingForm — publish', () => {
   it('publishes photos in the order shown in the grid', async () => {
     const user = userEvent.setup();
     render(<ListingPostingForm />);
-    await toPhotos(user);
     addPhotos([photo('a.jpg'), photo('b.jpg')]);
     await screen.findByTestId('photo-grid');
     await user.click(screen.getByRole('button', { name: 'Reverse order' }));
-    await next(user, 4);
-    fireEvent.change(screen.getByLabelText('Pickup zip'), { target: { value: '94110' } });
-    await next(user, 5);
-    fireEvent.change(screen.getByPlaceholderText('50.00'), { target: { value: '5' } });
-    await next(user, 6);
+    await finishFromPhotos(user);
     await user.click(publishButton());
     await waitFor(() => {
       expect(mocks.mutateAsync).toHaveBeenCalledTimes(1);
@@ -698,7 +770,6 @@ describe('ListingPostingForm — photos', () => {
     const user = userEvent.setup();
     const click = vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(() => undefined);
     render(<ListingPostingForm />);
-    await toPhotos(user);
     expect(screen.getByRole('region', { name: 'Drag and drop photos here' })).toBeInTheDocument();
     expect(screen.getByLabelText('Upload listing photos')).toHaveAttribute(
       'accept',
@@ -709,9 +780,7 @@ describe('ListingPostingForm — photos', () => {
   });
 
   it('accepts dropped photos and replaces the dropzone with the grid', async () => {
-    const user = userEvent.setup();
     render(<ListingPostingForm />);
-    await toPhotos(user);
     const dropzone = screen.getByRole('region', { name: 'Drag and drop photos here' });
     // dragover must be cancelled or the browser refuses the drop.
     expect(fireEvent.dragOver(dropzone)).toBe(false);
@@ -723,10 +792,8 @@ describe('ListingPostingForm — photos', () => {
     expect(screen.queryByRole('region', { name: 'Drag and drop photos here' })).toBeNull();
   });
 
-  it('ignores an empty drop', async () => {
-    const user = userEvent.setup();
+  it('ignores an empty drop', () => {
     render(<ListingPostingForm />);
-    await toPhotos(user);
     const dropzone = screen.getByRole('region', { name: 'Drag and drop photos here' });
     fireEvent.drop(dropzone, { dataTransfer: { files: [] } });
     expect(screen.queryByTestId('photo-grid')).toBeNull();
@@ -734,9 +801,7 @@ describe('ListingPostingForm — photos', () => {
   });
 
   it('ignores files that are not JPEG, PNG or WebP', async () => {
-    const user = userEvent.setup();
     render(<ListingPostingForm />);
-    await toPhotos(user);
     addPhotos([photo('anim.gif', 'image/gif'), photo('doc.pdf', 'application/pdf')]);
     expect(screen.queryByTestId('photo-grid')).toBeNull();
     expect(fetchMock).not.toHaveBeenCalled();
@@ -749,15 +814,13 @@ describe('ListingPostingForm — photos', () => {
   it('keeps only the first 10 photos', async () => {
     const user = userEvent.setup();
     render(<ListingPostingForm />);
-    await toPhotos(user);
     addPhotos(Array.from({ length: 12 }, (_, i) => photo(`p${String(i)}.jpg`)));
     await screen.findByTestId('photo-grid');
     expect(tiles()).toHaveLength(10);
-    await next(user, 4);
+    await next(user, 2);
   });
 
   it('shows each photo as scoring until its quality result arrives', async () => {
-    const user = userEvent.setup();
     let finishScore: (q: { score: number; hints: string[] }) => void = () => undefined;
     mocks.score.mockImplementation(
       () =>
@@ -766,7 +829,6 @@ describe('ListingPostingForm — photos', () => {
         }),
     );
     render(<ListingPostingForm />);
-    await toPhotos(user);
     addPhotos([photo('a.jpg')]);
     await screen.findByTestId('photo-grid');
     expect(screen.getByText('scoring')).toBeInTheDocument();
@@ -777,7 +839,6 @@ describe('ListingPostingForm — photos', () => {
   it('removing the only photo brings back the dropzone and the required error', async () => {
     const user = userEvent.setup();
     render(<ListingPostingForm />);
-    await toPhotos(user);
     addPhotos([photo('a.jpg')]);
     await screen.findByTestId('photo-grid');
     await user.click(screen.getByRole('button', { name: 'Remove photo 1' }));
@@ -790,7 +851,6 @@ describe('ListingPostingForm — photos', () => {
   it('removes the chosen photo and keeps the others in order', async () => {
     const user = userEvent.setup();
     render(<ListingPostingForm />);
-    await toPhotos(user);
     addPhotos([photo('a.jpg'), photo('b.jpg'), photo('c.jpg')]);
     await screen.findByTestId('photo-grid');
     await user.click(screen.getByRole('button', { name: 'Remove photo 2' }));
@@ -801,7 +861,6 @@ describe('ListingPostingForm — photos', () => {
     const user = userEvent.setup();
     const click = vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(() => undefined);
     render(<ListingPostingForm />);
-    await toPhotos(user);
     addPhotos([photo('a.jpg')]);
     await screen.findByTestId('photo-grid');
     await user.click(screen.getByRole('button', { name: 'Add photo' }));
@@ -815,7 +874,6 @@ describe('ListingPostingForm — photos', () => {
   it('replaces a photo with its cropped version, re-scores it, and uploads the crop', async () => {
     const user = userEvent.setup();
     render(<ListingPostingForm />);
-    await toPhotos(user);
     addPhotos([photo('a.jpg'), photo('b.jpg')]);
     await screen.findByTestId('photo-grid');
     await screen.findAllByText('quality 80');
@@ -835,11 +893,7 @@ describe('ListingPostingForm — photos', () => {
     expect(rescored?.name).toBe('cropped-photo-2.jpg');
     expect(rescored?.type).toBe('image/jpeg');
 
-    await next(user, 4);
-    fireEvent.change(screen.getByLabelText('Pickup zip'), { target: { value: '94110' } });
-    await next(user, 5);
-    fireEvent.change(screen.getByPlaceholderText('50.00'), { target: { value: '5' } });
-    await next(user, 6);
+    await finishFromPhotos(user);
     await user.click(publishButton());
     await waitFor(() => {
       expect(mocks.mutateAsync).toHaveBeenCalledTimes(1);
@@ -853,7 +907,6 @@ describe('ListingPostingForm — photos', () => {
   it('leaves the photo untouched when the crop is cancelled', async () => {
     const user = userEvent.setup();
     render(<ListingPostingForm />);
-    await toPhotos(user);
     addPhotos([photo('a.jpg')]);
     await screen.findByTestId('photo-grid');
     await user.click(screen.getByRole('button', { name: 'Crop photo 1' }));
@@ -865,12 +918,10 @@ describe('ListingPostingForm — photos', () => {
 
 describe('ListingPostingForm — low-quality photo gate', () => {
   it('warns on the photos step with a singular message for one bad photo', async () => {
-    const user = userEvent.setup();
     mocks.score.mockImplementation((file) =>
       Promise.resolve({ score: file.name === 'blurry.jpg' ? 12 : 80, hints: [] }),
     );
     render(<ListingPostingForm />);
-    await toPhotos(user);
     addPhotos([photo('good.jpg'), photo('blurry.jpg')]);
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Replace 1 low-quality photo before publishing.',
@@ -883,7 +934,6 @@ describe('ListingPostingForm — low-quality photo gate', () => {
       Promise.resolve({ score: file.name.startsWith('blurry') ? 29 : 30, hints: [] }),
     );
     render(<ListingPostingForm />);
-    await toPhotos(user);
     // A score of exactly 30 is publishable; 29 is not.
     addPhotos([photo('edge.jpg'), photo('blurry-1.jpg'), photo('blurry-2.jpg')]);
     expect(await screen.findByRole('alert')).toHaveTextContent(
@@ -912,7 +962,7 @@ describe('ListingPostingForm — low-quality photo gate', () => {
 
 describe('ListingPostingForm — AI auto-fill from the first photo', () => {
   const ANALYSIS = {
-    categorySlug: 'electronics',
+    categorySlug: 'goods-electronics',
     title: 'Vintage receiver',
     description: 'A well kept stereo receiver from the seventies.',
     suggestedStartingPriceCents: 4500,
@@ -920,8 +970,8 @@ describe('ListingPostingForm — AI auto-fill from the first photo', () => {
     confidence: 'high',
   };
 
-  it('shows an analyzing notice until the analysis returns', async () => {
-    const user = userEvent.setup();
+  /** A fetch that stays pending until the test answers it. */
+  function deferredFetch(): (res: Response) => void {
     let respond: (res: Response) => void = () => undefined;
     fetchMock.mockImplementation(
       () =>
@@ -929,26 +979,39 @@ describe('ListingPostingForm — AI auto-fill from the first photo', () => {
           respond = resolve;
         }),
     );
+    return (res) => {
+      respond(res);
+    };
+  }
+
+  function selectedCategoryBox(): HTMLElement | null {
+    return screen.queryByText('Electronics', { selector: 'span.font-medium' });
+  }
+
+  it('shows an analyzing notice until the analysis returns, then says what it filled', async () => {
+    const respond = deferredFetch();
     render(<ListingPostingForm />);
-    await toPhotos(user);
     addPhotos([photo('a.jpg')]);
     expect(
-      await screen.findByText(/Analyzing your photo to suggest a title, category, and price/),
+      await screen.findByText(
+        /Analyzing your first photo to suggest a category, title, description, and starting price/,
+      ),
     ).toBeInTheDocument();
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
     });
     respond(jsonResponse(ANALYSIS));
-    expect(await screen.findByText(/^AI suggested a starting price/)).toBeInTheDocument();
-    expect(screen.queryByText(/Analyzing your photo/)).toBeNull();
+    const notice = await screen.findByTestId('ai-autofill-notice');
+    expect(notice).toHaveTextContent(
+      'AI filled in a category, title, description, and starting price from your first photo ($45.00).',
+    );
+    expect(screen.queryByText(/Analyzing your first photo/)).toBeNull();
   });
 
   it('posts the base64 photo with the bearer token to the analyze route', async () => {
-    const user = userEvent.setup();
     mocks.getAccessToken.mockReturnValue('tok-123');
     fetchMock.mockImplementation(() => Promise.resolve(jsonResponse(ANALYSIS)));
     render(<ListingPostingForm />);
-    await toPhotos(user);
     addPhotos([photo('a.png', 'image/png', 'pixels')]);
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -960,6 +1023,7 @@ describe('ListingPostingForm — AI auto-fill from the first photo', () => {
       'Content-Type': 'application/json',
       Authorization: 'Bearer tok-123',
     });
+    expect(init.signal).toBeInstanceOf(AbortSignal);
     expect(body).toEqual({
       imageBase64: btoa('pixels'),
       mimeType: 'image/png',
@@ -967,9 +1031,7 @@ describe('ListingPostingForm — AI auto-fill from the first photo', () => {
   });
 
   it('sends no Authorization header when there is no access token', async () => {
-    const user = userEvent.setup();
     render(<ListingPostingForm />);
-    await toPhotos(user);
     addPhotos([photo('a.jpg')]);
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -977,45 +1039,170 @@ describe('ListingPostingForm — AI auto-fill from the first photo', () => {
     expect(analyzeRequest().init.headers).toEqual({ 'Content-Type': 'application/json' });
   });
 
-  it('prefills the starting price with the suggestion and shows it in the notice', async () => {
+  it('prefills category, title, description and starting price, each marked "AI suggested", and publishes them', async () => {
     const user = userEvent.setup();
     fetchMock.mockImplementation(() => Promise.resolve(jsonResponse(ANALYSIS)));
     render(<ListingPostingForm />);
-    await toPhotos(user);
     addPhotos([photo('a.jpg')]);
-    const notice = await screen.findByText(/^AI suggested a starting price/);
-    expect(notice).toHaveTextContent('($45.00)');
+    await screen.findByTestId('ai-autofill-notice');
+
+    // Category: the suggestion is already selected, so Next needs no pick.
+    await next(user, 2);
+    expect(selectedCategoryBox()).toBeInTheDocument();
+    expect(aiTags()).toHaveLength(1);
+    expect(screen.getByText(/Suggested from your photo/)).toBeInTheDocument();
+
+    await next(user, 3);
+    expect(screen.getByLabelText('Title')).toHaveValue('Vintage receiver');
+    expect(screen.getByLabelText('Description')).toHaveValue(ANALYSIS.description);
+    expect(aiTags()).toHaveLength(2);
+
     await next(user, 4);
+    expect(aiTags()).toHaveLength(0);
     fireEvent.change(screen.getByLabelText('Pickup zip'), { target: { value: '94110' } });
     await next(user, 5);
     expect(screen.getByPlaceholderText('50.00')).toHaveValue(45);
+    expect(aiTags()).toHaveLength(1);
+
+    await next(user, 6);
+    expect(reviewRow('Category')).toHaveTextContent('Electronics');
+    await user.click(publishButton());
+    await waitFor(() => {
+      expect(mocks.mutateAsync).toHaveBeenCalledTimes(1);
+    });
+    // Same payload shape as a hand-filled listing; the category is the DB id
+    // the slug resolved to, not the slug.
+    expect(publishedInput()).toEqual({
+      category_id: 'cat-electronics',
+      title: 'Vintage receiver',
+      description: ANALYSIS.description,
+      photo_urls: ['https://cdn.test/a.jpg'],
+      pickup_zip: '94110',
+      pickup_address: undefined,
+      starting_price_cents: 4500,
+      buy_now_price_cents: undefined,
+      auction_duration_hours: 48,
+      condition: null,
+      publish: true,
+    });
   });
 
-  it('never overwrites the title and description the seller already typed', async () => {
+  it('resolves a suggested subcategory slug anywhere in the tree', async () => {
+    const user = userEvent.setup();
+    fetchMock.mockImplementation(() =>
+      Promise.resolve(jsonResponse({ ...ANALYSIS, categorySlug: 'goods-electronics-audio' })),
+    );
+    render(<ListingPostingForm />);
+    addPhotos([photo('a.jpg')]);
+    await screen.findByTestId('ai-autofill-notice');
+    await next(user, 2);
+    expect(screen.getByText('Audio', { selector: 'span.font-medium' })).toBeInTheDocument();
+  });
+
+  it('leaves the category to the seller when the suggested slug is not a known category', async () => {
+    const user = userEvent.setup();
+    fetchMock.mockImplementation(() =>
+      Promise.resolve(jsonResponse({ ...ANALYSIS, categorySlug: 'goods-spaceships' })),
+    );
+    render(<ListingPostingForm />);
+    addPhotos([photo('a.jpg')]);
+    expect(await screen.findByTestId('ai-autofill-notice')).toHaveTextContent(
+      'AI filled in a title, description, and starting price from your first photo',
+    );
+    await next(user, 2);
+    expect(aiTags()).toHaveLength(0);
+    await user.click(screen.getByRole('button', { name: /^Next/ }));
+    expect(await screen.findByText('Category is required')).toBeInTheDocument();
+    expectStep(2);
+  });
+
+  it('drops the "AI suggested" mark once the seller edits a field, and publishes the edit', async () => {
     const user = userEvent.setup();
     fetchMock.mockImplementation(() => Promise.resolve(jsonResponse(ANALYSIS)));
     render(<ListingPostingForm />);
-    await toPhotos(user);
     addPhotos([photo('a.jpg')]);
-    await screen.findByText(/AI suggested/);
-    await user.click(screen.getByRole('button', { name: /Back/ }));
-    expect(screen.getByLabelText('Title')).toHaveValue(TITLE);
-    expect(screen.getByLabelText('Description')).toHaveValue(DESCRIPTION);
+    await screen.findByTestId('ai-autofill-notice');
+
+    await next(user, 2);
+    await user.click(screen.getByRole('button', { name: 'Furniture' }));
+    expect(aiTags()).toHaveLength(0);
+    expect(screen.getByText(/Search or browse all categories/)).toBeInTheDocument();
+
+    await next(user, 3);
+    fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Marantz 2270 receiver' } });
+    // Only the edited field loses its mark.
+    expect(aiTags()).toHaveLength(1);
+
+    await next(user, 4);
+    fireEvent.change(screen.getByLabelText('Pickup zip'), { target: { value: '94110' } });
+    await next(user, 5);
+    fireEvent.change(screen.getByPlaceholderText('50.00'), { target: { value: '60' } });
+    expect(aiTags()).toHaveLength(0);
+    await next(user, 6);
+    await user.click(publishButton());
+    await waitFor(() => {
+      expect(mocks.mutateAsync).toHaveBeenCalledTimes(1);
+    });
+    expect(publishedInput()).toMatchObject({
+      category_id: 'goods-furniture',
+      title: 'Marantz 2270 receiver',
+      description: ANALYSIS.description,
+      starting_price_cents: 6000,
+    });
   });
 
-  it('fills a blank title (capped at 120 characters) and a blank description', async () => {
+  it('never overwrites what the seller typed while a slow analysis was still running', async () => {
+    const user = userEvent.setup();
+    const respond = deferredFetch();
+    render(<ListingPostingForm />);
+    addPhotos([photo('a.jpg')]);
+    await screen.findByText(/Analyzing your first photo/);
+
+    // The seller does not wait: the wizard is not blocked by the analysis.
+    await next(user, 2);
+    expect(screen.getByText(/Analyzing your first photo/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Furniture' }));
+    await next(user, 3);
+    fireEvent.change(screen.getByLabelText('Title'), { target: { value: TITLE } });
+
+    respond(jsonResponse(ANALYSIS));
+    expect(await screen.findByTestId('ai-autofill-notice')).toHaveTextContent(
+      'AI filled in a description and starting price from your first photo ($45.00).',
+    );
+    expect(screen.getByLabelText('Title')).toHaveValue(TITLE);
+    expect(screen.getByLabelText('Description')).toHaveValue(ANALYSIS.description);
+    expect(aiTags()).toHaveLength(1);
+
+    await user.click(screen.getByRole('button', { name: /Back/ }));
+    expect(screen.getByText('Furniture', { selector: 'span.font-medium' })).toBeInTheDocument();
+    expect(aiTags()).toHaveLength(0);
+  });
+
+  it('says it filled nothing when the seller had already entered everything', async () => {
+    const user = userEvent.setup();
+    const respond = deferredFetch();
+    render(<ListingPostingForm />);
+    await toAuction(user);
+    fireEvent.change(screen.getByPlaceholderText('50.00'), { target: { value: '49.99' } });
+    respond(jsonResponse(ANALYSIS));
+    expect(await screen.findByTestId('ai-autofill-notice')).toHaveTextContent(
+      'AI filled in nothing: your own entries were kept.',
+    );
+    expect(screen.getByPlaceholderText('50.00')).toHaveValue(49.99);
+    expect(aiTags()).toHaveLength(0);
+  });
+
+  it('caps a suggested title at 120 characters', async () => {
     const user = userEvent.setup();
     fetchMock.mockImplementation(() =>
       Promise.resolve(jsonResponse({ ...ANALYSIS, title: 'T'.repeat(150) })),
     );
     render(<ListingPostingForm />);
-    // Whitespace satisfies the length rules but is still "blank" to auto-fill.
-    await toPhotos(user, { title: ' '.repeat(5), description: ' '.repeat(20) });
     addPhotos([photo('a.jpg')]);
-    await screen.findByText(/AI suggested/);
-    await user.click(screen.getByRole('button', { name: /Back/ }));
+    await screen.findByTestId('ai-autofill-notice');
+    await next(user, 2);
+    await next(user, 3);
     expect(screen.getByLabelText('Title')).toHaveValue('T'.repeat(120));
-    expect(screen.getByLabelText('Description')).toHaveValue(ANALYSIS.description);
   });
 
   it('suggests at least $1 and omits the price from the notice when the model returns 0', async () => {
@@ -1024,14 +1211,62 @@ describe('ListingPostingForm — AI auto-fill from the first photo', () => {
       Promise.resolve(jsonResponse({ ...ANALYSIS, suggestedStartingPriceCents: 0 })),
     );
     render(<ListingPostingForm />);
-    await toPhotos(user);
     addPhotos([photo('a.jpg')]);
-    const notice = await screen.findByText(/^AI suggested a starting price/);
+    const notice = await screen.findByTestId('ai-autofill-notice');
     expect(notice).not.toHaveTextContent('$');
+    await next(user, 2);
+    await next(user, 3);
     await next(user, 4);
     fireEvent.change(screen.getByLabelText('Pickup zip'), { target: { value: '94110' } });
     await next(user, 5);
     expect(screen.getByPlaceholderText('50.00')).toHaveValue(1);
+  });
+
+  it('keeps photos, suggestions and typed values when going back and forward', async () => {
+    const user = userEvent.setup();
+    fetchMock.mockImplementation(() => Promise.resolve(jsonResponse(ANALYSIS)));
+    render(<ListingPostingForm />);
+    addPhotos([photo('a.jpg'), photo('b.jpg')]);
+    await screen.findByTestId('ai-autofill-notice');
+    await next(user, 2);
+    await next(user, 3);
+    fireEvent.change(screen.getByLabelText('Condition'), { target: { value: 'good' } });
+    await next(user, 4);
+    fireEvent.change(screen.getByLabelText('Pickup zip'), { target: { value: '94110' } });
+    fireEvent.change(screen.getByLabelText('Pickup address (private)'), {
+      target: { value: '123 Main St' },
+    });
+    await next(user, 5);
+    fireEvent.change(screen.getByLabelText('Buy now price in dollars'), {
+      target: { value: '90' },
+    });
+
+    // All the way back to Photos…
+    for (const step of [4, 3, 2, 1]) {
+      await user.click(screen.getByRole('button', { name: /Back/ }));
+      await screen.findByText(stepLabel(step));
+    }
+    expect(tileUrls()).toEqual(['blob:http://localhost/1', 'blob:http://localhost/2']);
+    expect(screen.getByTestId('ai-autofill-notice')).toBeInTheDocument();
+    // …and the analysis is not run a second time.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // …and forward again: nothing was lost.
+    await next(user, 2);
+    expect(selectedCategoryBox()).toBeInTheDocument();
+    await next(user, 3);
+    expect(screen.getByLabelText('Title')).toHaveValue('Vintage receiver');
+    expect(screen.getByLabelText('Description')).toHaveValue(ANALYSIS.description);
+    expect(screen.getByLabelText('Condition')).toHaveValue('good');
+    await next(user, 4);
+    expect(screen.getByLabelText('Pickup zip')).toHaveValue('94110');
+    expect(screen.getByLabelText('Pickup address (private)')).toHaveValue('123 Main St');
+    await next(user, 5);
+    expect(screen.getByPlaceholderText('50.00')).toHaveValue(45);
+    expect(screen.getByLabelText('Buy now price in dollars')).toHaveValue(90);
+    await next(user, 6);
+    expect(reviewRow('Photos')).toHaveTextContent('2 attached');
+    expect(reviewRow('Buy now')).toHaveTextContent('$90.00');
   });
 
   it.each([
@@ -1052,27 +1287,59 @@ describe('ListingPostingForm — AI auto-fill from the first photo', () => {
     ['the route returns null', () => Promise.resolve(jsonResponse(null))],
     ['the network request fails', () => Promise.reject(new TypeError('Failed to fetch'))],
   ] satisfies [string, () => Promise<Response>][])(
-    'shows a soft "fill it in yourself" notice and lets the seller continue when %s',
+    'shows a soft "fill it in yourself" notice, fills nothing, and the wizard works by hand when %s',
     async (_label, respond) => {
       const user = userEvent.setup();
       fetchMock.mockImplementation(respond);
       render(<ListingPostingForm />);
-      await toPhotos(user);
       addPhotos([photo('a.jpg')]);
       expect(await screen.findByText(/Couldn.t auto-analyze the photo/)).toBeInTheDocument();
-      expect(screen.queryByText(/AI suggested/)).toBeNull();
-      // Non-blocking: the photo is attached and the wizard still advances.
+      expect(screen.queryByTestId('ai-autofill-notice')).toBeNull();
+      // Non-blocking: the photo is attached and every later step starts empty.
+      await next(user, 2);
+      expect(selectedCategoryBox()).toBeNull();
+      await user.click(screen.getByRole('button', { name: 'Furniture' }));
+      await next(user, 3);
+      expect(screen.getByLabelText('Title')).toHaveValue('');
+      expect(screen.getByLabelText('Description')).toHaveValue('');
+      fireEvent.change(screen.getByLabelText('Title'), { target: { value: TITLE } });
+      fireEvent.change(screen.getByLabelText('Description'), { target: { value: DESCRIPTION } });
       await next(user, 4);
       fireEvent.change(screen.getByLabelText('Pickup zip'), { target: { value: '94110' } });
       await next(user, 5);
       expect(screen.getByPlaceholderText('50.00')).toHaveValue(null);
+      expect(aiTags()).toHaveLength(0);
     },
   );
 
-  it('shows the soft notice without calling the route when the photo cannot be read', async () => {
-    const user = userEvent.setup();
+  it('gives up on an analysis that never answers and shows the soft notice', async () => {
+    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
+    fetchMock.mockImplementation(
+      (_url, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => {
+            reject(new DOMException('Aborted', 'AbortError'));
+          });
+        }),
+    );
     render(<ListingPostingForm />);
-    await toPhotos(user);
+    addPhotos([photo('a.jpg')]);
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+    expect(screen.getByText(/Analyzing your first photo/)).toBeInTheDocument();
+
+    // Fire the 20 s give-up timer by hand instead of waiting for it.
+    const giveUp = setTimeoutSpy.mock.calls.find(([, delay]) => delay === 20_000)?.[0];
+    if (typeof giveUp !== 'function') throw new Error('no 20 s analysis timeout was armed');
+    giveUp();
+
+    expect(await screen.findByText(/Couldn.t auto-analyze the photo/)).toBeInTheDocument();
+    expect(screen.queryByText(/Analyzing your first photo/)).toBeNull();
+  });
+
+  it('shows the soft notice without calling the route when the photo cannot be read', async () => {
+    render(<ListingPostingForm />);
     // An empty file yields a data: URL with no base64 payload.
     addPhotos([photo('empty.jpg', 'image/jpeg', '')]);
     expect(await screen.findByText(/Couldn.t auto-analyze the photo/)).toBeInTheDocument();
@@ -1082,7 +1349,6 @@ describe('ListingPostingForm — AI auto-fill from the first photo', () => {
   it('analyzes only the first photo of the session, even after it is removed and replaced', async () => {
     const user = userEvent.setup();
     render(<ListingPostingForm />);
-    await toPhotos(user);
     addPhotos([photo('a.jpg'), photo('b.jpg')]);
     await screen.findByText(/Couldn.t auto-analyze the photo/);
     await user.click(screen.getByRole('button', { name: 'Remove photo 2' }));

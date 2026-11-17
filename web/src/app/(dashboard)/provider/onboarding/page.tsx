@@ -15,7 +15,22 @@ const ServiceAreaMap = dynamic(
   () => import('@/components/maps/ServiceAreaMap').then((mod) => mod.ServiceAreaMap),
   { ssr: false },
 );
-import { ImageUpload } from '@/components/ui/ImageUpload';
+// The portfolio uploader (step 5) and the Stripe payout card (step 8) are not
+// on screen when the wizard opens, so their code loads with the step instead
+// of with the page. Placeholders reserve each section's height.
+const ImageUpload = dynamic(
+  () => import('@/components/ui/ImageUpload').then((mod) => mod.ImageUpload),
+  {
+    loading: () => <ChunkPlaceholder label="Loading image uploader…" className="min-h-[140px]" />,
+  },
+);
+const StripeOnboarding = dynamic(
+  () => import('@/components/payments/StripeOnboarding').then((mod) => mod.StripeOnboarding),
+  {
+    loading: () => <ChunkPlaceholder label="Loading payout setup…" className="min-h-[220px]" />,
+  },
+);
+import { ChunkPlaceholder } from '@/components/ui/chunk-placeholder';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -39,7 +54,6 @@ import {
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
-import { StripeOnboarding } from '@/components/payments/StripeOnboarding';
 import { getApiErrorMessage, ApiError } from '@/lib/api';
 import {
   indexDocumentsByType,

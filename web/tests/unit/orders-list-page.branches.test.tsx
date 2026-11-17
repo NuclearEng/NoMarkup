@@ -113,7 +113,8 @@ describe('OrdersPage — states and badges', () => {
     ['paid', 'paid', /emerald/],
     ['picked_up', 'picked up', /emerald/],
     ['completed', 'completed', /emerald/],
-    ['disputed', 'disputed', /red/],
+    // Contested, not ended: its own token, never the red of cancelled.
+    ['disputed', 'disputed', /text-status-disputed/],
     ['cancelled', 'cancelled', /red/],
   ])('labels a %s order "%s" with the matching badge tone', (status, text, tone) => {
     useMyOrders.mockReturnValue(loaded([makeOrder({ status })]));

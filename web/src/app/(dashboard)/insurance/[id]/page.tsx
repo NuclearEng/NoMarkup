@@ -3,10 +3,11 @@
 import { ArrowLeft, Calendar, FileText, Shield } from 'lucide-react';
 import type { Route } from 'next';
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import { useParams } from 'next/navigation';
 import { useState } from 'react';
 
-import { InsuranceClaimForm } from '@/components/insurance/InsuranceClaimForm';
+import { ChunkPlaceholder } from '@/components/ui/chunk-placeholder';
 import { AnimatedIllustration } from '@/components/ui/animated-illustration';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -19,6 +20,17 @@ import { useInsurancePolicy, useInsuranceProducts } from '@/hooks/useInsurance';
 import { cn, formatCents, humanizeStatus } from '@/lib/utils';
 import type { InsuranceClaimStatus, InsurancePolicyStatus } from '@/types';
 import { INSURANCE_POLICY_STATUS } from '@/types';
+
+// The claim form (react-hook-form, the schema, the select and upload code) is
+// only shown after "File a Claim" is pressed, so it loads on that press. The
+// placeholder reserves roughly the form card's height.
+const InsuranceClaimForm = dynamic(
+  () =>
+    import('@/components/insurance/InsuranceClaimForm').then((mod) => mod.InsuranceClaimForm),
+  {
+    loading: () => <ChunkPlaceholder label="Loading claim form…" className="min-h-[480px]" />,
+  },
+);
 
 // Keyed on plain strings: a policy can be `pending_payment` before its premium
 // is charged, which is outside the typed InsurancePolicyStatus union. Unknown

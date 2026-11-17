@@ -72,6 +72,18 @@ const config: Config = {
           'in-progress': 'hsl(var(--status-in-progress))',
           completed: 'hsl(var(--status-completed))',
           disputed: 'hsl(var(--status-disputed))',
+          elevated: 'hsl(var(--status-elevated))',
+          held: 'hsl(var(--status-held))',
+        },
+        // Categorical tags (identity only, no severity meaning)
+        category: {
+          1: 'hsl(var(--category-1))',
+          2: 'hsl(var(--category-2))',
+          3: 'hsl(var(--category-3))',
+          4: 'hsl(var(--category-4))',
+          5: 'hsl(var(--category-5))',
+          6: 'hsl(var(--category-6))',
+          7: 'hsl(var(--category-7))',
         },
       },
       borderRadius: {
