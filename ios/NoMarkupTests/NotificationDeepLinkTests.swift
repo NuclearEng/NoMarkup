@@ -822,8 +822,10 @@ final class CatalogSearchDeepLinkTests: XCTestCase {
 final class AppIntentsTestingFrameworkTests: XCTestCase {
     func testAppIntentsTestingModuleOrSDKEquivalentPerform() async throws {
         #if canImport(AppIntentsTesting)
-        let definitions = IntentDefinitions(bundleIdentifier: "com.nomarkup.app")
-        XCTAssertNotNil(definitions)
+        if #available(iOS 27.0, *) {
+            let definitions = IntentDefinitions(bundleIdentifier: "com.nomarkup.app")
+            XCTAssertNotNil(definitions)
+        }
         #endif
 
         DeepLinkRouter.shared.clear()
