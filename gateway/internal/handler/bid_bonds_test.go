@@ -100,22 +100,6 @@ func TestConfirmBidBondRoutingDBNil(t *testing.T) {
 	}
 }
 
-// TestCreateBidBondInvalidUUID verifies path-param validation fails with
-// 400 before the db-nil guard would fire (when the chi router is used
-// directly with no db, a bad UUID still 400s instead of 503).
-//
-// Achieved by running the handler with a real db pool... but we don't
-// have one here. Instead we use a non-nil sentinel db that the handler's
-// own db-nil check passes; the next branch is the UUID validation. We
-// can't construct a real *pgxpool.Pool without a database, so this test
-// is intentionally focused on the auth + JSON-decode branches.
-func TestCreateBidBondMissingClaims(t *testing.T) {
-	t.Parallel()
-	// We need a non-nil db to fall past the first guard. A nil pool
-	// would 503 first. Skip until pool plumbing arrives.
-	t.Skip("requires non-nil pgxpool.Pool — covered in integration tests")
-}
-
 // TestHasReleasedBondQueryShape pins the SQL shape of the released-bond
 // lookup. This catches accidental column / table renames during a
 // refactor. The query returns a single boolean column, so the smoke test
@@ -304,4 +288,3 @@ func TestReleaseAuthorizedBidBondsForListing_EmptyListingID(t *testing.T) {
 		t.Fatalf("empty listing: n=%d err=%v", n, err)
 	}
 }
-

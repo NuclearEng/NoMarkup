@@ -1,6 +1,6 @@
 // Tests for the provider tax forms page — exercises loading, earnings render,
 // 1099 generate handler, download handler, and quarterly breakdown.
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -319,8 +319,9 @@ describe('ProviderTaxPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /^Download$/i }));
 
     // Wait for the rejected promise's catch handler to fire.
-    await new Promise((resolve) => setTimeout(resolve, 10));
-    expect(errorSpy).toHaveBeenCalled();
+    await waitFor(() => {
+      expect(errorSpy).toHaveBeenCalled();
+    });
     const lastCall = errorSpy.mock.calls.at(-1);
     expect(lastCall?.[0]).toMatch(/Download failed: server is on fire/);
     errorSpy.mockRestore();
@@ -348,8 +349,9 @@ describe('ProviderTaxPage', () => {
     };
     render(withQueryClient(createElement(ProviderTaxPage)));
     fireEvent.click(screen.getByRole('button', { name: /^Download$/i }));
-    await new Promise((resolve) => setTimeout(resolve, 10));
-    expect(errorSpy).toHaveBeenCalled();
+    await waitFor(() => {
+      expect(errorSpy).toHaveBeenCalled();
+    });
     expect(errorSpy.mock.calls.at(-1)?.[0]).toBe('Failed to download tax form');
     errorSpy.mockRestore();
   });

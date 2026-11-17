@@ -49,7 +49,10 @@ func goldenVectorPath(t *testing.T) string {
 		}
 		dir = parent
 	}
-	t.Skip("shared geo golden vectors not found from this working directory")
+	// The vectors are committed at the repo root; not finding them means the
+	// file moved or the test runs outside the repo — either way the guard
+	// would silently not run, so fail instead of skipping.
+	t.Fatal("shared geo golden vectors (testdata/geo_coarsen_golden.csv) not found from this working directory")
 	return ""
 }
 

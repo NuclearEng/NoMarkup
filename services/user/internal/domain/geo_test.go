@@ -277,6 +277,8 @@ func TestParseExactPointRejects(t *testing.T) {
 		{"inf latitude", "Inf,-97.7431"},
 		{"inf longitude", "30.2672,Inf"},
 		{"negative inf longitude", "30.2672,-Inf"},
+		{"nan latitude", "NaN,-97.7431"},
+		{"nan longitude", "30.2672,NaN"},
 		{"a whole address", "123 Main St, Austin, TX"},
 	}
 
@@ -291,36 +293,6 @@ func TestParseExactPointRejects(t *testing.T) {
 				t.Errorf("ParseExactPoint(%q) returned (%v,%v) alongside its error; callers must not see a usable coordinate", tt.input, lat, lng)
 			}
 		})
-	}
-}
-
-// TestParseExactPointAcceptsNaN documents a KNOWN GAP rather than asserting a
-// desired behaviour.
-//
-// strconv.ParseFloat accepts "NaN", and the range guard is written as
-// `lat < -90 || lat > 90` — every comparison against NaN is false, so a NaN
-// ordinate passes both bounds checks and is returned as a valid coordinate.
-// Infinities are caught, because Inf DOES compare out of range.
-//
-// This test exists so the hole is visible and a fix cannot land silently. It
-// is NOT fixed here: this file is a deliberate copy of
-// services/job/internal/domain/geo.go and the two must not diverge, so the
-// guard has to be added to both copies in one change. Reachability is remote —
-// it needs a decrypted location_encrypted whose plaintext literally reads
-// "NaN,<lng>" — but the consequence is a NaN latitude on a domain object,
-// which encoding/json refuses to marshal and PostGIS would happily store.
-func TestParseExactPointAcceptsNaN(t *testing.T) {
-	t.Parallel()
-
-	lat, lng, err := ParseExactPoint("NaN,-97.7431")
-	if err != nil {
-		t.Skip("NaN is now rejected — delete this test and its note in geo.go")
-	}
-	if !math.IsNaN(lat) {
-		t.Fatalf("expected the documented gap to yield a NaN latitude, got %v", lat)
-	}
-	if lng != -97.7431 {
-		t.Errorf("longitude = %v, want -97.7431", lng)
 	}
 }
 

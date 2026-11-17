@@ -210,9 +210,8 @@ describe('AuctionReplay', () => {
     const user = userEvent.setup();
     render(<AuctionReplay jobId="job-1" />);
     await user.click(screen.getByLabelText('Play replay'));
-    // Each gap is 30s real / 5x = 6s clamped to 3s. Two gaps = 6s total.
-    await new Promise((r) => setTimeout(r, 500));
-    expect(screen.getByText('COMPLETE')).toBeDefined();
+    // Wait for playback to finish rather than for a guessed duration.
+    expect(await screen.findByText('COMPLETE', undefined, { timeout: 10_000 })).toBeDefined();
     // Now click "Replay auction" — covers the isComplete branch in handlePlay
     await user.click(screen.getByLabelText('Replay auction'));
     expect(screen.getByText('PLAYING')).toBeDefined();
@@ -227,8 +226,9 @@ describe('AuctionReplay', () => {
     const user = userEvent.setup();
     render(<AuctionReplay jobId="job-1" />);
     await user.click(screen.getByLabelText('Play replay'));
-    await new Promise((r) => setTimeout(r, 500));
-    expect(screen.getByText('Auction Complete')).toBeDefined();
+    expect(
+      await screen.findByText('Auction Complete', undefined, { timeout: 10_000 }),
+    ).toBeDefined();
     // total_savings_cents === 0 -> shows '$0'
     expect(screen.getByText('$0')).toBeDefined();
   }, 20000);
@@ -323,10 +323,8 @@ describe('AuctionReplay', () => {
     const user = userEvent.setup();
     render(<AuctionReplay jobId="job-1" />);
     await user.click(screen.getByLabelText('Play replay'));
-    // Wait long enough for all events to be processed (each capped at 100ms minimum).
-    await new Promise((r) => setTimeout(r, 1000));
+    // Event gaps are 1 second / 5x = 200ms each, below the 3s cap: playback must complete.
+    expect(await screen.findByText('COMPLETE', undefined, { timeout: 8_000 })).toBeDefined();
     expect(screen.queryByText('Auction Replay')).not.toBeNull();
-    // Should reach completion since the event gaps are all 1 second / 5x = 200ms each, below 3s cap.
-    expect(screen.getByText('COMPLETE')).toBeDefined();
   }, 10000);
 });

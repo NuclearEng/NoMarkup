@@ -329,6 +329,8 @@ func TestParseExactPointRejects(t *testing.T) {
 		{"longitude above range", "30.2672,180.0001"},
 		{"longitude below range", "30.2672,-180.0001"},
 		{"latitude wildly out of range", "1000,0"},
+		{"nan latitude", "NaN,-97.7431"},
+		{"nan longitude", "30.2672,NaN"},
 		{"decrypted plaintext that is an address", "123 Main St, Austin, TX"},
 	}
 
