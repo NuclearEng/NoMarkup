@@ -39,6 +39,55 @@ jobs:
       - name: Check migration numbering
         run: bash scripts/check-migration-sequence.sh
 
+  # ── Diff-triggered reliability checklist ─────────────────────
+  # docs/reliability-checklist.md: each item is a past incident with a trigger
+  # readable from a diff. This job lists the items this PR triggers in the job
+  # summary and FAILS ONLY when an automated `Run:` check fails; the rest are
+  # for the author and reviewer to confirm. The checklist and its scripts are
+  # taken from the BASE branch, so a PR cannot loosen the check that judges it
+  # (a base without them yet falls back to the PR's copy, with a notice).
+  # Not in `build.needs`: whether to require it is a branch-protection choice.
+
+  reliability-checklist:
+    name: Reliability Checklist (diff-triggered)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          # The merge base with the target branch and the incident commits
+          # replayed by the matcher tests both need history.
+          fetch-depth: 0
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Matcher, check and record tests
+        run: node --test scripts/reliability-check.test.mjs scripts/reliability/checks.test.mjs scripts/verify-record.test.mjs
+      - name: Checklist items triggered by this PR
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          base="origin/${BASE_REF}"
+          tools="${RUNNER_TEMP}/reliability"
+          mkdir -p "${tools}"
+          if git cat-file -e "${base}:scripts/reliability-check.mjs" 2>/dev/null; then
+            git archive "${base}" scripts/reliability-check.mjs scripts/reliability docs/reliability-checklist.md | tar -x -C "${tools}"
+            echo "Judging with the checklist and checks from ${base}."
+          else
+            mkdir -p "${tools}/scripts" "${tools}/docs"
+            cp scripts/reliability-check.mjs "${tools}/scripts/"
+            cp -R scripts/reliability "${tools}/scripts/"
+            cp docs/reliability-checklist.md "${tools}/docs/"
+            echo "::notice::${base} has no reliability checklist yet; judging with this PR's copy."
+          fi
+          node "${tools}/scripts/reliability-check.mjs" \
+            --repo "${GITHUB_WORKSPACE}" \
+            --base "${base}" \
+            --checklist "${tools}/docs/reliability-checklist.md" \
+            --run \
+            --summary "${GITHUB_STEP_SUMMARY}"
+
   # ── Frontend ──────────────────────────────────────────────────
 
   web-lint-typecheck:
@@ -209,6 +258,11 @@ jobs:
       # replace target of gateway and services/user with its own go.mod; no
       # other job runs its tests.
       - run: cd pkg/appleauth && go vet ./... && go test ./... -race
+      # pkg/grpmtls (gRPC mTLS credentials) is a local replace target of the
+      # gateway and all five services, also with its own go.mod; its
+      # mtls_test.go ran in no job until the reliability checklist's
+      # go-modules-in-ci check (docs/reliability-checklist.md RC-08) flagged it.
+      - run: cd pkg/grpmtls && go vet ./... && go test ./... -race
       # QA-02: coverprofile was already written; the gate was missing.
       # Measured 2026-07-27 (local, -race -count=1): total statements 15.2%
       # (handler ~12%, middleware ~68%, vault ~78%, router/cmd/cache 0%).
