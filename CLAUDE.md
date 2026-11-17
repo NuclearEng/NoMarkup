@@ -14,6 +14,55 @@
 
 ---
 
+## Quick Reference
+
+- **Native stack (`bin/dev`, macOS):** `bin/dev setup` once (deps, DB, JWT keys) → `bin/dev up`
+  (all; or `infra` / `services` / `engines` / one name) · `bin/dev status` (health + ports) ·
+  `bin/dev logs [svc]` · `bin/dev down` · `bin/dev doctor`. After editing a service:
+  `bin/dev rebuild <svc> && bin/dev up <svc>` — per-name targets are `gateway`, `web`, the Go
+  services (`user job payment chat notification`) and `bidding fraud trust imaging`;
+  `underwriting` and `pricing` start only with `engines` / `all`. Make wrappers: `make dev`,
+  `make dev-status`, `make dev-logs`, `make dev-down`. Docker Compose is the legacy path
+  (`make up` / `make dev-infra`). Port map: §12.
+- **Database:** `make migrate-up` (`migrate -path database/migrations -database "$DATABASE_URL" up`)
+  · `make seed` / `make seed-demo` · `make encrypt-pii` (PII backfill, idempotent).
+- **Tests / lint / format:** `make test` (Vitest + `go test ./... -race` per Go module +
+  `cargo test --all`) · `make lint` (eslint, `go vet`, clippy `-D warnings`) · `make fmt`. Web
+  alone: `cd web && npm run lint && npm run typecheck && npm run test`.
+- **Proto:** `make proto-gen-go` regenerates Go stubs into `proto/gen/go` (a new `.proto` must be
+  added to that target's file list; plugins via `make setup-tools`); `make verify-proto` checks drift
+  + `go vet`. Rust stubs regenerate through each engine's `build.rs` (`make proto-gen-rust`).
+
+## Verification Discipline
+
+How work is PROVEN here — surfaced up top because these get skipped at exactly verification time.
+
+- **Run the gate before claiming done.** Build it, run the test, read the output — a green compile is
+  not a passing test.
+- **Run what CI runs** (`.github/workflows/ci.yml`) for the stacks you touched:
+  - **Web** (`cd web`): `npm run lint` → `npm run check:hex` → `npm run typecheck` →
+    `npm run test -- --coverage` (floors in `web/vitest.config.mts`: lines/functions/statements
+    **80**, branches **76**) → `npm run build` → `npm run check:bundle` (First Load JS budgets;
+    needs the production build). Lint comes before build. From the repo root, `make check-catalog`
+    (catalog/pages JSON must be regenerated, no drift). E2E: `npx playwright test --project=chromium`
+    and the backendless catalog run `npm run test:e2e:catalog`.
+  - **Migrations:** `bash scripts/check-migration-sequence.sh` (no duplicate or gapped `NNN_*`).
+  - **Go** (per module): `go vet ./...` + `go test ./... -race`; coverage floors via
+    `scripts/check-go-coverage.sh` (gateway 12, payment 40). Integration suites:
+    `go test -tags integration -short -count=1 ./...` against a migrated + seeded DB; Tier-1
+    security suites in `tests/integration` (`-tags=integration`, live stack). `make verify-proto`
+    after any `.proto` change.
+  - **Rust** (`cd engines`): `cargo fmt --all -- --check` · `cargo clippy --all-targets -- -D warnings`
+    · `cargo test --all`.
+- **Measure or it didn't happen** — perf changes report before/after for the budget; missing one
+  without a written accepted reason is a regression (→ `docs/performance.md`).
+- **Rust hot paths:** `cargo bench` (criterion) before/after locally — benches run nightly in CI but
+  do not gate; numerical code is proptest-covered (§5/§7).
+- **Prove behavior by the real artifact** (rendered page / actual response), not source
+  string-matching; data-fetching UI checked in all four states (loading/error/empty/success) (§4/§7).
+
+---
+
 ## 1. Architecture Overview
 
 Clients (Next.js 15 web) → **Go API Gateway** (auth, rate limit, validation, routing) → gRPC to
@@ -333,8 +382,11 @@ built on `http_requests_total` silently never fires, including both P0 payment a
 The canonical list lives in **`.env.example`** (copy to `.env.local` for dev). Required at startup
 (app fails fast if missing): `DATABASE_URL`, `REDIS_URL`, `MEILISEARCH_URL`/`_API_KEY`, JWT key paths
 + `SESSION_SECRET`, the `STRIPE_*` set, `S3_*`, `NEXT_PUBLIC_MAPBOX_TOKEN`, `SENTRY_DSN`,
-`OTEL_EXPORTER_OTLP_ENDPOINT`, and the per-service `*_PORT` vars (gateway 8080, services 50051-50058,
-web 3000). Validate with a Zod schema at startup.
+`OTEL_EXPORTER_OTLP_ENDPOINT`, and the per-service `*_PORT` vars. Default ports (`bin/dev`,
+`docker-compose.yml`, `.env.example` agree): gateway **8080**, web **3000**; gRPC user 50051 · job
+50052 · bidding 50053 · payment 50054 · chat 50055 · fraud 50056 · trust 50057 · imaging 50058 ·
+notification 50059 · underwriting 50060 · pricing 50061; chat WebSocket (`CHAT_WS_PORT`) **50065**.
+Each port honors an env override in `bin/dev`. Validate with a Zod schema at startup.
 
 ---
 
@@ -444,6 +496,40 @@ insecure or a dead end is not done.
 - **Graceful degradation + feature flags.** Features fail soft (payments/AI/maps down → clear notice,
   never a crash) and ship behind flags when risky.
 - **Document the non-obvious.** Record meaningful architecture decisions (ADR-style).
+
+---
+
+## Reference docs (index)
+
+The always-loaded **rules** live in this file; full detail / maps / worked examples live in `docs/` —
+read on demand. (Sections above also link inline at point of use.)
+
+| Area | File |
+|------|------|
+| System diagram, service boundaries, project tree | `docs/architecture.md` |
+| Code conventions (worked examples), testing detail, metric list | `docs/conventions.md` |
+| Design system — HIG/Material/WCAG detail + Tailwind token block | `docs/design-system.md`, `docs/brand/showcase-ssot.md` |
+| Goods marketplace architecture + trust model | `docs/marketplace.md` |
+| Performance — status vs targets, JS budgets, k6 / TTFB / Lighthouse | `docs/performance.md` |
+| REST → gRPC route map | `docs/route-map.md` |
+| Auth flows · frontend state · seed fixtures | `docs/auth-flow.md`, `docs/state-management.md`, `docs/test-fixtures.md` |
+| E2E — what runs in CI vs the live-stack dogfood | `E2E.md`, `docs/workflows/catalog.yaml` |
+| Deploy readiness, edge, key rotation, ops notes | `docs/operations/` (start at `provisioning-checklist.md`) |
+| Incident response | `docs/runbook.md`, `docs/runbooks/` |
+| Open audit / action items | `docs/planning/adversarial-action-tracker.md` |
+| Architecture decisions | `docs/adr/` |
+
+---
+
+## Discovered Patterns
+
+<!-- AGENT-MANAGED INBOX — not an archive. Lifecycle: when you learn a durable rule mid-task,
+     (1) write the full why/history into the matching docs/ file (see the index above) FIRST,
+     (2) add a ONE-LINE pointer here, (3) once it's stable, graduate it up into the matching
+     numbered section above and DELETE it here. Keep every entry to one line + a → pointer;
+     history belongs in the docs file. -->
+
+_(none pending)_
 
 ---
 
