@@ -262,6 +262,24 @@ export function checkNoGoogleFonts(root) {
   return problems;
 }
 
+/** Playwright test code never launches a fixed engine; the cross-browser job installs only one. */
+export function checkPlaywrightFixedEngine(root) {
+  const files = [...walk(root, 'web/tests'), 'web/playwright.config.ts'].filter(
+    (f) => /\.(?:[cm]?[jt]s)$/.test(f) && existsSync(join(root, f)),
+  );
+  const problems = [];
+  for (const f of files) {
+    read(root, f)
+      .split('\n')
+      .forEach((l, i) => {
+        if (/^\s*(?:\/\/|\*|\/\*)/.test(l)) return;
+        const m = /\b(chromium|firefox|webkit)\.(launch|launchPersistentContext|launchServer|connect)\(/.exec(l);
+        if (m) problems.push(`${f}:${i + 1}: calls ${m[1]}.${m[2]}() — use the project's browser (fixture or config.projects), not a fixed engine`);
+      });
+  }
+  return problems;
+}
+
 /** NEXT_PUBLIC_SITE_URL is read through siteUrl() only. */
 export function checkSiteUrl(root) {
   const allowed = new Set(['web/src/lib/site-url.ts', 'web/src/lib/server/env.ts']);
@@ -341,6 +359,7 @@ export const CHECKS = {
   'image-prefix-lowercase': (root) => checkImagePrefixLowercase(root),
   'migration-pairs': (root) => checkMigrationPairs(root),
   'no-google-fonts': (root) => checkNoGoogleFonts(root),
+  'playwright-fixed-engine': (root) => checkPlaywrightFixedEngine(root),
   'site-url': (root) => checkSiteUrl(root),
   'zod-imports': (root) => checkZodImports(root),
   'xcconfig-wired': (root) => checkXcconfigWired(root),

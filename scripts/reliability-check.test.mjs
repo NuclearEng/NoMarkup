@@ -148,9 +148,9 @@ test('parseUnifiedDiff: line numbers, deletions, renames, binary and "---" conte
   assert.ok(files.get('logo.png').binary);
 });
 
-test('the real checklist parses, stays between 25 and 45 items, numbered in order', () => {
+test('the real checklist parses, stays between 25 and 50 items, numbered in order', () => {
   const items = parseChecklist(CHECKLIST);
-  assert.ok(items.length >= 25 && items.length <= 45, `${items.length} items`);
+  assert.ok(items.length >= 25 && items.length <= 50, `${items.length} items`);
   items.forEach((it, i) => assert.equal(it.id, `RC-${String(i + 1).padStart(2, '0')}`));
   for (const it of items) assert.ok(it.source.length > 3, `${it.id} has a source`);
 });
@@ -198,6 +198,7 @@ const REPLAY = [
   ['92e36fb0', 'RC-36'], // status badge meaning
   ['96bbda88', 'RC-37'], // Logo href `Route | string`
   ['7d1762b6', 'RC-38'], // pages.json drift
+  ['fef7b26d', 'RC-46'], // global setup hard-codes chromium.launch()
   ['04fb9da5', 'RC-40'], // tests that pinned the buggy behaviour
   ['dcd62fce', 'RC-44'], // canImport only Xcode 27 compiles
   ['222f3897', 'RC-45'], // unreferenced xcconfigs
