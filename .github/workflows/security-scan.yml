@@ -115,9 +115,15 @@ jobs:
       - name: Install dependencies
         working-directory: web
         run: npm ci
-      - name: Run npm audit (production dependencies, high+)
+      # Same policy as `npm audit --omit=dev --audit-level=high`, except advisories listed in
+      # web/audit-allowlist.json with evidence, exact dependency paths and a review-by date
+      # (<= 60 days). Unlisted high/critical findings, new paths, stale or expired entries fail.
+      - name: Test the audit gate
         working-directory: web
-        run: npm audit --omit=dev --audit-level=high
+        run: node --test scripts/check-npm-audit.test.mjs
+      - name: Run npm audit (production dependencies, high+, allowlist)
+        working-directory: web
+        run: node scripts/check-npm-audit.mjs
 
   # ── Single required-check name for branch protection (QA-10) ──
   # Matrix `go-vuln` expands to six check names; rust-audit + npm-audit add

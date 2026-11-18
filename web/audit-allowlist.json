@@ -1,0 +1,26 @@
+{
+  "$comment": "Read by web/scripts/check-npm-audit.mjs (Security Scan / npm Audit). Each entry accepts ONE high/critical advisory for ONE package on EXACTLY the listed dependency paths, until reviewBy (at most 60 days after added). A new path, a vanished path, an advisory npm no longer reports, or a passed reviewBy fails the job. Policy: docs/reliability-checklist.md RC-47.",
+  "entries": [
+    {
+      "advisory": "GHSA-fc5q-39xc-vjpf",
+      "package": "picomatch",
+      "paths": [
+        "@sentry/nextjs > @rollup/plugin-commonjs > @rollup/pluginutils > picomatch",
+        "@sentry/nextjs > @rollup/plugin-commonjs > fdir > picomatch",
+        "@sentry/nextjs > @rollup/plugin-commonjs > picomatch"
+      ],
+      "reason": "ReDoS (CVE-2026-112366) needs an attacker-supplied single-branch repeated extglob PATTERN such as +(*) or +(*a). No picomatch release fixes it (<=4.0.7 affected, first_patched_version null, 4.0.7 is the latest). In production deps it is reached only through @sentry/nextjs's build-time webpack wrapping loader, which never compiles a glob, and it is not shipped in the server, client or standalone output.",
+      "evidence": [
+        "gh api /advisories/GHSA-fc5q-39xc-vjpf (2026-11-17): vulnerable_version_range <=4.0.7, first_patched_version null; upstream fix PR micromatch/picomatch#194 still open. npm view picomatch versions: latest 4.0.7, no 2.x/3.x backport line.",
+        "@sentry/nextjs 11.14.0 (latest, 2026-11-17) still pins @rollup/plugin-commonjs 28.0.1; plugin-commonjs 29.0.3 and @rollup/pluginutils still depend on picomatch ^4.0.2, so no Sentry upgrade removes it.",
+        "Only consumer: node_modules/@sentry/nextjs/build/cjs/config/loaders/wrappingLoader.js, registered by withSentryConfig as a webpack loader (config/webpack.js, loader: path.resolve(...)) and run during `next build` only.",
+        "It calls commonjs({ sourceMap, strictRequires: true, ignoreDynamicRequires: true, ignore() { return true } }) with no include/exclude and no dynamicRequireTargets: pluginutils.createFilter(undefined, undefined) builds no matcher, strictRequires true short-circuits to () => true, and fdir.glob() is reached only via dynamicRequireTargets. All options are hard-coded by Sentry; no request or user data reaches them.",
+        "Probe (rollup + plugin-commonjs with that exact option set, picomatch export wrapped): 0 picomatch calls. Control: picomatch('+(*a)') on a 29-char string took 5.8 s, so the probe would have seen the vulnerable path if used.",
+        "`npm run build` (Next 15.5.28, webpack) then a search of .next/server, .next/static and .next/standalone: no picomatch, @rollup/plugin-commonjs, @rollup/pluginutils or fdir code or package, and no @sentry/nextjs config loaders in standalone/node_modules."
+      ],
+      "removeWhen": "picomatch publishes a fixed release (then add an npm override to it and delete this entry), or @sentry/nextjs stops depending on picomatch, or any code path starts passing a non-constant glob to picomatch (then this exception is void: fix or replace instead).",
+      "added": "2026-11-17",
+      "reviewBy": "2027-01-15"
+    }
+  ]
+}

@@ -348,3 +348,12 @@ enforced elsewhere (say where in the commit that removes it).
 - **Check:** global setup and helpers take the browser from the project (the `page` / `browser` fixture, or an engine named in `config.projects`); the nightly cross-browser job installs only `firefox` or `webkit`, so a hard-coded engine fails it before any spec runs. Prove with `npx playwright install firefox` alone, then `npx playwright test --project=firefox`.
 - **Run:** `node "$RC_TOOLS/checks.mjs" playwright-fixed-engine`
 - **Source:** fix/cross-browser-e2e (nightly run 44117234961: `chromium_headless_shell-1217 … Executable doesn't exist` at `global-setup.ts:26` in both the firefox and webkit jobs).
+
+## Dependency advisories
+
+### RC-47 · Accepting a dependency advisory instead of fixing it
+- **Paths:** `web/audit-allowlist.json` `web/scripts/check-npm-audit*.mjs` `.github/workflows/security-scan.yml` `engines/audit.toml` `engines/.cargo/audit.toml`
+- **Added:** `audit-level|--omit|continue-on-error|"advisory"|reviewBy|ignore\s*=`
+- **Check:** an exception is the last resort, after a fixed version (npm `overrides` on only the paths that need it) and an upgrade of the parent were both ruled out with evidence. The entry names one advisory, one package and every dependency path (`npm ls <pkg> --all --omit=dev`); its evidence shows why the vulnerable input cannot reach the vulnerable function (who calls it, with what, build-time or runtime, and a search of `.next/` server, client and standalone output); it states the removal condition; `reviewBy` is at most 60 days after `added`. Never lower `--audit-level`, never widen `--omit`, never add `continue-on-error`. The gate fails on an unlisted finding, a new path, a stale entry or a passed review-by.
+- **Run:** `node --test web/scripts/check-npm-audit.test.mjs`
+- **Source:** fix/picomatch-advisory (GHSA-fc5q-39xc-vjpf, picomatch ReDoS with no fixed release, failed `npm Audit` on every PR).
