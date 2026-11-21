@@ -5,7 +5,7 @@ go 1.26.0
 toolchain go1.26.11
 
 require (
-	github.com/exaring/otelpgx v0.11.1
+	github.com/exaring/otelpgx v0.13.0
 	github.com/getsentry/sentry-go v0.44.1
 	github.com/jackc/pgx/v5 v5.9.2
 	github.com/nomarkup/nomarkup/proto v0.0.0-00010101000000-000000000000
